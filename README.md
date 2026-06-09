@@ -47,6 +47,12 @@ the shortcuts don't collide.
 
 Click the menu-bar icon → **Edit Layout…**. An editor appears over your actual screen:
 
+<div align="center">
+<img src="docs/editor.png" width="900" alt="The Lineup layout editor, shown over a Samsung Odyssey G9: three numbered zones, the hovered zone offering split-side-by-side / split-stacked / merge, and pixel + percent readouts on the dividers.">
+<br><sub><i>The editor over a G9 — on your machine it floats over your real desktop.</i></sub>
+</div>
+
+
 - **Hover a zone** to reveal its controls: **split side-by-side**, **split stacked**, or
   **merge**. (Icons, not words — split it however you like, as deep as you like.)
 - **Drag a divider** to resize. The top-level dividers show a **pixel** readout (drag one onto a
