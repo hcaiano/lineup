@@ -9,6 +9,7 @@ import LineupCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var config = LineupConfig()
+    private var configCanWrite = true // false after a load error -> block writes until reset
     private var failedHotkeys = 0
     private var overlay: AlignmentOverlayController?
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
@@ -49,28 +50,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func reloadConfig() {
         let url = AppDelegate.configURL
-        // Migration target = the screen the legacy config was set on (the widest / G9).
-        let target = NSScreen.screens.max(by: { ScreenIdentity.info(for: $0).pixelsWide < ScreenIdentity.info(for: $1).pixelsWide })
-            ?? NSScreen.main
-        let screenInfo = target.map { ScreenIdentity.info(for: $0) }
-            ?? ScreenInfo(key: "default", label: "default", pixelsWide: 0, pixelsHigh: 0, keyIsStable: false)
         let now = ISO8601DateFormatter().string(from: Date())
         do {
             let (cfg, migrated) = try LineupConfig.loadOrMigrate(
-                from: url, currentScreen: screenInfo, now: now,
+                from: url, now: now,
                 backup: { data in
+                    // Must succeed before we risk replacing the only legacy copy.
                     let stamp = Int(Date().timeIntervalSince1970)
                     let backupURL = url.deletingPathExtension().appendingPathExtension("backup-\(stamp).json")
-                    try? data.write(to: backupURL)
+                    try data.write(to: backupURL, options: .atomic)
+                },
+                resolveLegacyTarget: { old in
+                    // Migrate the seams onto the display they were drawn on. If the legacy
+                    // pixel width implies a specific display and it isn't connected, DEFER.
+                    let screens = NSScreen.screens.map { ScreenIdentity.info(for: $0) }
+                    if let w = LineupConfig.inferredLegacyWidth(old) {
+                        return screens.filter { abs($0.pixelsWide - w) <= 8 }
+                            .max(by: { $0.pixelsWide < $1.pixelsWide })
+                    }
+                    return screens.max(by: { $0.pixelsWide < $1.pixelsWide })
                 })
             config = cfg
-            if migrated { try? config.write(to: url) } // persist the schema-3 upgrade
+            configCanWrite = true
+            if migrated {
+                do { try config.write(to: url) }
+                catch { FileHandle.standardError.write(Data("migration write failed (legacy file + backup preserved): \(error)\n".utf8)) }
+            }
         } catch {
-            // Corrupt/unreadable file: surface it, but do NOT overwrite — keep the file
-            // on disk and run on defaults in memory until the user reconfigures.
+            // Corrupt/unsupported file: surface it, do NOT overwrite, and BLOCK writes until
+            // an explicit reset — so a later save can't clobber the preserved file.
             FileHandle.standardError.write(Data("config could not be loaded (left untouched): \(error)\n".utf8))
             config = LineupConfig()
+            configCanWrite = false
         }
+    }
+
+    @objc private func resetConfig() {
+        let url = AppDelegate.configURL
+        // Preserve the rejected file before replacing it.
+        if let data = try? Data(contentsOf: url) {
+            let stamp = Int(Date().timeIntervalSince1970)
+            try? data.write(to: url.deletingPathExtension().appendingPathExtension("rejected-\(stamp).json"), options: .atomic)
+        }
+        config = LineupConfig()
+        do { try config.write(to: url); configCanWrite = true }
+        catch { FileHandle.standardError.write(Data("reset write failed: \(error)\n".utf8)) }
+        buildStatusItem()
     }
 
     @objc private func reloadConfigFromMenu() {
@@ -81,6 +106,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Alignment overlay
 
     @objc private func openAlignmentOverlay() {
+        // Never overwrite a preserved corrupt/future config via a save.
+        guard configCanWrite else { return }
         // Edit the seams of the widest display (the G9). Per-screen: saves to that screen.
         guard let screen = NSScreen.screens.max(by: {
                 ScreenIdentity.info(for: $0).pixelsWide < ScreenIdentity.info(for: $1).pixelsWide
@@ -168,13 +195,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        if !configCanWrite {
+            let warn = NSMenuItem(title: "⚠︎ Config couldn't be loaded — saving is disabled", action: nil, keyEquivalent: "")
+            warn.isEnabled = false
+            menu.addItem(warn)
+            menu.addItem(NSMenuItem(
+                title: "Reset configuration…", action: #selector(resetConfig), keyEquivalent: ""))
+        }
         let cfgLine = NSMenuItem(
-            title: "Config: \(FileManager.default.fileExists(atPath: AppDelegate.configURL.path) ? AppDelegate.configURL.path : "defaults (thirds)")",
+            title: "Config: \(FileManager.default.fileExists(atPath: AppDelegate.configURL.path) ? AppDelegate.configURL.path : "defaults (halves)")",
             action: nil, keyEquivalent: "")
         cfgLine.isEnabled = false
         menu.addItem(cfgLine)
-        menu.addItem(NSMenuItem(
-            title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: ""))
+        let alignItem = NSMenuItem(
+            title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: "")
+        alignItem.isEnabled = configCanWrite // never overwrite a preserved corrupt/future config
+        menu.addItem(alignItem)
         menu.addItem(NSMenuItem(
             title: "Reload config", action: #selector(reloadConfigFromMenu), keyEquivalent: "r"))
 

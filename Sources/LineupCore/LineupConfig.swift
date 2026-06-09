@@ -107,14 +107,24 @@ public struct LineupConfig: Codable, Equatable {
         try data.write(to: url, options: .atomic)
     }
 
-    /// Load schema-3 config, migrating a legacy column config in place. On migration the
-    /// legacy dividers become the current screen's root vertical split, and `backup` is
-    /// called with the original bytes (write a timestamped copy) before any schema-3 write.
+    /// Physical width a legacy config implies, from its pixel half-divider (`value * 2`),
+    /// or nil when it can't be inferred (non-pixel half-divider). Used to migrate the
+    /// seams onto the display they were actually drawn on.
+    public static func inferredLegacyWidth(_ old: ColumnConfig) -> Int? {
+        guard old.halfDivider.unit == .pixels else { return nil }
+        return Int((old.halfDivider.value * 2).rounded())
+    }
+
+    /// Load schema-3 config, migrating a legacy column config in place. `resolveLegacyTarget`
+    /// returns the screen the legacy seams belong on, or nil to DEFER (leave the legacy file
+    /// untouched and retry next launch — e.g. the original display is disconnected). `backup`
+    /// must succeed (it can throw) before any schema-3 write; on migration we never persist
+    /// unless the original bytes were safely backed up.
     public static func loadOrMigrate(
         from url: URL,
-        currentScreen: ScreenInfo,
         now: String,
-        backup: (Data) throws -> Void
+        backup: (Data) throws -> Void,
+        resolveLegacyTarget: (ColumnConfig) -> ScreenInfo?
     ) throws -> (config: LineupConfig, migrated: Bool) {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return (LineupConfig(), false)
@@ -134,12 +144,15 @@ public struct LineupConfig: Codable, Equatable {
         }
         // Legacy ColumnConfig (dividers + halfDivider)?
         if let old = try? JSONDecoder().decode(ColumnConfig.self, from: data) {
-            try backup(data)
+            guard let target = resolveLegacyTarget(old) else {
+                return (LineupConfig(), false) // defer: don't migrate onto the wrong display
+            }
+            try backup(data) // must succeed before we risk replacing the only legacy copy
             let root = Node.columns(old.dividers) // exact pixel values preserved as the seams
             var cfg = LineupConfig()
-            cfg.screens[currentScreen.key] = ScreenLayout(
-                label: currentScreen.label, pixelsWide: currentScreen.pixelsWide,
-                pixelsHigh: currentScreen.pixelsHigh, keyIsStable: currentScreen.keyIsStable,
+            cfg.screens[target.key] = ScreenLayout(
+                label: target.label, pixelsWide: target.pixelsWide,
+                pixelsHigh: target.pixelsHigh, keyIsStable: target.keyIsStable,
                 lastSeenAt: now, layout: root)
             return (cfg, true)
         }

@@ -262,7 +262,7 @@ do { // migration from legacy ColumnConfig -> schema 3 onto current screen
     try? FileManager.default.removeItem(at: tmp)
     try legacy.write(to: tmp)
     var backedUp = false
-    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in backedUp = true })
+    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in backedUp = true }, resolveLegacyTarget: { _ in g9 })
     check(migrated, "migration: legacy detected")
     check(backedUp, "migration: backup taken before write")
     check(cfg.schemaVersion == 3, "migration: schema bumped to 3")
@@ -276,13 +276,13 @@ do { // schema-3 file loads without migration; absent file = fresh config
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v3-\(checks).json")
     try? FileManager.default.removeItem(at: tmp)
     try LineupConfig().setting(layout: .thirds, for: g9, now: nil).write(to: tmp)
-    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in })
+    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
     check(!migrated, "schema-3 file: no migration")
     check(cfg.screens["uuid-G9"] != nil, "schema-3 file: G9 layout present")
     try? FileManager.default.removeItem(at: tmp)
     let absent = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-absent-\(checks).json")
     try? FileManager.default.removeItem(at: absent)
-    let (fresh, _) = try LineupConfig.loadOrMigrate(from: absent, currentScreen: g9, now: "T", backup: { _ in })
+    let (fresh, _) = try LineupConfig.loadOrMigrate(from: absent, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
     check(fresh.screens.isEmpty, "absent file: fresh empty config")
 }
 
@@ -342,7 +342,7 @@ do { // present-but-corrupt config throws (no clobber); absent stays fresh
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-corrupt-\(checks).json")
     try "{ not valid json at all ".write(to: tmp, atomically: true, encoding: .utf8)
     expectThrow("corrupt present config throws (no data loss)") {
-        _ = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in })
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
     }
     try? FileManager.default.removeItem(at: tmp)
 }
@@ -365,8 +365,51 @@ do { // a future schema-4 file (v3-shaped) is rejected, not loaded lossily
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v4-\(checks).json")
     try data.write(to: tmp)
     expectThrow("future schema (v4) throws unsupportedSchema, not loaded") {
-        _ = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in })
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
     }
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+// ---- P2 review: migration display inference + defer ----
+do { // inferred width from the pixel half-divider; nil when not pixels
+    check(LineupConfig.inferredLegacyWidth(ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)) == 5120,
+          "inferredLegacyWidth: halfDivider*2 = 5120")
+    check(LineupConfig.inferredLegacyWidth(ColumnConfig(dividers: [Boundary(0.5, .fraction)], halfDivider: Boundary(0.5, .fraction))) == nil,
+          "inferredLegacyWidth: non-pixel half -> nil")
+}
+
+do { // defer migration when the target display isn't connected (resolveLegacyTarget=nil)
+    let legacy = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-defer-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try legacy.write(to: tmp)
+    var backedUp = false
+    let (cfg, migrated) = try LineupConfig.loadOrMigrate(
+        from: tmp, now: "T",
+        backup: { _ in backedUp = true },
+        resolveLegacyTarget: { _ in nil }) // G9 disconnected -> defer
+    check(!migrated, "defer: not migrated when target display absent")
+    check(!backedUp, "defer: no backup taken (legacy file untouched)")
+    check(cfg.screens.isEmpty, "defer: in-memory config is fresh (runs defaults)")
+    // legacy file is still intact on disk
+    let still = try JSONDecoder().decode(ColumnConfig.self, from: try Data(contentsOf: tmp))
+    eq(CGFloat(still.dividers[0].value), 1133, "defer: legacy file preserved (1133)")
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+do { // backup failure aborts migration (closure throws -> loadOrMigrate throws, no write)
+    let legacy = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-bkpfail-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try legacy.write(to: tmp)
+    struct BackupFailed: Error {}
+    expectThrow("backup failure aborts migration (no clobber)") {
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T",
+            backup: { _ in throw BackupFailed() },
+            resolveLegacyTarget: { _ in g9 })
+    }
+    let still = try JSONDecoder().decode(ColumnConfig.self, from: try Data(contentsOf: tmp))
+    eq(CGFloat(still.dividers[1].value), 2865, "backup fail: legacy file preserved (2865)")
     try? FileManager.default.removeItem(at: tmp)
 }
 
