@@ -141,6 +141,32 @@ public enum Layout {
         return rects.indices.contains(i) ? rects[i] : nil
     }
 
+    /// Sanitize raw pixel divider positions: clamp into `0...pixelsWide`, sort, and keep
+    /// every column (including the two outer ones) at least `minColumn` pixels wide, so the
+    /// seam overlay can't save a zero-width column. Pure so it's unit-tested.
+    public static func clampPixelDividers(_ xs: [Double], pixelsWide: Int, minColumn: Double) -> [Double] {
+        let maxX = Double(pixelsWide)
+        let sorted = xs.map { Swift.min(Swift.max($0, 0), maxX) }.sorted()
+        var out: [Double] = []
+        var lower = minColumn
+        for (i, x) in sorted.enumerated() {
+            let remaining = Double(sorted.count - i - 1)
+            let upper = maxX - minColumn * (remaining + 1)
+            out.append(Swift.min(Swift.max(x, lower), Swift.max(lower, upper)))
+            lower = out[i] + minColumn
+        }
+        return out
+    }
+
+    /// The root's top-level column rects when the root is a vertical split (NOT recursed
+    /// into nested zones), else nil. Used by quick actions (left/center/right) and the
+    /// left/right cycle's first step so they honor the screen's seam-aligned columns.
+    public static func rootColumns(_ root: Node, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> [CGRect]? {
+        guard case let .split(.vertical, dividers, children) = root else { return nil }
+        return childRects(axis: .vertical, dividers: dividers, count: children.count,
+                          container: rootContainer(frame: frame, visibleFrame: visibleFrame), pixelsWide: pixelsWide)
+    }
+
     /// Split a container into child rects, laid out in reading order (left→right for a
     /// vertical split, top→bottom for a horizontal one). Cocoa coords (origin bottom-left).
     private static func childRects(axis: Axis, dividers: [Boundary], count: Int, container: CGRect, pixelsWide: Int) -> [CGRect] {

@@ -142,20 +142,20 @@ do { // fromPixels builds a sorted pixel-unit config
 }
 
 do { // clampPixelDividers: in-range values pass through, sorted
-    let out = ColumnConfig.clampPixelDividers([3413, 1707], pixelsWide: 5120, minColumn: 40)
+    let out = Layout.clampPixelDividers([3413, 1707], pixelsWide: 5120, minColumn: 40)
     eq(CGFloat(out[0]), 1707, "clamp: keeps valid divider 0")
     eq(CGFloat(out[1]), 3413, "clamp: keeps valid divider 1")
 }
 
 do { // clampPixelDividers: zero-width columns get pushed apart, stay in range
-    let out = ColumnConfig.clampPixelDividers([0, 0], pixelsWide: 5120, minColumn: 40)
+    let out = Layout.clampPixelDividers([0, 0], pixelsWide: 5120, minColumn: 40)
     check(out[0] >= 40, "clamp: left column >= minColumn")
     check(out[1] - out[0] >= 40, "clamp: center column >= minColumn")
     check(5120 - out[1] >= 40, "clamp: right column >= minColumn")
 }
 
 do { // clampPixelDividers: out-of-range divider clamped inside the screen
-    let out = ColumnConfig.clampPixelDividers([9999, 1000], pixelsWide: 5120, minColumn: 40)
+    let out = Layout.clampPixelDividers([9999, 1000], pixelsWide: 5120, minColumn: 40)
     check(out.allSatisfy { $0 >= 0 && $0 <= 5120 }, "clamp: within screen bounds")
     check(out[0] <= out[1], "clamp: sorted")
 }
@@ -368,6 +368,26 @@ do { // a future schema-4 file (v3-shaped) is rejected, not loaded lossily
         _ = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in })
     }
     try? FileManager.default.removeItem(at: tmp)
+}
+
+// ---- P2: quick actions honor per-screen root columns ----
+do {
+    let g9Layout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    func qa(_ id: String, _ root: Node) -> CGRect { QuickAction.rect(id, root: root, frame: frame, visibleFrame: visible, pixelsWide: px)! }
+    // With a 3-column layout, left/center/right land on the seam columns
+    eq(qa("left", g9Layout).maxX, 1133, "quick left -> root column 0 (seam)")
+    eq(qa("right", g9Layout).minX, 2865, "quick right -> root column 2 (seam)")
+    eq(qa("center", g9Layout).minX, 1133, "quick center -> middle column left edge")
+    eq(qa("center", g9Layout).maxX, 2865, "quick center -> middle column right edge")
+    eq(qa("full", g9Layout).width, 5120, "quick full -> whole screen")
+    eq(qa("leftHalf", g9Layout).maxX, 2560, "quick leftHalf -> screen half")
+    eq(qa("rightHalf", g9Layout).minX, 2560, "quick rightHalf -> screen half")
+    // With a bare leaf (no columns), left/right fall back to halves
+    eq(qa("left", .leaf).maxX, 2560, "quick left (leaf) -> left half fallback")
+    eq(qa("right", .leaf).minX, 2560, "quick right (leaf) -> right half fallback")
+    // rootColumns nil for non-vertical-split roots
+    check(Layout.rootColumns(.leaf, frame: frame, visibleFrame: visible, pixelsWide: px) == nil, "rootColumns: leaf -> nil")
+    check(Layout.rootColumns(g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)?.count == 3, "rootColumns: 3 columns")
 }
 
 // ---- Report ----

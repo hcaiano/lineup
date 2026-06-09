@@ -6,10 +6,11 @@ import LineupCore
 /// All public input is Cocoa-space; the single AX coordinate flip happens here.
 enum WindowMover {
 
-    /// Snap the focused window into `zoneID` on the screen it currently occupies.
+    /// Snap the focused window via a quick-action id ("full"/"left"/.../"rightHalf"),
+    /// resolved against the per-screen layout for the screen the window is on.
     /// Returns false (silently) if there's no focused window or AX isn't trusted.
     @discardableResult
-    static func snapFocusedWindow(to zoneID: String, config: ColumnConfig) -> Bool {
+    static func snapFocusedWindow(toQuickAction id: String, config: LineupConfig) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let window = focusedWindow() else { return false }
 
@@ -17,12 +18,12 @@ enum WindowMover {
         guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
         guard let screen = screen(for: currentCocoa) else { return false }
 
-        let pixelsWide = pixelsWide(of: screen)
-        guard let target = config.rect(
-            for: zoneID,
-            frame: screen.frame,
-            visibleFrame: screen.visibleFrame,
-            pixelsWide: pixelsWide) else { return false }
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        guard let target = QuickAction.rect(
+            id, root: root,
+            frame: screen.frame, visibleFrame: screen.visibleFrame,
+            pixelsWide: info.pixelsWide) else { return false }
 
         setFrame(target, of: window)
         return true

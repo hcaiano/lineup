@@ -8,14 +8,15 @@ import LineupCore
 /// and snaps the focused window into the matching zone.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var config = ColumnConfig.default
+    private var config = LineupConfig()
     private var failedHotkeys = 0
     private var overlay: AlignmentOverlayController?
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
-        self?.config ?? .default
+        self?.config ?? LineupConfig()
     })
 
-    /// Hyper+key -> zone id. Fixed-per-key (deterministic seam alignment).
+    /// Hyper+key -> quick-action id (resolved per-screen). Fixed-per-key for now; left/right
+    /// cycling lands in a later phase.
     private let bindings: [(key: Int, zone: String)] = [
         (kVK_UpArrow, "full"),
         (kVK_DownArrow, "center"),
@@ -47,11 +48,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Config
 
     private func reloadConfig() {
+        let url = AppDelegate.configURL
+        // Migration target = the screen the legacy config was set on (the widest / G9).
+        let target = NSScreen.screens.max(by: { ScreenIdentity.info(for: $0).pixelsWide < ScreenIdentity.info(for: $1).pixelsWide })
+            ?? NSScreen.main
+        let screenInfo = target.map { ScreenIdentity.info(for: $0) }
+            ?? ScreenInfo(key: "default", label: "default", pixelsWide: 0, pixelsHigh: 0, keyIsStable: false)
+        let now = ISO8601DateFormatter().string(from: Date())
         do {
-            config = try ColumnConfig.load(from: AppDelegate.configURL)
+            let (cfg, migrated) = try LineupConfig.loadOrMigrate(
+                from: url, currentScreen: screenInfo, now: now,
+                backup: { data in
+                    let stamp = Int(Date().timeIntervalSince1970)
+                    let backupURL = url.deletingPathExtension().appendingPathExtension("backup-\(stamp).json")
+                    try? data.write(to: backupURL)
+                })
+            config = cfg
+            if migrated { try? config.write(to: url) } // persist the schema-3 upgrade
         } catch {
-            FileHandle.standardError.write(Data("config load failed, using defaults: \(error)\n".utf8))
-            config = .default
+            // Corrupt/unreadable file: surface it, but do NOT overwrite — keep the file
+            // on disk and run on defaults in memory until the user reconfigures.
+            FileHandle.standardError.write(Data("config could not be loaded (left untouched): \(error)\n".utf8))
+            config = LineupConfig()
         }
     }
 
@@ -63,22 +81,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Alignment overlay
 
     @objc private func openAlignmentOverlay() {
-        // The G9 is the display with the most horizontal pixels; configure in its pixels.
+        // Edit the seams of the widest display (the G9). Per-screen: saves to that screen.
         guard let screen = NSScreen.screens.max(by: {
-                WindowMover.pixelsWide(of: $0) < WindowMover.pixelsWide(of: $1)
+                ScreenIdentity.info(for: $0).pixelsWide < ScreenIdentity.info(for: $1).pixelsWide
               }) ?? NSScreen.main else { return }
-        let pixelsWide = WindowMover.pixelsWide(of: screen)
+        let info = ScreenIdentity.info(for: screen)
         let frame = screen.frame
-        // Seed line positions from the current config (points from the screen's left).
-        let initial = config.dividers.map { $0.x(in: frame, pixelsWide: pixelsWide) - frame.minX }
+        // Seed the lines from the screen's current root columns (interior divider x's).
+        let root = config.layout(forKey: info.key)
+        let cols = Layout.rootColumns(root, frame: frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
+        let initial: [CGFloat] = cols?.dropLast().map { $0.maxX - frame.minX } ?? [frame.width / 2]
 
         overlay = AlignmentOverlayController(
             screen: screen,
-            pixelsWide: pixelsWide,
+            pixelsWide: info.pixelsWide,
             initialDividerPoints: initial,
-            onSave: { [weak self] dividerPixels, halfPixels in
+            onSave: { [weak self] dividerPixels, _ in
                 guard let self else { return }
-                self.config = ColumnConfig.fromPixels(dividers: dividerPixels, halfPixels: halfPixels)
+                let newRoot = Node.columns(dividerPixels.map { Boundary($0, .pixels) })
+                self.config = self.config.setting(layout: newRoot, for: info, now: ISO8601DateFormatter().string(from: Date()))
                 do {
                     try self.config.write(to: AppDelegate.configURL)
                 } catch {
@@ -97,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for b in bindings {
             let ok = HotkeyManager.shared.register(keyCode: b.key) { [weak self] in
                 guard let self else { return }
-                WindowMover.snapFocusedWindow(to: b.zone, config: self.config)
+                WindowMover.snapFocusedWindow(toQuickAction: b.zone, config: self.config)
             }
             if !ok { failed += 1 }
         }

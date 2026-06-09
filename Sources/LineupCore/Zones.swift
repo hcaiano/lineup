@@ -151,21 +151,4 @@ public struct ColumnConfig: Codable, Equatable {
             dividers: dividers.sorted().map { Boundary($0, .pixels) },
             halfDivider: Boundary(halfPixels, .pixels))
     }
-
-    /// Sanitize raw pixel divider positions: clamp into `0...pixelsWide`, sort, and keep
-    /// every column (including the two outer ones) at least `minColumn` pixels wide, so a
-    /// user can't save a zero-width column. Pure so it's unit-tested.
-    public static func clampPixelDividers(_ xs: [Double], pixelsWide: Int, minColumn: Double) -> [Double] {
-        let maxX = Double(pixelsWide)
-        let sorted = xs.map { Swift.min(Swift.max($0, 0), maxX) }.sorted()
-        var out: [Double] = []
-        var lower = minColumn
-        for (i, x) in sorted.enumerated() {
-            let remaining = Double(sorted.count - i - 1)
-            let upper = maxX - minColumn * (remaining + 1)
-            out.append(Swift.min(Swift.max(x, lower), Swift.max(lower, upper)))
-            lower = out[i] + minColumn
-        }
-        return out
-    }
 }
