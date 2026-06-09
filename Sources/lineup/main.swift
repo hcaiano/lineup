@@ -120,11 +120,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
     }
 
-    @objc private func reloadConfigFromMenu() {
-        reloadConfig()
-        buildStatusItem()
-    }
-
     // MARK: - Settings window
 
     @objc private func openSettings() {
@@ -235,81 +230,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let menu = NSMenu()
 
-        let trusted = AXIsProcessTrusted()
-        let statusLine = NSMenuItem(
-            title: trusted ? "Accessibility: granted" : "Accessibility: NOT granted",
-            action: nil, keyEquivalent: "")
-        statusLine.isEnabled = false
-        menu.addItem(statusLine)
-        if !trusted {
-            menu.addItem(NSMenuItem(
-                title: "Request Accessibility permission…",
-                action: #selector(requestAccessibility), keyEquivalent: ""))
+        // Actionable problems ONLY, at the top. Healthy states show nothing.
+        var hasWarning = false
+        if !AXIsProcessTrusted() {
+            addInfo(menu, "⚠︎ Accessibility not granted")
+            menu.addItem(NSMenuItem(title: "Grant Accessibility…", action: #selector(requestAccessibility), keyEquivalent: ""))
+            hasWarning = true
         }
-
-        let total = shortcuts.bindings.count
-        let hkLine = NSMenuItem(
-            title: failedHotkeys == 0
-                ? "Hotkeys: OK (\(total) active)"
-                : "Hotkeys: \(failedHotkeys)/\(total) FAILED — disable Magnet, then Retry",
-            action: nil, keyEquivalent: "")
-        hkLine.isEnabled = false
-        menu.addItem(hkLine)
         if failedHotkeys > 0 {
-            menu.addItem(NSMenuItem(
-                title: "Retry hotkey registration",
-                action: #selector(retryHotkeys), keyEquivalent: ""))
+            addInfo(menu, "⚠︎ \(failedHotkeys) shortcut\(failedHotkeys == 1 ? "" : "s") blocked by another app")
+            menu.addItem(NSMenuItem(title: "Retry shortcuts", action: #selector(retryHotkeys), keyEquivalent: ""))
+            hasWarning = true
         }
+        if configState != .ok {
+            addInfo(menu, configState == .migrationDeferred
+                ? "⚠︎ Saved layout waiting for its display"
+                : "⚠︎ Config couldn't be loaded")
+            menu.addItem(NSMenuItem(
+                title: configState == .migrationDeferred ? "Discard & reset…" : "Reset configuration…",
+                action: #selector(resetConfig), keyEquivalent: ""))
+            hasWarning = true
+        }
+        if hasWarning { menu.addItem(.separator()) }
+
+        let editItem = NSMenuItem(title: "Edit Layout…", action: #selector(openEditor), keyEquivalent: "")
+        editItem.isEnabled = configCanWrite // blocked config routes to Reset instead
+        menu.addItem(editItem)
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
 
         menu.addItem(.separator())
-        if configState != .ok {
-            let msg = configState == .migrationDeferred
-                ? "⚠︎ Saved layout waiting for its display — saving is disabled"
-                : "⚠︎ Config couldn't be loaded — saving is disabled"
-            let warn = NSMenuItem(title: msg, action: nil, keyEquivalent: "")
-            warn.isEnabled = false
-            menu.addItem(warn)
-            menu.addItem(NSMenuItem(
-                title: configState == .migrationDeferred ? "Discard saved layout & reset…" : "Reset configuration…",
-                action: #selector(resetConfig), keyEquivalent: ""))
-        }
-        let cfgLine = NSMenuItem(
-            title: "Config: \(FileManager.default.fileExists(atPath: AppDelegate.configURL.path) ? AppDelegate.configURL.path : "defaults (halves)")",
-            action: nil, keyEquivalent: "")
-        cfgLine.isEnabled = false
-        menu.addItem(cfgLine)
-        let editItem = NSMenuItem(
-            title: "Edit Layout…", action: #selector(openEditor), keyEquivalent: "")
-        editItem.isEnabled = configCanWrite // blocked config: routed to Reset instead
-        menu.addItem(editItem)
-        let settingsItem = NSMenuItem(
-            title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(settingsItem)
-        menu.addItem(NSMenuItem(
-            title: "Reload config", action: #selector(reloadConfigFromMenu), keyEquivalent: "r"))
-
-        let dragItem = NSMenuItem(
-            title: "Shift-drag to snap", action: #selector(toggleDragSnap), keyEquivalent: "")
+        let dragItem = NSMenuItem(title: "Shift-drag to snap", action: #selector(toggleDragSnap), keyEquivalent: "")
         dragItem.state = dragSnap.isEnabled ? .on : .off
         menu.addItem(dragItem)
-
-        let loginItem = NSMenuItem(
-            title: "Launch at login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        let loginItem = NSMenuItem(title: "Launch at login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
-        // Quick-action shortcuts at a glance; full list (incl. zones) lives in Settings.
-        for qa in ShortcutKit.quickActions {
-            let combo = shortcuts.binding(for: qa.id).map { ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers) } ?? "—"
-            let item = NSMenuItem(title: "\(combo)  →  \(qa.label)", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-        }
-
-        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Lineup", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    private func addInfo(_ menu: NSMenu, _ title: String) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        menu.addItem(item)
     }
 
     @objc private func toggleLaunchAtLogin() {

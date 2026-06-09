@@ -20,6 +20,9 @@ enum ShortcutKit {
     /// How many positional Zone-N rows to offer (out-of-range ones disable themselves).
     static let zoneRows = 9
 
+    /// Default bindings: ONLY the quick actions (the Magnet replacement). Zone shortcuts
+    /// default to UNASSIGNED so they don't collide with combos users already use (e.g.
+    /// Hyper+1…9). Users opt zones in via the recorder.
     static var defaults: Shortcuts {
         var s = Shortcuts()
         s = s.setting(action: "full", keyCode: kVK_UpArrow, modifiers: hyper)
@@ -28,11 +31,6 @@ enum ShortcutKit {
         s = s.setting(action: "right", keyCode: kVK_RightArrow, modifiers: hyper)
         s = s.setting(action: "leftHalf", keyCode: kVK_ANSI_LeftBracket, modifiers: hyper)
         s = s.setting(action: "rightHalf", keyCode: kVK_ANSI_RightBracket, modifiers: hyper)
-        let digits = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5,
-                      kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9]
-        for (i, kc) in digits.enumerated() {
-            s = s.setting(action: ZoneAction.id(i + 1), keyCode: kc, modifiers: hyper)
-        }
         return s
     }
 
