@@ -46,37 +46,44 @@ ctx.drawLinearGradient(bg,
     start: CGPoint(x: body.minX, y: body.maxY),
     end: CGPoint(x: body.maxX, y: body.minY), options: [])
 
-// Glass sheen across the top (drawn under the screen so dividers stay crisp).
+// Subtle top sheen (flat, not glossy — kept light per the concept board).
 let sheen = CGGradient(colorsSpace: rgb, colors: [
-    NSColor.white.withAlphaComponent(0.30).cgColor,
+    NSColor.white.withAlphaComponent(0.16).cgColor,
     NSColor.white.withAlphaComponent(0.0).cgColor,
 ] as CFArray, locations: [0, 1])!
 ctx.drawLinearGradient(sheen,
     start: CGPoint(x: body.midX, y: body.maxY),
-    end: CGPoint(x: body.midX, y: body.midY + body.height * 0.06), options: [])
+    end: CGPoint(x: body.midX, y: body.midY), options: [])
 
-// The mark: three near-white columns (the lineup motif, same as the menu-bar logo). Solid
-// fills with the center brightest, so the mark survives at 16 px. Unequal widths echo the
-// ultrawide split.
-let padX = body.width * 0.13
-let padY = body.height * 0.245
-let inner = body.insetBy(dx: padX, dy: padY)
-let gap = inner.width * 0.045
-let usable = inner.width - gap * 2
-let widths = [0.30, 0.40, 0.30].map { $0 * usable }
-let alphas: [CGFloat] = [0.82, 1.0, 0.82] // center brightest
-let colRadius = inner.height * 0.10
+// The mark (concept D): a thick near-white rounded SCREEN OUTLINE split into three columns
+// by two dividers; the (wider) center column is softly highlighted. Filled bars + thick
+// strokes (no thin lines) so it survives at 16 px.
+let padX = body.width * 0.135
+let padY = body.height * 0.235
+let screen = body.insetBy(dx: padX, dy: padY)
+let stroke = screen.height * 0.085
+let white = NSColor.white.withAlphaComponent(0.96)
+let screenRadius = screen.height * 0.18
 
+// Center column highlight (drawn first, behind the strokes).
+let d0 = screen.minX + screen.width * 0.30
+let d1 = screen.minX + screen.width * 0.70
 ctx.saveGState()
-var x = inner.minX
-for (w, a) in zip(widths, alphas) {
-    let bar = CGRect(x: x, y: inner.minY, width: w, height: inner.height)
-    ctx.addPath(CGPath(roundedRect: bar, cornerWidth: colRadius, cornerHeight: colRadius, transform: nil))
-    ctx.setFillColor(NSColor.white.withAlphaComponent(a).cgColor)
-    ctx.fillPath()
-    x += w + gap
-}
+ctx.addPath(CGPath(roundedRect: screen, cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil))
+ctx.clip()
+ctx.setFillColor(NSColor.white.withAlphaComponent(0.22).cgColor)
+ctx.fill(CGRect(x: d0, y: screen.minY, width: d1 - d0, height: screen.height))
+// Two dividers (thick) inside the clip.
+ctx.setFillColor(white.cgColor)
+for x in [d0, d1] { ctx.fill(CGRect(x: x - stroke / 2, y: screen.minY, width: stroke, height: screen.height)) }
 ctx.restoreGState()
+
+// Thick rounded screen outline.
+ctx.addPath(CGPath(roundedRect: screen.insetBy(dx: stroke / 2, dy: stroke / 2),
+                   cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil))
+ctx.setStrokeColor(white.cgColor)
+ctx.setLineWidth(stroke)
+ctx.strokePath()
 
 // Subtle inner edge for crispness.
 ctx.addPath(squircle)
