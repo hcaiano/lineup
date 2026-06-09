@@ -513,6 +513,25 @@ do { // setDivider: root vertical keeps pixels (seams); nested keeps fractions
         eq(CGFloat(d[0].value), 0.3, "setDivider nested -> 0.3")
     } else { check(false, "setDivider nested structure") }
     try nestedMoved.validate()
+
+    // 3+ children: dragging one divider PAST its neighbor must not reorder the stored array
+    // (else sorted visual handles desync from stored indices -> handles jump, wrong boundary
+    // resizes). The dragged divider stays strictly below the next one.
+    let threeCol = Node.columns([Boundary(1700, .pixels), Boundary(3400, .pixels)]) // 3 columns
+    let crossed = LayoutEdit.setDivider(threeCol, at: [], index: 0, fraction: 4000.0 / 5120.0, rootPixelsWide: 5120)
+    if case let .split(_, d, _) = crossed {
+        check(d[0].value < d[1].value, "setDivider keeps dividers ordered when dragged past neighbor")
+        check(d[1].value == 3400, "setDivider leaves the untouched neighbor in place")
+    } else { check(false, "setDivider 3-col structure") }
+    try crossed.validate()
+    // Nested fractional 3-way: dragging index 1 below index 0 clamps above it, stays ordered.
+    let threeFrac = Node.split(axis: .horizontal, dividers: [Boundary(0.33, .fraction), Boundary(0.66, .fraction)],
+                               children: [.leaf, .leaf, .leaf])
+    let pinched = LayoutEdit.setDivider(threeFrac, at: [], index: 1, fraction: 0.1, rootPixelsWide: 5120)
+    if case let .split(_, d, _) = pinched {
+        check(d[1].value > d[0].value, "setDivider nested keeps order when dragged below lower neighbor")
+    } else { check(false, "setDivider nested 3-way structure") }
+    try pinched.validate()
 }
 
 // ---- P4: shortcuts model ----
