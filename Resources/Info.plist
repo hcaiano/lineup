@@ -9,7 +9,7 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>gg.gam3s.lineup</string>
+	<string>com.caiano.lineup</string>
 	<key>CFBundleName</key>
 	<string>Lineup</string>
 	<key>CFBundlePackageType</key>
