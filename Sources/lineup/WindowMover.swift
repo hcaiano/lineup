@@ -101,8 +101,8 @@ enum WindowMover {
         return true
     }
 
-    /// Advance the left/right cycle for the focused window. Returns the new cycle state to
-    /// carry forward (or the previous state unchanged if nothing could be moved).
+    /// Advance the left/right/center cycle for the focused window. Returns the new cycle
+    /// state to carry forward (or the previous state unchanged if nothing could be moved).
     static func cycleFocusedWindow(_ side: Side, config: LineupConfig, now: Double, prev: CycleState?) -> CycleState? {
         guard AXIsProcessTrusted() else { return prev }
         guard let window = focusedWindow() else { return prev }
@@ -113,7 +113,12 @@ enum WindowMover {
         let steps = Cycle.steps(side, root: root, frame: screen.frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
         guard !steps.isEmpty else { return prev }
 
-        let actionId = side == .left ? "left" : "right"
+        let actionId: String
+        switch side {
+        case .left: actionId = "left"
+        case .right: actionId = "right"
+        case .center: actionId = "center"
+        }
         let idx = Cycle.nextStep(action: actionId, now: now, screenKey: info.key,
                                  focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
         let target = steps[idx]

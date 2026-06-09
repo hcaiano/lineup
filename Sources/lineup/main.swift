@@ -243,6 +243,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.cycleState = WindowMover.cycleFocusedWindow(.left, config: self.config, now: now, prev: self.cycleState)
                 case "right":
                     self.cycleState = WindowMover.cycleFocusedWindow(.right, config: self.config, now: now, prev: self.cycleState)
+                case "center":
+                    self.cycleState = WindowMover.cycleFocusedWindow(.center, config: self.config, now: now, prev: self.cycleState)
                 default:
                     self.cycleState = nil // any other action breaks an in-progress cycle
                     if let zoneIndex = ZoneAction.zeroBasedIndex(from: action) {
