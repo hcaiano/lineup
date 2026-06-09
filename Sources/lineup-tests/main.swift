@@ -555,6 +555,43 @@ do { // shortcuts are optional + backward compatible in LineupConfig
     check((try JSONDecoder().decode(LineupConfig.self, from: d2)).shortcuts == nil, "config: missing shortcuts decodes to nil")
 }
 
+// ---- P5: left/right cycling ----
+do { // step 0 honors the seam column; later steps are fractions; dedup
+    let g9Layout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    let left = Cycle.steps(.left, root: g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(left[0].maxX, 1133, "cycle left step0 = seam column (1133)")
+    eq(left[1].maxX, 2560, "cycle left step1 = 1/2")
+    eq(left[2].maxX, 5120.0 / 3.0, "cycle left step2 = 1/3")
+    eq(left[3].maxX, 2.0 / 3.0 * 5120, "cycle left step3 = 2/3")
+    let right = Cycle.steps(.right, root: g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(right[0].minX, 2865, "cycle right step0 = seam column (2865)")
+    eq(right[1].minX, 2560, "cycle right step1 = 1/2")
+    // halves layout: step0 == step1 -> deduped
+    let halvesSteps = Cycle.steps(.left, root: .halves, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(halvesSteps.count == 3, "cycle: halves layout dedups step0==1/2 (4 -> 3)")
+    eq(halvesSteps[0].maxX, 2560, "cycle halves step0 = 1/2")
+}
+
+do { // continuation predicate
+    let steps = 4
+    let rect0 = CGRect(x: 0, y: 0, width: 1133, height: 1392)
+    // no prior -> step 0
+    check(Cycle.nextStep(action: "left", now: 100, screenKey: "G9", focusedFrame: rect0, prev: nil, stepCount: steps) == 0, "cycle: no prev -> 0")
+    let prev = CycleState(action: "left", stepIndex: 0, lastTime: 100, screenKey: "G9", lastRect: rect0)
+    // same key, in time, same screen, window still at lastRect -> advance
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 1, "cycle: continuation -> advance")
+    // timed out -> reset
+    check(Cycle.nextStep(action: "left", now: 103, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: timeout -> reset")
+    // different screen -> reset
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "MBP", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: screen change -> reset")
+    // window moved (frame != lastRect) -> reset
+    let moved = CGRect(x: 50, y: 0, width: 1133, height: 1392)
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: moved, prev: prev, stepCount: steps) == 0, "cycle: window moved -> reset")
+    // wraps at end
+    let prevLast = CycleState(action: "left", stepIndex: 3, lastTime: 100, screenKey: "G9", lastRect: rect0)
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: rect0, prev: prevLast, stepCount: steps) == 0, "cycle: wraps to 0")
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")

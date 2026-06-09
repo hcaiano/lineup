@@ -14,16 +14,20 @@ entirely by **Hyperkey + keys**.
 
 Hyperkey = `⌃⌥⇧⌘` (most people map Caps Lock → Hyper via Karabiner Elements or `hidutil`).
 
-| Shortcut       | Action                       |
-|----------------|------------------------------|
-| `Hyper + ↑`    | Full screen (usable area)    |
-| `Hyper + ↓`    | Center column                |
-| `Hyper + ←`    | Left column                  |
-| `Hyper + →`    | Right column                 |
-| `Hyper + [`    | Left half                    |
-| `Hyper + ]`    | Right half                   |
+| Shortcut       | Action                                            |
+|----------------|---------------------------------------------------|
+| `Hyper + ←`    | Left — **cycles**: your column → ½ → ⅓ → ⅔        |
+| `Hyper + →`    | Right — **cycles**: your column → ½ → ⅓ → ⅔       |
+| `Hyper + ↑`    | Full screen (usable area)                         |
+| `Hyper + ↓`    | Center                                            |
+| `Hyper + [`    | Left half                                         |
+| `Hyper + ]`    | Right half                                         |
+| `Hyper + 1…9`  | Snap to Zone 1…9 of the current screen's layout   |
 
-Defaults are equal thirds + halves. Tune them to your seams in the config (below).
+`Hyper + ←`/`→` **cycle**: the first press lands on your configured edge column (on the
+seam); press again within ~1.5 s to step through ½, ⅓, ⅔, then wrap. Pause, switch windows,
+or move the window and it resets to the first step. All shortcuts are rebindable in
+**Settings → Shortcuts** (click Record, press any combo).
 
 ### Shift-drag to snap
 
@@ -67,15 +71,26 @@ Now grant Accessibility one last time. Every future rebuild keeps the same ident
 the permission persists. (Delete the "Lineup Self-Signed" cert from Keychain Access to
 undo.)
 
-## Setting column widths — the easy way
+## Layouts — the Settings window
 
-Click the menu bar icon → **Align dividers on screen…**. A transparent overlay covers the
-G9 with two draggable red lines. Drag each line until it sits on a physical seam — the
-live labels show each column's width in pixels — then press **Save** (or Return). The
-divider positions are written to `~/.config/lineup/zones.json` in pixels, so the column
-edges land exactly on the seams. Press **Cancel** or **Esc** to discard.
+Click the menu bar icon → **Settings…**:
 
-The `Hyper + [` / `Hyper + ]` half-split is set to the screen's physical center.
+- **Layout tab** — pick a display, then build its layout: click a zone and **Split into
+  Columns** / **Split into Rows** (recursively, PowerToys-style), **Merge**, or drag a
+  divider to resize. Zones are numbered live. Each display has its **own** saved layout, so
+  your G9 can be 3 columns while your MacBook is 2 — Lineup switches automatically based on
+  which screen a window is on.
+- **Shortcuts tab** — rebind any action (including Zone 1–9) with a key recorder: click
+  **Record**, press a combo (must include a modifier). Conflicts prompt before reassigning.
+- **General tab** — Accessibility, shift-drag, launch-at-login.
+
+### Aligning columns to physical seams
+
+For pixel-exact seam alignment, use the menu's **Align dividers on screen…**: a transparent
+overlay drops draggable red lines onto the widest display; drag each onto a seam (live pixel
+labels) and **Save**. The divider positions are stored in pixels for that screen, so the
+column edges land exactly on the lines. Nested splits use fractions; only the top-level
+columns carry pixel-exact seams.
 
 ## Configuration file (optional)
 
@@ -164,6 +179,14 @@ Sources/lineup/WindowMover.swift    Accessibility focused-window get/set
 Sources/lineup/Hotkeys.swift        Carbon RegisterEventHotKey
 Sources/lineup/AlignmentOverlay.swift  Drag-the-lines-onto-the-seams overlay
 Sources/lineup/DragSnap.swift        Shift-drag-to-snap (global monitor + highlight)
+Sources/lineup/SettingsWindow.swift  Settings window: Layout / Shortcuts / General
+Sources/lineup/ScreenIdentity.swift  Stable per-display keys (UUID + fallback)
+Sources/lineup/ShortcutKit.swift     Default bindings + Cocoa↔Carbon + combo strings
+Sources/LineupCore/ZoneTree.swift    Recursive split tree + resolver + editor geometry
+Sources/LineupCore/LineupConfig.swift  Per-screen schema-3 config + migration
+Sources/LineupCore/LayoutEdit.swift  Pure split/merge/resize operations
+Sources/LineupCore/Shortcuts.swift   Shortcut bindings + conflicts + zone actions
+Sources/LineupCore/Cycle.swift       Left/right cycle steps + continuation predicate
 Sources/lineup-tests/main.swift     Dependency-free test harness
 Scripts/build-app.sh              Build + assemble + sign Lineup.app
 Scripts/setup-signing.sh          One-time stable self-signed identity

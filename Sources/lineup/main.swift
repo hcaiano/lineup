@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configState: ConfigState = .ok
     private var configCanWrite: Bool { configState == .ok } // block writes unless clean
     private var failedHotkeys = 0
+    private var cycleState: CycleState?   // carries left/right cycle progress between presses
     private var overlay: AlignmentOverlayController?
     private var settings: SettingsWindowController?
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
@@ -213,10 +214,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let action = b.action
             let ok = HotkeyManager.shared.register(keyCode: b.keyCode, modifiers: UInt32(b.modifiers)) { [weak self] in
                 guard let self else { return }
-                if let zoneIndex = ZoneAction.zeroBasedIndex(from: action) {
-                    WindowMover.snapFocusedWindow(toZoneIndex: zoneIndex, config: self.config)
-                } else {
-                    WindowMover.snapFocusedWindow(toQuickAction: action, config: self.config)
+                let now = Date().timeIntervalSinceReferenceDate
+                switch action {
+                case "left":
+                    self.cycleState = WindowMover.cycleFocusedWindow(.left, config: self.config, now: now, prev: self.cycleState)
+                case "right":
+                    self.cycleState = WindowMover.cycleFocusedWindow(.right, config: self.config, now: now, prev: self.cycleState)
+                default:
+                    self.cycleState = nil // any other action breaks an in-progress cycle
+                    if let zoneIndex = ZoneAction.zeroBasedIndex(from: action) {
+                        WindowMover.snapFocusedWindow(toZoneIndex: zoneIndex, config: self.config)
+                    } else {
+                        WindowMover.snapFocusedWindow(toQuickAction: action, config: self.config)
+                    }
                 }
             }
             if !ok { failed += 1 }

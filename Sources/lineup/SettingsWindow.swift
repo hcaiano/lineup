@@ -333,6 +333,7 @@ private final class ShortcutsView: NSView {
     private let ctx: SettingsContext
     private var rows: [(action: String, field: NSTextField, record: NSButton, clear: NSButton)] = []
     private let banner = NSTextField(labelWithString: "")
+    private let header = NSTextField(labelWithString: "Click Record, then press a key combo (must include a modifier). Esc cancels, Delete clears.")
     private var recordingAction: String?
     private var monitor: Any?
 
@@ -364,7 +365,6 @@ private final class ShortcutsView: NSView {
     @objc private func windowLeft() { stopRecording() }
 
     private func build() {
-        let header = NSTextField(labelWithString: "Click Record, then press a key combo (must include a modifier). Esc cancels, Delete clears.")
         header.frame = NSRect(x: 16, y: 460, width: 608, height: 20)
         header.font = .systemFont(ofSize: 11); header.textColor = .secondaryLabelColor
         header.autoresizingMask = [.width]
@@ -427,8 +427,10 @@ private final class ShortcutsView: NSView {
         }
         if writable {
             banner.isHidden = true
+            header.isHidden = false
         } else {
             banner.isHidden = false
+            header.isHidden = true // banner shares the frame; don't overlap
             banner.stringValue = ctx.blockedMessage() ?? "Editing is disabled."
         }
     }

@@ -101,6 +101,26 @@ enum WindowMover {
         return true
     }
 
+    /// Advance the left/right cycle for the focused window. Returns the new cycle state to
+    /// carry forward (or the previous state unchanged if nothing could be moved).
+    static func cycleFocusedWindow(_ side: Side, config: LineupConfig, now: Double, prev: CycleState?) -> CycleState? {
+        guard AXIsProcessTrusted() else { return prev }
+        guard let window = focusedWindow() else { return prev }
+        guard let currentCocoa = currentCocoaFrame(of: window) else { return prev }
+        guard let screen = screen(for: currentCocoa) else { return prev }
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        let steps = Cycle.steps(side, root: root, frame: screen.frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
+        guard !steps.isEmpty else { return prev }
+
+        let actionId = side == .left ? "left" : "right"
+        let idx = Cycle.nextStep(action: actionId, now: now, screenKey: info.key,
+                                 focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
+        let target = steps[idx]
+        setFrame(target, of: window)
+        return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
+    }
+
     /// Snap a specific window element to a Cocoa-space rect (used by shift-drag snapping,
     /// where the dragged window isn't necessarily the focused one yet).
     static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
