@@ -47,6 +47,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         generalItem.view = generalView
         tabs.addTabViewItem(shortcutsItem)
         tabs.addTabViewItem(generalItem)
+        let aboutItem = NSTabViewItem(identifier: "about")
+        aboutItem.label = "About"
+        aboutItem.view = AboutTabView()
+        tabs.addTabViewItem(aboutItem)
         window.contentView?.addSubview(tabs)
     }
 
@@ -279,6 +283,36 @@ private final class ShortcutsView: NSView {
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
     }
+}
+
+// MARK: - About tab
+
+/// Hosts the shared About content (icon, version, links, license) plus the update check —
+/// the same panel as the menu's About window, embedded per the Settings convention.
+private final class AboutTabView: NSView {
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 640, height: 492))
+        autoresizingMask = [.width, .height]
+        // The About content has a fixed internal layout designed at 420×430 — embed it at its
+        // natural size, pinned to the top, with the update button in the strip below it.
+        let aboutSize = NSSize(width: 420, height: 430)
+        let about = AboutWindowController.makeEmbeddedContent(size: aboutSize)
+        about.frame = NSRect(x: (640 - aboutSize.width) / 2, y: 492 - aboutSize.height,
+                             width: aboutSize.width, height: aboutSize.height)
+        about.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin]
+        addSubview(about)
+
+        let update = NSButton(title: "Check for Updates…", target: self, action: #selector(checkUpdates))
+        update.bezelStyle = .rounded
+        update.sizeToFit()
+        update.frame = NSRect(x: (640 - update.frame.width - 24) / 2, y: 12,
+                              width: update.frame.width + 24, height: 30)
+        update.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
+        addSubview(update)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func checkUpdates() { UpdateChecker.checkInteractively() }
 }
 
 // MARK: - General tab
