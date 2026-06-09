@@ -37,10 +37,10 @@ ctx.saveGState()
 ctx.addPath(squircle)
 ctx.clip()
 
-// Diagonal indigo → violet gradient.
+// Diagonal blue gradient (brand blue).
 let bg = CGGradient(colorsSpace: rgb, colors: [
-    NSColor(srgbRed: 0.33, green: 0.41, blue: 1.00, alpha: 1).cgColor, // royal indigo
-    NSColor(srgbRed: 0.62, green: 0.31, blue: 0.91, alpha: 1).cgColor, // violet
+    NSColor(srgbRed: 0.25, green: 0.53, blue: 0.99, alpha: 1).cgColor, // bright blue  #408AFC
+    NSColor(srgbRed: 0.09, green: 0.29, blue: 0.84, alpha: 1).cgColor, // deep blue    #174AD6
 ] as CFArray, locations: [0, 1])!
 ctx.drawLinearGradient(bg,
     start: CGPoint(x: body.minX, y: body.maxY),

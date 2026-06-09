@@ -14,8 +14,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configCanWrite: Bool { configState == .ok } // block writes unless clean
     private var failedHotkeys = 0
     private var cycleState: CycleState?   // carries left/right cycle progress between presses
-    private var overlay: AlignmentOverlayController?
+    private var editorOverlay: LayoutEditorOverlayController?
     private var settings: SettingsWindowController?
+
+    private var configBlockedMessage: String? {
+        switch configState {
+        case .migrationDeferred: return "Your saved layout is waiting for its display. Editing is disabled until it reconnects or you reset from the menu."
+        case .loadError: return "The config file couldn't be loaded. Editing is disabled until you reset it from the menu."
+        case .ok: return nil
+        }
+    }
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
         self?.config ?? LineupConfig()
     })
@@ -123,15 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings != nil { settings?.show(); return }
         let ctx = SettingsContext(
             config: { [weak self] in self?.config ?? LineupConfig() },
-            applyLayout: { [weak self] node, info in self?.applyLayout(node, for: info) },
             canWrite: { [weak self] in self?.configCanWrite ?? false },
-            blockedMessage: { [weak self] in
-                switch self?.configState {
-                case .migrationDeferred: return "Your saved layout is waiting for its display. Editing is disabled until it reconnects or you reset from the menu."
-                case .loadError: return "The config file couldn't be loaded. Editing is disabled until you reset it from the menu."
-                default: return nil
-                }
-            },
+            blockedMessage: { [weak self] in self?.configBlockedMessage },
             shortcuts: { [weak self] in self?.shortcuts ?? ShortcutKit.defaults },
             setShortcuts: { [weak self] s in self?.applyShortcuts(s) },
             isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
@@ -176,34 +177,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Alignment overlay
+    // MARK: - Layout editor overlay
 
-    @objc private func openAlignmentOverlay() {
-        // Never overwrite a preserved corrupt/future config via a save.
-        guard configCanWrite else { return }
-        // Edit the seams of the widest display (the G9). Per-screen: saves to that screen.
-        guard let screen = NSScreen.screens.max(by: {
-                ScreenIdentity.info(for: $0).pixelsWide < ScreenIdentity.info(for: $1).pixelsWide
-              }) ?? NSScreen.main else { return }
-        let info = ScreenIdentity.info(for: screen)
-        let frame = screen.frame
-        // Seed the lines from the screen's current root columns (interior divider x's).
-        let root = config.layout(forKey: info.key)
-        let cols = Layout.rootColumns(root, frame: frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
-        let initial: [CGFloat] = cols?.dropLast().map { $0.maxX - frame.minX } ?? [frame.width / 2]
-
-        overlay = AlignmentOverlayController(
-            screen: screen,
-            pixelsWide: info.pixelsWide,
-            initialDividerPoints: initial,
-            onSave: { [weak self] dividerPixels, _ in
-                guard let self else { return }
-                let newRoot = Node.columns(dividerPixels.map { Boundary($0, .pixels) })
-                // Apply via the shared path: write (validates) BEFORE mutating in-memory config.
-                self.applyLayout(newRoot, for: info)
-            },
-            onClose: { [weak self] in self?.overlay = nil })
-        overlay?.show()
+    @objc private func openEditor() {
+        if editorOverlay != nil { return }
+        let controller = LayoutEditorOverlayController(
+            config: config,
+            canWrite: configCanWrite,
+            blockedMessage: configBlockedMessage,
+            applyLayout: { [weak self] node, info in self?.applyLayout(node, for: info) },
+            onClose: { [weak self] in self?.editorOverlay = nil })
+        editorOverlay = controller
+        controller.show()
     }
 
     // MARK: - Hotkeys
@@ -293,13 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action: nil, keyEquivalent: "")
         cfgLine.isEnabled = false
         menu.addItem(cfgLine)
+        let editItem = NSMenuItem(
+            title: "Edit Layout…", action: #selector(openEditor), keyEquivalent: "")
+        editItem.isEnabled = configCanWrite // blocked config: routed to Reset instead
+        menu.addItem(editItem)
         let settingsItem = NSMenuItem(
             title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(settingsItem)
-        let alignItem = NSMenuItem(
-            title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: "")
-        alignItem.isEnabled = configCanWrite // never overwrite a preserved corrupt/future config
-        menu.addItem(alignItem)
         menu.addItem(NSMenuItem(
             title: "Reload config", action: #selector(reloadConfigFromMenu), keyEquivalent: "r"))
 

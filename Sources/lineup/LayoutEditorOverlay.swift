@@ -1,0 +1,344 @@
+import AppKit
+import LineupCore
+
+/// Brand blue (#2F6BFF) used across overlays/highlights/selection. Fixed, not the system
+/// accent, so the product reads as one brand. (Unified into a Theme in a later phase.)
+enum Brand {
+    static let blue = NSColor(srgbRed: 0.184, green: 0.420, blue: 1.0, alpha: 1)
+}
+
+/// Full-screen, WYSIWYG layout editor — the ONE place to shape a per-screen layout. Shows
+/// the display's actual zones (the whole recursive tree, so nested splits render correctly),
+/// reveals visual split/merge controls on hover, drags dividers, and commits a DRAFT on Done
+/// (Esc/Cancel discards). Replaces the old root-only "align dividers" overlay.
+final class LayoutEditorOverlayController {
+    private var window: EditorWindow?
+    private var canvas: EditorCanvas?
+    private var previousApp: NSRunningApplication?
+
+    private let screens: [(screen: NSScreen, info: ScreenInfo)]
+    private var currentIndex: Int
+    private var drafts: [String: Node] = [:]          // per-screen edited layouts (draft)
+    private let baseConfig: LineupConfig
+    private let canWrite: Bool
+    private let blockedMessage: String?
+    private let applyLayout: (Node, ScreenInfo) -> Void
+    private let onClose: () -> Void
+
+    private let picker = NSPopUpButton(frame: .zero, pullsDown: false)
+
+    init(config: LineupConfig,
+         canWrite: Bool,
+         blockedMessage: String?,
+         applyLayout: @escaping (Node, ScreenInfo) -> Void,
+         onClose: @escaping () -> Void) {
+        self.baseConfig = config
+        self.canWrite = canWrite
+        self.blockedMessage = blockedMessage
+        self.applyLayout = applyLayout
+        self.onClose = onClose
+        self.screens = NSScreen.screens.map { ($0, ScreenIdentity.info(for: $0)) }
+        // Open on the display under the pointer; widest as fallback.
+        let mouse = NSEvent.mouseLocation
+        let underPointer = screens.firstIndex { NSMouseInRect(mouse, $0.screen.frame, false) }
+        let widest = screens.enumerated().max { $0.element.info.pixelsWide < $1.element.info.pixelsWide }?.offset
+        self.currentIndex = underPointer ?? widest ?? 0
+    }
+
+    func show() {
+        guard !screens.isEmpty else { onClose(); return }
+        previousApp = NSWorkspace.shared.frontmostApplication
+        openWindow(for: currentIndex)
+    }
+
+    private func draft(for info: ScreenInfo) -> Node {
+        drafts[info.key] ?? baseConfig.layout(forKey: info.key)
+    }
+
+    private func openWindow(for index: Int) {
+        window?.orderOut(nil)
+        currentIndex = index
+        let (screen, info) = screens[index]
+
+        let win = EditorWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
+        win.isOpaque = false
+        win.backgroundColor = NSColor.black.withAlphaComponent(0.001) // catch clicks, see-through
+        win.level = .screenSaver
+        win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        win.ignoresMouseEvents = false
+
+        let container = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let cv = EditorCanvas(frame: container.bounds, screenFrame: screen.frame, visibleFrame: screen.visibleFrame, info: info)
+        cv.autoresizingMask = [.width, .height]
+        cv.editable = canWrite
+        cv.root = draft(for: info)
+        cv.onChange = { [weak self] node in self?.drafts[info.key] = node }
+        container.addSubview(cv)
+        self.canvas = cv
+
+        addChrome(to: container, screenSize: screen.frame.size, info: info)
+        win.contentView = container
+        window = win
+
+        NSApp.activate(ignoringOtherApps: true)
+        win.makeKeyAndOrderFront(nil)
+        win.makeFirstResponder(cv)
+    }
+
+    private func addChrome(to container: NSView, screenSize: CGSize, info: ScreenInfo) {
+        // Top-left: "Editing: <Display>" + display picker, on a dark panel.
+        let topPanel = panel(NSRect(x: 24, y: screenSize.height - 76, width: 460, height: 52))
+        container.addSubview(topPanel)
+        let title = NSTextField(labelWithString: "Editing layout")
+        title.frame = NSRect(x: 16, y: 16, width: 110, height: 20)
+        title.textColor = .white; title.font = .systemFont(ofSize: 13, weight: .semibold)
+        topPanel.addSubview(title)
+        picker.removeAllItems()
+        for (i, s) in screens.enumerated() { picker.addItem(withTitle: s.info.label); picker.lastItem?.tag = i }
+        picker.selectItem(at: currentIndex)
+        picker.target = self; picker.action = #selector(pickerChanged)
+        picker.frame = NSRect(x: 132, y: 12, width: 300, height: 26)
+        topPanel.addSubview(picker)
+
+        // Top-center hint or blocked banner.
+        let hint = NSTextField(labelWithString:
+            canWrite ? "Hover a zone, then split it ▮▮ / ▬▬ or merge. Drag a divider to resize."
+                     : (blockedMessage ?? "Editing is disabled."))
+        hint.alignment = .center
+        hint.textColor = canWrite ? .white : .systemOrange
+        hint.font = .systemFont(ofSize: 13, weight: canWrite ? .regular : .semibold)
+        let hp = panel(NSRect(x: screenSize.width / 2 - 320, y: screenSize.height - 70, width: 640, height: 40))
+        hint.frame = NSRect(x: 12, y: 9, width: 616, height: 22)
+        hp.addSubview(hint); container.addSubview(hp)
+
+        // Bottom-right: Done + Cancel (Done disabled when blocked).
+        let bottom = panel(NSRect(x: screenSize.width - 320, y: 28, width: 296, height: 56))
+        container.addSubview(bottom)
+        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
+        cancel.keyEquivalent = "\u{1b}"; cancel.bezelStyle = .rounded
+        cancel.frame = NSRect(x: 16, y: 14, width: 120, height: 28)
+        bottom.addSubview(cancel)
+        let done = NSButton(title: canWrite ? "Done" : "Reset…", target: self,
+                            action: canWrite ? #selector(doneTapped) : #selector(resetTapped))
+        done.keyEquivalent = "\r"; done.bezelStyle = .rounded
+        done.frame = NSRect(x: 160, y: 14, width: 120, height: 28)
+        bottom.addSubview(done)
+    }
+
+    private func panel(_ frame: NSRect) -> NSView {
+        let v = NSView(frame: frame); v.wantsLayer = true
+        v.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        v.layer?.cornerRadius = 12
+        return v
+    }
+
+    @objc private func pickerChanged() {
+        let idx = picker.selectedItem?.tag ?? currentIndex
+        guard idx != currentIndex, screens.indices.contains(idx) else { return }
+        openWindow(for: idx) // drafts persist per-screen in `drafts`
+    }
+
+    @objc private func doneTapped() {
+        // Persist every screen whose draft differs from the stored layout.
+        for (_, info) in screens {
+            guard let edited = drafts[info.key] else { continue }
+            if edited != baseConfig.layout(forKey: info.key) { applyLayout(edited, info) }
+        }
+        close()
+    }
+
+    @objc private func resetTapped() { close() } // blocked state: Reset lives on the menu
+
+    @objc private func cancelTapped() { close() }
+
+    private func close() {
+        window?.orderOut(nil); window = nil; canvas = nil
+        if let prev = previousApp, prev != NSRunningApplication.current {
+            if #available(macOS 14.0, *) { prev.activate() } else { prev.activate(options: []) }
+        }
+        previousApp = nil
+        onClose()
+    }
+}
+
+final class EditorWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+// MARK: - Canvas
+
+private final class EditorCanvas: NSView {
+    var root: Node = .halves { didSet { rebuildIfNeeded() } }
+    var onChange: ((Node) -> Void)?
+    var editable = true
+
+    private let screenFrame: CGRect
+    private let visibleFrame: CGRect
+    private let info: ScreenInfo
+
+    private var activePath: [Int]?
+    private var pinned = false
+    private var dragging: Layout.DividerHandle?
+    private var tracking: NSTrackingArea?
+
+    private let splitVBtn = EditorCanvas.iconButton("rectangle.split.2x1", "Split side by side")
+    private let splitHBtn = EditorCanvas.iconButton("rectangle.split.1x2", "Split stacked")
+    private let mergeBtn = EditorCanvas.iconButton("arrow.down.right.and.arrow.up.left", "Merge")
+
+    init(frame: NSRect, screenFrame: CGRect, visibleFrame: CGRect, info: ScreenInfo) {
+        self.screenFrame = screenFrame
+        self.visibleFrame = visibleFrame
+        self.info = info
+        super.init(frame: frame)
+        for b in [splitVBtn, splitHBtn, mergeBtn] { b.isHidden = true; addSubview(b) }
+        splitVBtn.target = self; splitVBtn.action = #selector(splitV)
+        splitHBtn.target = self; splitHBtn.action = #selector(splitH)
+        mergeBtn.target = self; mergeBtn.action = #selector(mergeZone)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { false }
+    override var acceptsFirstResponder: Bool { true }
+
+    private static func iconButton(_ symbol: String, _ label: String) -> NSButton {
+        let b = NSButton()
+        b.bezelStyle = .regularSquare
+        b.isBordered = true
+        b.imagePosition = .imageOnly
+        b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        b.symbolConfiguration = .init(pointSize: 22, weight: .semibold)
+        b.contentTintColor = Brand.blue
+        b.toolTip = label
+        b.wantsLayer = true
+        b.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.92).cgColor
+        b.layer?.cornerRadius = 10
+        return b
+    }
+
+    // MARK: geometry (overlay is 1:1 over the screen; subtract the screen origin)
+    private func viewRect(_ globalCocoa: CGRect) -> CGRect {
+        CGRect(x: globalCocoa.minX - screenFrame.minX, y: globalCocoa.minY - screenFrame.minY,
+               width: globalCocoa.width, height: globalCocoa.height)
+    }
+    private var container: CGRect { Layout.rootContainer(frame: screenFrame, visibleFrame: visibleFrame) }
+    private func leaves() -> [(path: [Int], rect: CGRect)] {
+        Layout.leaves(root, container: container, pixelsWide: info.pixelsWide)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited], owner: self)
+        addTrackingArea(t); tracking = t
+    }
+
+    private func rebuildIfNeeded() { positionControls(); needsDisplay = true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.withAlphaComponent(0.18).setFill(); bounds.fill()
+        let lv = leaves()
+        for (i, leaf) in lv.enumerated() {
+            let r = viewRect(leaf.rect).insetBy(dx: 3, dy: 3)
+            let isActive = leaf.path == activePath
+            (isActive ? Brand.blue.withAlphaComponent(0.28) : Brand.blue.withAlphaComponent(0.12)).setFill()
+            let p = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10); p.fill()
+            (isActive ? Brand.blue : Brand.blue.withAlphaComponent(0.5)).setStroke()
+            p.lineWidth = isActive ? 3 : 1.5; p.stroke()
+            drawNumber(i + 1, in: r)
+        }
+        if editable {
+            for h in Layout.dividerHandles(root, container: container, pixelsWide: info.pixelsWide) {
+                let r = viewRect(h.line)
+                NSColor.white.withAlphaComponent(0.85).setFill()
+                NSBezierPath(roundedRect: r.insetBy(dx: r.width > r.height ? 0 : 2, dy: r.width > r.height ? 2 : 0), xRadius: 2, yRadius: 2).fill()
+            }
+        }
+    }
+
+    private func drawNumber(_ n: Int, in r: CGRect) {
+        let s = NSAttributedString(string: "\(n)", attributes: [
+            .font: NSFont.systemFont(ofSize: 22, weight: .bold),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.85)])
+        let sz = s.size()
+        s.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.maxY - sz.height - 12))
+    }
+
+    // MARK: controls
+
+    private func positionControls() {
+        guard editable, let path = activePath, let rect = leaves().first(where: { $0.path == path })?.rect else {
+            for b in [splitVBtn, splitHBtn, mergeBtn] { b.isHidden = true }
+            return
+        }
+        let vr = viewRect(rect)
+        let size: CGFloat = 52, gap: CGFloat = 14
+        let cx = vr.midX, cy = vr.midY
+        splitVBtn.frame = NSRect(x: cx - size - gap / 2, y: cy - size / 2, width: size, height: size)
+        splitHBtn.frame = NSRect(x: cx + gap / 2, y: cy - size / 2, width: size, height: size)
+        let mergeEnabled = !path.isEmpty
+        mergeBtn.isHidden = !mergeEnabled
+        mergeBtn.frame = NSRect(x: cx - 22, y: cy - size / 2 - 40, width: 44, height: 30)
+        mergeBtn.symbolConfiguration = .init(pointSize: 14, weight: .regular)
+        for b in [splitVBtn, splitHBtn] { b.isHidden = false }
+    }
+
+    private func setActive(_ path: [Int]?, pinned: Bool) {
+        activePath = path; self.pinned = pinned
+        positionControls(); needsDisplay = true
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard editable, !pinned else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        setActive(leaves().first(where: { $0.rect.contains(globalPoint(p)) })?.path, pinned: false)
+    }
+    override func mouseExited(with event: NSEvent) {
+        guard !pinned else { return }
+        setActive(nil, pinned: false)
+    }
+
+    private func globalPoint(_ viewPoint: CGPoint) -> CGPoint {
+        CGPoint(x: viewPoint.x + screenFrame.minX, y: viewPoint.y + screenFrame.minY)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard editable else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        // Divider drag first.
+        for h in Layout.dividerHandles(root, container: container, pixelsWide: info.pixelsWide) {
+            if viewRect(h.line).insetBy(dx: -4, dy: -4).contains(p) { dragging = h; return }
+        }
+        // Else pin the clicked zone (stable target for trackpad users).
+        if let path = leaves().first(where: { $0.rect.contains(globalPoint(p)) })?.path {
+            setActive(path, pinned: true)
+        } else {
+            setActive(nil, pinned: false)
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let h = dragging else { return }
+        let gp = globalPoint(convert(event.locationInWindow, from: nil))
+        let frac: Double = h.axis == .vertical
+            ? Double((gp.x - h.container.minX) / max(h.container.width, 1))
+            : Double((h.container.maxY - gp.y) / max(h.container.height, 1))
+        let updated = LayoutEdit.setDivider(root, at: h.path, index: h.index, fraction: frac, rootPixelsWide: info.pixelsWide)
+        if updated != root { root = updated; onChange?(root) }
+    }
+
+    override func mouseUp(with event: NSEvent) { dragging = nil }
+
+    @objc private func splitV() { edit { LayoutEdit.split($0, at: activePath ?? [], axis: .vertical) } }
+    @objc private func splitH() { edit { LayoutEdit.split($0, at: activePath ?? [], axis: .horizontal) } }
+    @objc private func mergeZone() { edit { LayoutEdit.merge($0, at: activePath ?? []) } }
+
+    private func edit(_ op: (Node) -> Node) {
+        guard editable, activePath != nil else { return }
+        let updated = op(root)
+        guard updated != root else { return }
+        root = updated
+        onChange?(root)
+        setActive(nil, pinned: false) // structure changed; re-hover to act again
+    }
+}
