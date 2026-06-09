@@ -17,7 +17,8 @@ struct SettingsContext {
     var requestAccessibility: () -> Void
 }
 
-/// The Settings window: a Layout tab (per-screen visual editor) and a General tab.
+/// The Settings window: a Shortcuts tab and a General tab. (Layout editing lives in the
+/// on-screen overlay, opened from the menu's Edit Layout… — not here.)
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
     private let ctx: SettingsContext
