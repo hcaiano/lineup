@@ -8,8 +8,10 @@ import LineupCore
 /// and snaps the focused window into the matching zone.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private enum ConfigState { case ok, loadError, migrationDeferred }
     private var config = LineupConfig()
-    private var configCanWrite = true // false after a load error -> block writes until reset
+    private var configState: ConfigState = .ok
+    private var configCanWrite: Bool { configState == .ok } // block writes unless clean
     private var failedHotkeys = 0
     private var overlay: AlignmentOverlayController?
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
@@ -52,12 +54,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let url = AppDelegate.configURL
         let now = ISO8601DateFormatter().string(from: Date())
         do {
-            let (cfg, migrated) = try LineupConfig.loadOrMigrate(
+            let outcome = try LineupConfig.loadOrMigrate(
                 from: url, now: now,
                 backup: { data in
                     // Must succeed before we risk replacing the only legacy copy.
-                    let stamp = Int(Date().timeIntervalSince1970)
-                    let backupURL = url.deletingPathExtension().appendingPathExtension("backup-\(stamp).json")
+                    let backupURL = url.deletingPathExtension().appendingPathExtension("backup-\(Self.timestamp()).json")
                     try data.write(to: backupURL, options: .atomic)
                 },
                 resolveLegacyTarget: { old in
@@ -70,31 +71,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     return screens.max(by: { $0.pixelsWide < $1.pixelsWide })
                 })
-            config = cfg
-            configCanWrite = true
-            if migrated {
+            switch outcome {
+            case .loaded(let cfg), .fresh(let cfg):
+                config = cfg
+                configState = .ok
+            case .migrated(let cfg):
+                config = cfg
+                configState = .ok
                 do { try config.write(to: url) }
                 catch { FileHandle.standardError.write(Data("migration write failed (legacy file + backup preserved): \(error)\n".utf8)) }
+            case .deferred:
+                // The saved layout belongs to a display that isn't connected. Run defaults
+                // but BLOCK writes so a save can't overwrite the preserved legacy file. It
+                // migrates automatically the next time that display is present.
+                FileHandle.standardError.write(Data("legacy config deferred: original display not connected\n".utf8))
+                config = LineupConfig()
+                configState = .migrationDeferred
             }
         } catch {
             // Corrupt/unsupported file: surface it, do NOT overwrite, and BLOCK writes until
             // an explicit reset — so a later save can't clobber the preserved file.
             FileHandle.standardError.write(Data("config could not be loaded (left untouched): \(error)\n".utf8))
             config = LineupConfig()
-            configCanWrite = false
+            configState = .loadError
         }
     }
 
+    /// Millisecond-precision stamp so rapid backup/rejected copies don't collide.
+    private static func timestamp() -> Int { Int(Date().timeIntervalSince1970 * 1000) }
+
     @objc private func resetConfig() {
         let url = AppDelegate.configURL
-        // Preserve the rejected file before replacing it.
-        if let data = try? Data(contentsOf: url) {
-            let stamp = Int(Date().timeIntervalSince1970)
-            try? data.write(to: url.deletingPathExtension().appendingPathExtension("rejected-\(stamp).json"), options: .atomic)
+        do {
+            // Preserve the rejected/deferred file FIRST; if that fails, do not reset.
+            if let data = try? Data(contentsOf: url) {
+                let rejected = url.deletingPathExtension().appendingPathExtension("rejected-\(Self.timestamp()).json")
+                try data.write(to: rejected, options: .atomic) // throws -> abort reset (no clobber)
+            }
+            config = LineupConfig()
+            try config.write(to: url)
+            configState = .ok
+        } catch {
+            FileHandle.standardError.write(Data("reset aborted (preservation or write failed; config left untouched): \(error)\n".utf8))
+            // leave configState as-is so writes stay blocked
         }
-        config = LineupConfig()
-        do { try config.write(to: url); configCanWrite = true }
-        catch { FileHandle.standardError.write(Data("reset write failed: \(error)\n".utf8)) }
         buildStatusItem()
     }
 
@@ -195,12 +215,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-        if !configCanWrite {
-            let warn = NSMenuItem(title: "⚠︎ Config couldn't be loaded — saving is disabled", action: nil, keyEquivalent: "")
+        if configState != .ok {
+            let msg = configState == .migrationDeferred
+                ? "⚠︎ Saved layout waiting for its display — saving is disabled"
+                : "⚠︎ Config couldn't be loaded — saving is disabled"
+            let warn = NSMenuItem(title: msg, action: nil, keyEquivalent: "")
             warn.isEnabled = false
             menu.addItem(warn)
             menu.addItem(NSMenuItem(
-                title: "Reset configuration…", action: #selector(resetConfig), keyEquivalent: ""))
+                title: configState == .migrationDeferred ? "Discard saved layout & reset…" : "Reset configuration…",
+                action: #selector(resetConfig), keyEquivalent: ""))
         }
         let cfgLine = NSMenuItem(
             title: "Config: \(FileManager.default.fileExists(atPath: AppDelegate.configURL.path) ? AppDelegate.configURL.path : "defaults (halves)")",

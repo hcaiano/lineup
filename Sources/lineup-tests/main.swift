@@ -20,6 +20,12 @@ func eq(_ a: CGFloat, _ b: CGFloat, _ name: String, accuracy: CGFloat = 0.001) {
     check(abs(a - b) <= accuracy, "\(name) (got \(a), want \(b))")
 }
 
+func outcomeConfig(_ o: LoadOutcome) -> LineupConfig? {
+    switch o { case .loaded(let c), .migrated(let c), .fresh(let c): return c; case .deferred: return nil }
+}
+func isMigrated(_ o: LoadOutcome) -> Bool { if case .migrated = o { return true }; return false }
+func isFresh(_ o: LoadOutcome) -> Bool { if case .fresh = o { return true }; return false }
+
 // ---- Coordinate flip ----
 let primaryMaxY: CGFloat = 1440
 
@@ -262,9 +268,10 @@ do { // migration from legacy ColumnConfig -> schema 3 onto current screen
     try? FileManager.default.removeItem(at: tmp)
     try legacy.write(to: tmp)
     var backedUp = false
-    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in backedUp = true }, resolveLegacyTarget: { _ in g9 })
-    check(migrated, "migration: legacy detected")
+    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in backedUp = true }, resolveLegacyTarget: { _ in g9 })
+    check(isMigrated(outcome), "migration: legacy detected")
     check(backedUp, "migration: backup taken before write")
+    let cfg = outcomeConfig(outcome)!
     check(cfg.schemaVersion == 3, "migration: schema bumped to 3")
     let z = Layout.zones(cfg.layout(forKey: g9.key), frame: frame, visibleFrame: visible, pixelsWide: px)
     eq(z[0].maxX, 1133, "migration: seams preserved (1133)")
@@ -276,14 +283,15 @@ do { // schema-3 file loads without migration; absent file = fresh config
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v3-\(checks).json")
     try? FileManager.default.removeItem(at: tmp)
     try LineupConfig().setting(layout: .thirds, for: g9, now: nil).write(to: tmp)
-    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
-    check(!migrated, "schema-3 file: no migration")
-    check(cfg.screens["uuid-G9"] != nil, "schema-3 file: G9 layout present")
+    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    check(!isMigrated(outcome), "schema-3 file: no migration")
+    check(outcomeConfig(outcome)!.screens["uuid-G9"] != nil, "schema-3 file: G9 layout present")
     try? FileManager.default.removeItem(at: tmp)
     let absent = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-absent-\(checks).json")
     try? FileManager.default.removeItem(at: absent)
-    let (fresh, _) = try LineupConfig.loadOrMigrate(from: absent, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
-    check(fresh.screens.isEmpty, "absent file: fresh empty config")
+    let absentOutcome = try LineupConfig.loadOrMigrate(from: absent, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    check(isFresh(absentOutcome), "absent file: outcome is .fresh (writable)")
+    check(outcomeConfig(absentOutcome)!.screens.isEmpty, "absent file: fresh empty config")
 }
 
 do { // fallback screen key composition (never resolution-only)
@@ -384,13 +392,15 @@ do { // defer migration when the target display isn't connected (resolveLegacyTa
     try? FileManager.default.removeItem(at: tmp)
     try legacy.write(to: tmp)
     var backedUp = false
-    let (cfg, migrated) = try LineupConfig.loadOrMigrate(
+    let outcome = try LineupConfig.loadOrMigrate(
         from: tmp, now: "T",
         backup: { _ in backedUp = true },
         resolveLegacyTarget: { _ in nil }) // G9 disconnected -> defer
-    check(!migrated, "defer: not migrated when target display absent")
+    // DISTINCT from absent-fresh: deferral is its own outcome so the runtime can block writes.
+    check(outcome == .deferred, "defer: outcome is .deferred (distinct from .fresh)")
+    check(!isFresh(outcome), "defer: not .fresh (so writes get blocked, unlike a real fresh config)")
+    check(outcomeConfig(outcome) == nil, "defer: carries no config (runtime runs defaults)")
     check(!backedUp, "defer: no backup taken (legacy file untouched)")
-    check(cfg.screens.isEmpty, "defer: in-memory config is fresh (runs defaults)")
     // legacy file is still intact on disk
     let still = try JSONDecoder().decode(ColumnConfig.self, from: try Data(contentsOf: tmp))
     eq(CGFloat(still.dividers[0].value), 1133, "defer: legacy file preserved (1133)")

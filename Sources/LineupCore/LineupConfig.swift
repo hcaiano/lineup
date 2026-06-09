@@ -42,6 +42,16 @@ public enum LineupConfigError: Error, Equatable {
     case unsupportedSchema(Int)
 }
 
+/// The result of `loadOrMigrate`, made explicit so the runtime can distinguish a genuinely
+/// fresh config (writable) from a deferred legacy migration (writes must be blocked so a
+/// save can't overwrite the still-present legacy file).
+public enum LoadOutcome: Equatable {
+    case loaded(LineupConfig)    // schema-3 read and validated
+    case migrated(LineupConfig)  // legacy upgraded; caller should persist
+    case fresh(LineupConfig)     // no file present; fresh defaults (writable)
+    case deferred                // legacy present but its display is absent; DON'T write
+}
+
 /// One screen's saved layout plus identifying metadata (for the Settings UI + debugging).
 public struct ScreenLayout: Codable, Equatable {
     public var label: String
@@ -125,9 +135,9 @@ public struct LineupConfig: Codable, Equatable {
         now: String,
         backup: (Data) throws -> Void,
         resolveLegacyTarget: (ColumnConfig) -> ScreenInfo?
-    ) throws -> (config: LineupConfig, migrated: Bool) {
+    ) throws -> LoadOutcome {
         guard FileManager.default.fileExists(atPath: url.path) else {
-            return (LineupConfig(), false)
+            return .fresh(LineupConfig())
         }
         let data = try Data(contentsOf: url)
 
@@ -138,14 +148,14 @@ public struct LineupConfig: Codable, Equatable {
             }
             if cfg.schemaVersion == currentSchema {
                 try cfg.validate()
-                return (cfg, false)
+                return .loaded(cfg)
             }
             // schemaVersion < current with this shape shouldn't occur; fall through.
         }
         // Legacy ColumnConfig (dividers + halfDivider)?
         if let old = try? JSONDecoder().decode(ColumnConfig.self, from: data) {
             guard let target = resolveLegacyTarget(old) else {
-                return (LineupConfig(), false) // defer: don't migrate onto the wrong display
+                return .deferred // legacy present, target display absent: don't touch the file
             }
             try backup(data) // must succeed before we risk replacing the only legacy copy
             let root = Node.columns(old.dividers) // exact pixel values preserved as the seams
@@ -154,7 +164,7 @@ public struct LineupConfig: Codable, Equatable {
                 label: target.label, pixelsWide: target.pixelsWide,
                 pixelsHigh: target.pixelsHigh, keyIsStable: target.keyIsStable,
                 lastSeenAt: now, layout: root)
-            return (cfg, true)
+            return .migrated(cfg)
         }
         // Present but unrecognized/corrupt — surface it; NEVER overwrite a user's layout
         // with a fresh default just because a read failed.
