@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cycleState: CycleState?   // carries left/right cycle progress between presses
     private var editorOverlay: LayoutEditorOverlayController?
     private var settings: SettingsWindowController?
+    private var lastTrusted = AXIsProcessTrusted()
+    private var trustTimer: Timer?
 
     private var configBlockedMessage: String? {
         switch configState {
@@ -43,6 +45,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dragSnap.start()       // shift-drag-to-snap (default on)
         buildStatusItem()      // hotkey status (e.g. failures if Magnet owns the combos)
         requestAccessibility() // prompt up front; hotkeys can't move windows without it
+        startAccessibilityWatch()
+    }
+
+    /// macOS grants Accessibility while the app keeps running, but the menu was built once and
+    /// would keep showing the "not granted" warning until a relaunch. Watch for the permission
+    /// flipping and refresh the UI live so the user never has to quit and reopen.
+    private func startAccessibilityWatch() {
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(accessibilityMaybeChanged),
+            name: NSNotification.Name("com.apple.accessibility.api"), object: nil)
+        // Distributed notifications can be coalesced or missed; poll as a safety net until granted.
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.accessibilityMaybeChanged()
+        }
+    }
+
+    @objc private func accessibilityMaybeChanged() {
+        let trusted = AXIsProcessTrusted()
+        guard trusted != lastTrusted else { return }
+        lastTrusted = trusted
+        buildStatusItem()                  // drop (or re-add) the warning row + Grant item
+        settings?.refreshAccessibility()   // update the Settings → General status if it's open
+        if trusted { trustTimer?.invalidate(); trustTimer = nil } // granted; revocation still fires the notification
     }
 
     @objc private func toggleDragSnap() {
@@ -130,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             blockedMessage: { [weak self] in self?.configBlockedMessage },
             shortcuts: { [weak self] in self?.shortcuts ?? ShortcutKit.defaults },
             setShortcuts: { [weak self] s in self?.applyShortcuts(s) },
+            setRecording: { [weak self] on in self?.setRecording(on) },
             isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
             toggleDragSnap: { [weak self] in self?.toggleDragSnap() },
             isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
@@ -178,6 +204,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             FileHandle.standardError.write(Data("shortcuts save failed (not applied): \(error)\n".utf8))
         }
+    }
+
+    /// While the Settings recorder captures a combo, suspend the global hotkeys so the keys the
+    /// user presses reach the recorder instead of firing a window move (and so an already-bound
+    /// combo can be re-recorded). Restore them when recording ends.
+    private func setRecording(_ on: Bool) {
+        HotkeyManager.shared.unregisterAll()
+        if !on { registerHotkeys() }
+        buildStatusItem()
     }
 
     // MARK: - Layout editor overlay
