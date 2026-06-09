@@ -21,8 +21,8 @@ public struct CycleState: Equatable {
 }
 
 /// Left/right edge cycling. Step 0 honors the screen's root seam column; later steps are
-/// generic anchored fractions (1/2, 1/3, 2/3). Consecutive duplicate rects are removed so
-/// a halves layout doesn't make the first two presses look identical.
+/// generic anchored fractions (1/2, 1/3, 2/3). Duplicate rects anywhere in the list are
+/// removed (order preserved) so a halves/thirds layout never revisits the same width.
 public enum Cycle {
     public static func steps(_ side: Side, root: Node, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> [CGRect] {
         let c = Layout.rootContainer(frame: frame, visibleFrame: visibleFrame)
