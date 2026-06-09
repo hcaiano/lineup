@@ -20,6 +20,7 @@ final class LayoutEditorOverlayController {
     private let onClose: () -> Void
 
     private let picker = NSPopUpButton(frame: .zero, pullsDown: false)
+    private var errorPanel: NSView?  // inline save-failure banner (NSAlert would hide behind the overlay)
 
     init(config: LineupConfig,
          canWrite: Bool,
@@ -107,6 +108,17 @@ final class LayoutEditorOverlayController {
         hint.frame = NSRect(x: 12, y: 9, width: 616, height: 22)
         hp.addSubview(hint); container.addSubview(hp)
 
+        // Inline save-failure banner (hidden). An NSAlert would render behind the
+        // .screenSaver-level overlay, so failures must surface in-chrome.
+        let err = panel(NSRect(x: screenSize.width / 2 - 300, y: 96, width: 600, height: 40))
+        err.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.85).cgColor
+        let errLabel = NSTextField(labelWithString: "Couldn’t save — your changes are still here. Try Done again.")
+        errLabel.frame = NSRect(x: 12, y: 9, width: 576, height: 22)
+        errLabel.alignment = .center; errLabel.textColor = .white; errLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        err.addSubview(errLabel); err.isHidden = true
+        container.addSubview(err)
+        errorPanel = err
+
         // Bottom-right: Done + Cancel (Done disabled when blocked).
         let bottom = panel(NSRect(x: screenSize.width - 320, y: 28, width: 296, height: 56))
         container.addSubview(bottom)
@@ -144,12 +156,9 @@ final class LayoutEditorOverlayController {
         if commit(changes) {
             close()
         } else {
-            // Save failed — keep the draft and the overlay open, tell the user.
-            let alert = NSAlert()
-            alert.messageText = "Couldn’t save the layout"
-            alert.informativeText = "Your changes are still here. Try Done again, or Cancel to discard."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            // Save failed — keep the draft, stay open, surface it INLINE (an NSAlert would
+            // hide behind the .screenSaver-level overlay).
+            errorPanel?.isHidden = false
         }
     }
 
