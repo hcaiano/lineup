@@ -513,6 +513,38 @@ do { // setDivider: root vertical keeps pixels (seams); nested keeps fractions
         eq(CGFloat(d[0].value), 0.3, "setDivider nested -> 0.3")
     } else { check(false, "setDivider nested structure") }
     try nestedMoved.validate()
+
+    // 3+ children: dragging one divider PAST its neighbor must not reorder the stored array
+    // (else sorted visual handles desync from stored indices -> handles jump, wrong boundary
+    // resizes). The dragged divider stays strictly below the next one.
+    let threeCol = Node.columns([Boundary(1700, .pixels), Boundary(3400, .pixels)]) // 3 columns
+    let crossed = LayoutEdit.setDivider(threeCol, at: [], index: 0, fraction: 4000.0 / 5120.0, rootPixelsWide: 5120)
+    if case let .split(_, d, _) = crossed {
+        check(d[0].value < d[1].value, "setDivider keeps dividers ordered when dragged past neighbor")
+        check(d[1].value == 3400, "setDivider leaves the untouched neighbor in place")
+    } else { check(false, "setDivider 3-col structure") }
+    try crossed.validate()
+    // Nested fractional 3-way: dragging index 1 below index 0 clamps above it, stays ordered.
+    let threeFrac = Node.split(axis: .horizontal, dividers: [Boundary(0.33, .fraction), Boundary(0.66, .fraction)],
+                               children: [.leaf, .leaf, .leaf])
+    let pinched = LayoutEdit.setDivider(threeFrac, at: [], index: 1, fraction: 0.1, rootPixelsWide: 5120)
+    if case let .split(_, d, _) = pinched {
+        check(d[1].value > d[0].value, "setDivider nested keeps order when dragged below lower neighbor")
+    } else { check(false, "setDivider nested 3-way structure") }
+    try pinched.validate()
+
+    // A root vertical split may legally carry a `.points` neighbor (hand-authored config).
+    // With containerLength supplied, clamping must keep the dragged divider ordered against it.
+    let withPoints = Node.split(axis: .vertical,
+                                dividers: [Boundary(2560, .points), Boundary(3400, .pixels)],
+                                children: [.leaf, .leaf, .leaf]) // container is 5120 pt wide here
+    let clampedPts = LayoutEdit.setDivider(withPoints, at: [], index: 1, fraction: 0.1,
+                                           rootPixelsWide: 5120, containerLength: 5120)
+    if case let .split(_, d, _) = clampedPts {
+        // dividers[0] is 2560 pt = fraction 0.5; the dragged divider stays above it.
+        check(d[1].value > 2560, "setDivider clamps above a .points neighbor when containerLength given")
+    } else { check(false, "setDivider .points-neighbor structure") }
+    try clampedPts.validate()
 }
 
 // ---- P4: shortcuts model ----

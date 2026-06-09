@@ -116,8 +116,8 @@ private final class HighlightWindow: NSWindow {
 
         let v = NSView(frame: .zero)
         v.wantsLayer = true
-        v.layer?.backgroundColor = NSColor.systemIndigo.withAlphaComponent(0.22).cgColor
-        v.layer?.borderColor = NSColor.systemIndigo.withAlphaComponent(0.95).cgColor
+        v.layer?.backgroundColor = Brand.blue.withAlphaComponent(0.22).cgColor
+        v.layer?.borderColor = Brand.blue.withAlphaComponent(0.95).cgColor
         v.layer?.borderWidth = 3
         v.layer?.cornerRadius = 14
         contentView = v

@@ -37,65 +37,53 @@ ctx.saveGState()
 ctx.addPath(squircle)
 ctx.clip()
 
-// Diagonal indigo → violet gradient.
+// Diagonal blue gradient (brand blue).
 let bg = CGGradient(colorsSpace: rgb, colors: [
-    NSColor(srgbRed: 0.33, green: 0.41, blue: 1.00, alpha: 1).cgColor, // royal indigo
-    NSColor(srgbRed: 0.62, green: 0.31, blue: 0.91, alpha: 1).cgColor, // violet
+    NSColor(srgbRed: 0.25, green: 0.53, blue: 0.99, alpha: 1).cgColor, // bright blue  #408AFC
+    NSColor(srgbRed: 0.09, green: 0.29, blue: 0.84, alpha: 1).cgColor, // deep blue    #174AD6
 ] as CFArray, locations: [0, 1])!
 ctx.drawLinearGradient(bg,
     start: CGPoint(x: body.minX, y: body.maxY),
     end: CGPoint(x: body.maxX, y: body.minY), options: [])
 
-// Glass sheen across the top (drawn under the screen so dividers stay crisp).
+// Subtle top sheen (flat, not glossy — kept light per the concept board).
 let sheen = CGGradient(colorsSpace: rgb, colors: [
-    NSColor.white.withAlphaComponent(0.30).cgColor,
+    NSColor.white.withAlphaComponent(0.16).cgColor,
     NSColor.white.withAlphaComponent(0.0).cgColor,
 ] as CFArray, locations: [0, 1])!
 ctx.drawLinearGradient(sheen,
     start: CGPoint(x: body.midX, y: body.maxY),
-    end: CGPoint(x: body.midX, y: body.midY + body.height * 0.06), options: [])
+    end: CGPoint(x: body.midX, y: body.midY), options: [])
 
-// Inner "screen": a wide rounded panel (reads as an ultrawide monitor) split into three
-// columns — left / center / right — with the center gently highlighted.
-let padX = body.width * 0.11
-let padY = body.height * 0.255
-let inner = body.insetBy(dx: padX, dy: padY)
-let innerRadius = inner.height * 0.14
-let innerPath = CGPath(roundedRect: inner, cornerWidth: innerRadius, cornerHeight: innerRadius, transform: nil)
+// The mark (concept D): a thick near-white rounded SCREEN OUTLINE split into three columns
+// by two dividers; the (wider) center column is softly highlighted. Filled bars + thick
+// strokes (no thin lines) so it survives at 16 px.
+let padX = body.width * 0.135
+let padY = body.height * 0.235
+let screen = body.insetBy(dx: padX, dy: padY)
+let stroke = screen.height * 0.085
+let white = NSColor.white.withAlphaComponent(0.96)
+let screenRadius = screen.height * 0.18
 
+// Center column highlight (drawn first, behind the strokes).
+let d0 = screen.minX + screen.width * 0.30
+let d1 = screen.minX + screen.width * 0.70
 ctx.saveGState()
-ctx.addPath(innerPath)
+ctx.addPath(CGPath(roundedRect: screen, cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil))
 ctx.clip()
-
-// Darken slightly so it reads as a display and the dividers pop.
-ctx.setFillColor(NSColor.black.withAlphaComponent(0.16).cgColor)
-ctx.fill(inner)
-
-let d0 = inner.minX + inner.width * 0.30   // left|center divider
-let d1 = inner.minX + inner.width * 0.70   // center|right divider
-
-// Center column highlight.
-ctx.setFillColor(NSColor.white.withAlphaComponent(0.20).cgColor)
-ctx.fill(CGRect(x: d0, y: inner.minY, width: d1 - d0, height: inner.height))
-
-// Two crisp divider lines with a faint glow.
-let lineW: CGFloat = 14
-ctx.saveGState()
-ctx.setShadow(offset: .zero, blur: 18, color: NSColor.white.withAlphaComponent(0.6).cgColor)
-ctx.setFillColor(NSColor.white.cgColor)
-for x in [d0, d1] {
-    ctx.fill(CGRect(x: x - lineW / 2, y: inner.minY, width: lineW, height: inner.height))
-}
+ctx.setFillColor(NSColor.white.withAlphaComponent(0.22).cgColor)
+ctx.fill(CGRect(x: d0, y: screen.minY, width: d1 - d0, height: screen.height))
+// Two dividers (thick) inside the clip.
+ctx.setFillColor(white.cgColor)
+for x in [d0, d1] { ctx.fill(CGRect(x: x - stroke / 2, y: screen.minY, width: stroke, height: screen.height)) }
 ctx.restoreGState()
-ctx.restoreGState() // unclip the screen
 
-// Screen edge.
-ctx.addPath(innerPath)
-ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.24).cgColor)
-ctx.setLineWidth(4)
+// Thick rounded screen outline.
+ctx.addPath(CGPath(roundedRect: screen.insetBy(dx: stroke / 2, dy: stroke / 2),
+                   cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil))
+ctx.setStrokeColor(white.cgColor)
+ctx.setLineWidth(stroke)
 ctx.strokePath()
-
-ctx.restoreGState()
 
 // Subtle inner edge for crispness.
 ctx.addPath(squircle)

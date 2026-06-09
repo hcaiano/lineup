@@ -44,12 +44,37 @@ public enum LayoutEdit {
 
     /// Set divider `index` of the split at `path` to `fraction` of its container. The root
     /// vertical split keeps PIXEL units (seam precision) using `rootPixelsWide`; every other
-    /// split uses fractions. Fraction is clamped to (0.01, 0.99).
-    public static func setDivider(_ root: Node, at path: [Int], index: Int, fraction: Double, rootPixelsWide: Int) -> Node {
+    /// split uses fractions. The fraction is clamped to (0.01, 0.99) AND kept strictly
+    /// between its neighbors, so dragging one divider past an adjacent one can never reorder
+    /// the stored array relative to the sorted visual handles (which would make handles jump
+    /// and resize the wrong boundary).
+    /// `containerLength` (points along the split axis) lets `.points`-unit neighbors — legal
+    /// on a root vertical split per `Node.validate`, so a hand-authored config may carry them —
+    /// be normalized for clamping too. The on-screen editor passes its handle's container size;
+    /// callers without geometry omit it (those flows never store points).
+    public static func setDivider(_ root: Node, at path: [Int], index: Int, fraction: Double,
+                                  rootPixelsWide: Int, containerLength: Double? = nil) -> Node {
         guard case let .split(axis, dividers, children) = root.node(at: path),
               dividers.indices.contains(index) else { return root }
-        let f = min(max(fraction, 0.01), 0.99)
         let isRootVertical = path.isEmpty && axis == .vertical
+        // Express a sibling boundary as a fraction-of-container so neighbor clamping works
+        // regardless of unit (root vertical stores pixels; nested/horizontal store fractions;
+        // a root vertical split may also carry absolute points).
+        func siblingFraction(_ b: Boundary) -> Double? {
+            switch b.unit {
+            case .fraction: return b.value
+            case .pixels:   return rootPixelsWide > 0 ? b.value / Double(rootPixelsWide) : nil
+            case .points:
+                guard let len = containerLength, len > 0 else { return nil }
+                return b.value / len
+            }
+        }
+        let gap = 0.01
+        var lower = 0.01, upper = 0.99
+        if index > 0, let lf = siblingFraction(dividers[index - 1]) { lower = max(lower, lf + gap) }
+        if index < dividers.count - 1, let uf = siblingFraction(dividers[index + 1]) { upper = min(upper, uf - gap) }
+        if lower > upper { let mid = (lower + upper) / 2; lower = mid; upper = mid } // neighbors too close
+        let f = min(max(fraction, lower), upper)
         let newBoundary: Boundary = isRootVertical
             ? Boundary(Double(Int((f * Double(rootPixelsWide)).rounded())), .pixels)
             : Boundary(f, .fraction)

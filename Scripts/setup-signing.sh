@@ -14,7 +14,11 @@ if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then
   exit 0
 fi
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Remove the private key + temp artifacts on exit (no rm -rf; delete the specific
+# files so the cert's private key does not linger in a temp dir).
+TMP="$(mktemp -d)"
+cleanup() { rm -f "$TMP/key.pem" "$TMP/cert.pem" "$TMP/id.p12"; rmdir "$TMP" 2>/dev/null || true; }
+trap cleanup EXIT
 
 echo "==> generating self-signed code-signing certificate"
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \

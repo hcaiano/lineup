@@ -14,8 +14,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configCanWrite: Bool { configState == .ok } // block writes unless clean
     private var failedHotkeys = 0
     private var cycleState: CycleState?   // carries left/right cycle progress between presses
-    private var overlay: AlignmentOverlayController?
+    private var editorOverlay: LayoutEditorOverlayController?
     private var settings: SettingsWindowController?
+
+    private var configBlockedMessage: String? {
+        switch configState {
+        case .migrationDeferred: return "Your saved layout is waiting for its display. Editing is disabled until it reconnects or you reset from the menu."
+        case .loadError: return "The config file couldn't be loaded. Editing is disabled until you reset it from the menu."
+        case .ok: return nil
+        }
+    }
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
         self?.config ?? LineupConfig()
     })
@@ -112,26 +120,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
     }
 
-    @objc private func reloadConfigFromMenu() {
-        reloadConfig()
-        buildStatusItem()
-    }
-
     // MARK: - Settings window
 
     @objc private func openSettings() {
         if settings != nil { settings?.show(); return }
         let ctx = SettingsContext(
             config: { [weak self] in self?.config ?? LineupConfig() },
-            applyLayout: { [weak self] node, info in self?.applyLayout(node, for: info) },
             canWrite: { [weak self] in self?.configCanWrite ?? false },
-            blockedMessage: { [weak self] in
-                switch self?.configState {
-                case .migrationDeferred: return "Your saved layout is waiting for its display. Editing is disabled until it reconnects or you reset from the menu."
-                case .loadError: return "The config file couldn't be loaded. Editing is disabled until you reset it from the menu."
-                default: return nil
-                }
-            },
+            blockedMessage: { [weak self] in self?.configBlockedMessage },
             shortcuts: { [weak self] in self?.shortcuts ?? ShortcutKit.defaults },
             setShortcuts: { [weak self] s in self?.applyShortcuts(s) },
             isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
@@ -146,17 +142,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
     }
 
-    /// Persist an edited layout for a specific screen. write() validates first, so an
-    /// invalid tree never reaches disk and the in-memory config isn't updated on failure.
-    private func applyLayout(_ node: Node, for screen: ScreenInfo) {
-        guard configCanWrite else { return }
-        let updated = config.setting(layout: node, for: screen, now: ISO8601DateFormatter().string(from: Date()))
+    /// Persist edited layouts for one or more screens ATOMICALLY: build a single updated
+    /// config and write once (validates the whole thing). Returns false on failure WITHOUT
+    /// mutating the live config — so the editor can keep the user's draft and report it,
+    /// and a multi-screen save can never partially persist.
+    @discardableResult
+    private func applyLayouts(_ changes: [(screen: ScreenInfo, layout: Node)]) -> Bool {
+        guard configCanWrite else { return false }
+        guard !changes.isEmpty else { return true }
+        var updated = config
+        let now = ISO8601DateFormatter().string(from: Date())
+        for change in changes { updated = updated.setting(layout: change.layout, for: change.screen, now: now) }
         do {
             try updated.write(to: AppDelegate.configURL)
             config = updated
             buildStatusItem()
+            return true
         } catch {
-            FileHandle.standardError.write(Data("settings layout save failed (not applied): \(error)\n".utf8))
+            FileHandle.standardError.write(Data("layout save failed (not applied): \(error)\n".utf8))
+            return false
         }
     }
 
@@ -176,34 +180,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Alignment overlay
+    // MARK: - Layout editor overlay
 
-    @objc private func openAlignmentOverlay() {
-        // Never overwrite a preserved corrupt/future config via a save.
-        guard configCanWrite else { return }
-        // Edit the seams of the widest display (the G9). Per-screen: saves to that screen.
-        guard let screen = NSScreen.screens.max(by: {
-                ScreenIdentity.info(for: $0).pixelsWide < ScreenIdentity.info(for: $1).pixelsWide
-              }) ?? NSScreen.main else { return }
-        let info = ScreenIdentity.info(for: screen)
-        let frame = screen.frame
-        // Seed the lines from the screen's current root columns (interior divider x's).
-        let root = config.layout(forKey: info.key)
-        let cols = Layout.rootColumns(root, frame: frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
-        let initial: [CGFloat] = cols?.dropLast().map { $0.maxX - frame.minX } ?? [frame.width / 2]
-
-        overlay = AlignmentOverlayController(
-            screen: screen,
-            pixelsWide: info.pixelsWide,
-            initialDividerPoints: initial,
-            onSave: { [weak self] dividerPixels, _ in
-                guard let self else { return }
-                let newRoot = Node.columns(dividerPixels.map { Boundary($0, .pixels) })
-                // Apply via the shared path: write (validates) BEFORE mutating in-memory config.
-                self.applyLayout(newRoot, for: info)
-            },
-            onClose: { [weak self] in self?.overlay = nil })
-        overlay?.show()
+    @objc private func openEditor() {
+        if editorOverlay != nil { return }
+        let controller = LayoutEditorOverlayController(
+            config: config,
+            canWrite: configCanWrite,
+            blockedMessage: configBlockedMessage,
+            commit: { [weak self] changes in self?.applyLayouts(changes) ?? false },
+            onClose: { [weak self] in self?.editorOverlay = nil })
+        editorOverlay = controller
+        controller.show()
     }
 
     // MARK: - Hotkeys
@@ -245,86 +233,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildStatusItem() {
         if statusItem == nil {
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            statusItem.button?.title = "▦"
+            statusItem.button?.image = Brand.menuBarLogo()
             statusItem.button?.toolTip = "Lineup — window manager"
         }
         let menu = NSMenu()
 
-        let trusted = AXIsProcessTrusted()
-        let statusLine = NSMenuItem(
-            title: trusted ? "Accessibility: granted" : "Accessibility: NOT granted",
-            action: nil, keyEquivalent: "")
-        statusLine.isEnabled = false
-        menu.addItem(statusLine)
-        if !trusted {
-            menu.addItem(NSMenuItem(
-                title: "Request Accessibility permission…",
-                action: #selector(requestAccessibility), keyEquivalent: ""))
+        // Actionable problems ONLY, at the top. Healthy states show nothing.
+        var hasWarning = false
+        if !AXIsProcessTrusted() {
+            addInfo(menu, "⚠︎ Accessibility not granted")
+            menu.addItem(NSMenuItem(title: "Grant Accessibility…", action: #selector(requestAccessibility), keyEquivalent: ""))
+            hasWarning = true
         }
-
-        let total = shortcuts.bindings.count
-        let hkLine = NSMenuItem(
-            title: failedHotkeys == 0
-                ? "Hotkeys: OK (\(total) active)"
-                : "Hotkeys: \(failedHotkeys)/\(total) FAILED — disable Magnet, then Retry",
-            action: nil, keyEquivalent: "")
-        hkLine.isEnabled = false
-        menu.addItem(hkLine)
         if failedHotkeys > 0 {
-            menu.addItem(NSMenuItem(
-                title: "Retry hotkey registration",
-                action: #selector(retryHotkeys), keyEquivalent: ""))
+            addInfo(menu, "⚠︎ \(failedHotkeys) shortcut\(failedHotkeys == 1 ? "" : "s") blocked by another app")
+            menu.addItem(NSMenuItem(title: "Retry shortcuts", action: #selector(retryHotkeys), keyEquivalent: ""))
+            hasWarning = true
         }
+        if configState != .ok {
+            addInfo(menu, configState == .migrationDeferred
+                ? "⚠︎ Saved layout waiting for its display"
+                : "⚠︎ Config couldn't be loaded")
+            menu.addItem(NSMenuItem(
+                title: configState == .migrationDeferred ? "Discard & reset…" : "Reset configuration…",
+                action: #selector(resetConfig), keyEquivalent: ""))
+            hasWarning = true
+        }
+        if hasWarning { menu.addItem(.separator()) }
+
+        let editItem = NSMenuItem(title: "Edit Layout…", action: #selector(openEditor), keyEquivalent: "")
+        editItem.isEnabled = configCanWrite // blocked config routes to Reset instead
+        menu.addItem(editItem)
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
 
         menu.addItem(.separator())
-        if configState != .ok {
-            let msg = configState == .migrationDeferred
-                ? "⚠︎ Saved layout waiting for its display — saving is disabled"
-                : "⚠︎ Config couldn't be loaded — saving is disabled"
-            let warn = NSMenuItem(title: msg, action: nil, keyEquivalent: "")
-            warn.isEnabled = false
-            menu.addItem(warn)
-            menu.addItem(NSMenuItem(
-                title: configState == .migrationDeferred ? "Discard saved layout & reset…" : "Reset configuration…",
-                action: #selector(resetConfig), keyEquivalent: ""))
-        }
-        let cfgLine = NSMenuItem(
-            title: "Config: \(FileManager.default.fileExists(atPath: AppDelegate.configURL.path) ? AppDelegate.configURL.path : "defaults (halves)")",
-            action: nil, keyEquivalent: "")
-        cfgLine.isEnabled = false
-        menu.addItem(cfgLine)
-        let settingsItem = NSMenuItem(
-            title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(settingsItem)
-        let alignItem = NSMenuItem(
-            title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: "")
-        alignItem.isEnabled = configCanWrite // never overwrite a preserved corrupt/future config
-        menu.addItem(alignItem)
-        menu.addItem(NSMenuItem(
-            title: "Reload config", action: #selector(reloadConfigFromMenu), keyEquivalent: "r"))
-
-        let dragItem = NSMenuItem(
-            title: "Shift-drag to snap", action: #selector(toggleDragSnap), keyEquivalent: "")
+        let dragItem = NSMenuItem(title: "Shift-drag to snap", action: #selector(toggleDragSnap), keyEquivalent: "")
         dragItem.state = dragSnap.isEnabled ? .on : .off
         menu.addItem(dragItem)
-
-        let loginItem = NSMenuItem(
-            title: "Launch at login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        let loginItem = NSMenuItem(title: "Launch at login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
-        // Quick-action shortcuts at a glance; full list (incl. zones) lives in Settings.
-        for qa in ShortcutKit.quickActions {
-            let combo = shortcuts.binding(for: qa.id).map { ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers) } ?? "—"
-            let item = NSMenuItem(title: "\(combo)  →  \(qa.label)", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-        }
-
-        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Lineup", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    private func addInfo(_ menu: NSMenu, _ title: String) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        menu.addItem(item)
     }
 
     @objc private func toggleLaunchAtLogin() {
