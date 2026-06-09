@@ -372,7 +372,9 @@ private final class EditorCanvas: NSView {
         let frac: Double = h.axis == .vertical
             ? Double((gp.x - h.container.minX) / max(h.container.width, 1))
             : Double((h.container.maxY - gp.y) / max(h.container.height, 1))
-        let updated = LayoutEdit.setDivider(root, at: h.path, index: h.index, fraction: frac, rootPixelsWide: info.pixelsWide)
+        let containerLength = Double(h.axis == .vertical ? h.container.width : h.container.height)
+        let updated = LayoutEdit.setDivider(root, at: h.path, index: h.index, fraction: frac,
+                                            rootPixelsWide: info.pixelsWide, containerLength: containerLength)
         if updated != root { root = updated; onChange?(root) }
     }
 

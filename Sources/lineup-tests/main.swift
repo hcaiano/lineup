@@ -532,6 +532,19 @@ do { // setDivider: root vertical keeps pixels (seams); nested keeps fractions
         check(d[1].value > d[0].value, "setDivider nested keeps order when dragged below lower neighbor")
     } else { check(false, "setDivider nested 3-way structure") }
     try pinched.validate()
+
+    // A root vertical split may legally carry a `.points` neighbor (hand-authored config).
+    // With containerLength supplied, clamping must keep the dragged divider ordered against it.
+    let withPoints = Node.split(axis: .vertical,
+                                dividers: [Boundary(2560, .points), Boundary(3400, .pixels)],
+                                children: [.leaf, .leaf, .leaf]) // container is 5120 pt wide here
+    let clampedPts = LayoutEdit.setDivider(withPoints, at: [], index: 1, fraction: 0.1,
+                                           rootPixelsWide: 5120, containerLength: 5120)
+    if case let .split(_, d, _) = clampedPts {
+        // dividers[0] is 2560 pt = fraction 0.5; the dragged divider stays above it.
+        check(d[1].value > 2560, "setDivider clamps above a .points neighbor when containerLength given")
+    } else { check(false, "setDivider .points-neighbor structure") }
+    try clampedPts.validate()
 }
 
 // ---- P4: shortcuts model ----

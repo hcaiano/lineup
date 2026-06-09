@@ -48,18 +48,25 @@ public enum LayoutEdit {
     /// between its neighbors, so dragging one divider past an adjacent one can never reorder
     /// the stored array relative to the sorted visual handles (which would make handles jump
     /// and resize the wrong boundary).
-    public static func setDivider(_ root: Node, at path: [Int], index: Int, fraction: Double, rootPixelsWide: Int) -> Node {
+    /// `containerLength` (points along the split axis) lets `.points`-unit neighbors — legal
+    /// on a root vertical split per `Node.validate`, so a hand-authored config may carry them —
+    /// be normalized for clamping too. The on-screen editor passes its handle's container size;
+    /// callers without geometry omit it (those flows never store points).
+    public static func setDivider(_ root: Node, at path: [Int], index: Int, fraction: Double,
+                                  rootPixelsWide: Int, containerLength: Double? = nil) -> Node {
         guard case let .split(axis, dividers, children) = root.node(at: path),
               dividers.indices.contains(index) else { return root }
         let isRootVertical = path.isEmpty && axis == .vertical
         // Express a sibling boundary as a fraction-of-container so neighbor clamping works
-        // regardless of unit (root vertical stores pixels; nested/horizontal store fractions).
-        // `.points` carries no container length here, so we simply don't constrain against it.
+        // regardless of unit (root vertical stores pixels; nested/horizontal store fractions;
+        // a root vertical split may also carry absolute points).
         func siblingFraction(_ b: Boundary) -> Double? {
             switch b.unit {
             case .fraction: return b.value
             case .pixels:   return rootPixelsWide > 0 ? b.value / Double(rootPixelsWide) : nil
-            case .points:   return nil
+            case .points:
+                guard let len = containerLength, len > 0 else { return nil }
+                return b.value / len
             }
         }
         let gap = 0.01
