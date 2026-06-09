@@ -212,7 +212,10 @@ private final class ShortcutsView: NSView {
     @objc private func clearTapped(_ sender: NSButton) {
         guard ctx.canWrite() else { return }
         let action = rows[sender.tag].action
-        if recordingAction == action { stopRecording() }
+        // End ANY in-flight recording (not just this row's): setShortcuts re-registers the
+        // global hotkeys, which would silently re-arm them while another row still shows
+        // "Press keys…" — the next combo would fire a window move instead of recording.
+        if recordingAction != nil { stopRecording() }
         ctx.setShortcuts(ctx.shortcuts().removing(action: action))
         refresh()
     }
