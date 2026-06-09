@@ -310,9 +310,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "About Lineup", action: #selector(showAbout), keyEquivalent: ""))
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Lineup", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
     }
+
+    @objc private func checkForUpdates() { UpdateChecker.checkInteractively() }
+
+    @objc private func showAbout() { AboutWindowController.show() }
 
     private func addInfo(_ menu: NSMenu, _ title: String) {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")

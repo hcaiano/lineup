@@ -9,6 +9,12 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         shared.showWindow()
     }
 
+    /// The About content as an embeddable view (Settings hosts it in an About tab).
+    /// Pass the 420×430 natural size; the caller centers it in its container.
+    static func makeEmbeddedContent(size: NSSize) -> NSView {
+        shared.makeContent(size: size)
+    }
+
     private func showWindow() {
         if let window {
             NSApp.activate(ignoringOtherApps: true)
