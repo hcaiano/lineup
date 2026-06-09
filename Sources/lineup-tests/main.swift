@@ -443,6 +443,78 @@ do {
     check(Layout.rootColumns(g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)?.count == 3, "rootColumns: 3 columns")
 }
 
+// ---- P3: layout editor tree mutations ----
+do { // node(at:) / replacingNode addressing
+    let root = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf, .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ])
+    check(root.node(at: []) == root, "node(at: []) == root")
+    check(root.node(at: [0]) == .leaf, "node(at: [0]) == left leaf")
+    if case .split(.horizontal, _, _)? = root.node(at: [1]) { check(true, "node(at: [1]) == right split") }
+    else { check(false, "node(at: [1]) == right split") }
+    check(root.node(at: [9]) == nil, "node(at: invalid) == nil")
+    let replaced = root.replacingNode(at: [0], with: .leaf)
+    check(replaced == root, "replacingNode same value -> equal")
+}
+
+do { // split a leaf -> two equal children; non-leaf is a no-op
+    let twoCol = LayoutEdit.split(.leaf, at: [], axis: .vertical)
+    check(Layout.zones(twoCol, frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "split leaf vertical -> 2 zones")
+    try twoCol.validate()
+    // split the right zone into rows -> his example shape
+    let nested = LayoutEdit.split(twoCol, at: [1], axis: .horizontal)
+    let z = Layout.zones(nested, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 3, "split [1] horizontal -> 3 zones (left + right top/bottom)")
+    try nested.validate()
+    // splitting a non-leaf path is a no-op
+    check(LayoutEdit.split(nested, at: [], axis: .vertical) == nested, "split non-leaf -> no-op")
+}
+
+do { // merge collapses the parent split back to a leaf
+    let nested = LayoutEdit.split(LayoutEdit.split(.leaf, at: [], axis: .vertical), at: [1], axis: .horizontal)
+    // merge a leaf inside the right split -> right becomes a single leaf again (2 zones)
+    let merged = LayoutEdit.merge(nested, at: [1, 0])
+    check(Layout.zones(merged, frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "merge inner -> back to 2 zones")
+    try merged.validate()
+    // merge at root collapses everything to one zone
+    let allMerged = LayoutEdit.merge(merged, at: [])
+    check(Layout.zones(allMerged, frame: frame, visibleFrame: visible, pixelsWide: px).count == 1, "merge root -> 1 zone")
+    check(allMerged == .leaf, "merge root -> leaf")
+}
+
+do { // leaves(withPaths) + dividerHandles for the editor canvas (his example)
+    let nested = LayoutEdit.split(LayoutEdit.split(.leaf, at: [], axis: .vertical), at: [1], axis: .horizontal)
+    let container = Layout.rootContainer(frame: frame, visibleFrame: visible)
+    let lv = Layout.leaves(nested, container: container, pixelsWide: px)
+    check(lv.count == 3, "leaves: 3 (paths + rects)")
+    check(lv[0].path == [0], "leaves[0] path = [0] (Left)")
+    check(lv[1].path == [1, 0], "leaves[1] path = [1,0] (Right-Top)")
+    check(lv[2].path == [1, 1], "leaves[2] path = [1,1] (Right-Bottom)")
+    check(lv[1].rect.minY > lv[2].rect.minY, "leaves: Right-Top above Right-Bottom")
+    let handles = Layout.dividerHandles(nested, container: container, pixelsWide: px)
+    check(handles.count == 2, "dividerHandles: 2 (root column + right row)")
+    check(handles.contains { $0.path == [] && $0.axis == .vertical }, "handle: root vertical divider")
+    check(handles.contains { $0.path == [1] && $0.axis == .horizontal }, "handle: nested horizontal divider")
+}
+
+do { // setDivider: root vertical keeps pixels (seams); nested keeps fractions
+    let twoCol = Node.columns([Boundary(2560, .pixels)])
+    let moved = LayoutEdit.setDivider(twoCol, at: [], index: 0, fraction: 1133.0 / 5120.0, rootPixelsWide: 5120)
+    if case let .split(_, dividers, _) = moved {
+        check(dividers[0].unit == .pixels, "setDivider root vertical -> pixels (seam precision kept)")
+        eq(CGFloat(dividers[0].value), 1133, "setDivider root -> 1133px", accuracy: 1)
+    } else { check(false, "setDivider root -> split") }
+    try moved.validate()
+    // nested split divider stays fraction
+    let nested = LayoutEdit.split(twoCol, at: [1], axis: .horizontal)
+    let nestedMoved = LayoutEdit.setDivider(nested, at: [1], index: 0, fraction: 0.3, rootPixelsWide: 5120)
+    if case let .split(_, _, children) = nestedMoved, case let .split(_, d, _) = children[1] {
+        check(d[0].unit == .fraction, "setDivider nested -> fraction")
+        eq(CGFloat(d[0].value), 0.3, "setDivider nested -> 0.3")
+    } else { check(false, "setDivider nested structure") }
+    try nestedMoved.validate()
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")

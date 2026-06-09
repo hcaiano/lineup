@@ -158,6 +158,55 @@ public enum Layout {
         return out
     }
 
+    /// Leaf zones paired with their tree path (for the editor: click-to-select).
+    public static func leaves(_ root: Node, container: CGRect, pixelsWide: Int, path: [Int] = []) -> [(path: [Int], rect: CGRect)] {
+        switch root {
+        case .leaf:
+            return [(path, container)]
+        case let .split(axis, dividers, children):
+            let rects = childRects(axis: axis, dividers: dividers, count: children.count, container: container, pixelsWide: pixelsWide)
+            var out: [(path: [Int], rect: CGRect)] = []
+            for (i, child) in children.enumerated() where rects.indices.contains(i) {
+                out += leaves(child, container: rects[i], pixelsWide: pixelsWide, path: path + [i])
+            }
+            return out
+        }
+    }
+
+    /// A draggable divider handle: which split/divider it is, its axis, and the line's
+    /// position + extent within the container (Cocoa coords) for hit-testing and dragging.
+    public struct DividerHandle {
+        public let path: [Int]
+        public let index: Int
+        public let axis: Axis
+        /// The divider line as a thin rect (a vertical or horizontal sliver) for hit-testing.
+        public let line: CGRect
+        /// The container this divider lives in (used to convert a drag into a fraction).
+        public let container: CGRect
+    }
+
+    public static func dividerHandles(_ root: Node, container: CGRect, pixelsWide: Int, path: [Int] = [], thickness: CGFloat = 8) -> [DividerHandle] {
+        guard case let .split(axis, dividers, children) = root else { return [] }
+        let rects = childRects(axis: axis, dividers: dividers, count: children.count, container: container, pixelsWide: pixelsWide)
+        var out: [DividerHandle] = []
+        // One handle per interior boundary (between consecutive children).
+        for i in 0..<max(0, children.count - 1) where rects.indices.contains(i) {
+            let line: CGRect
+            if axis == .vertical {
+                let x = rects[i].maxX
+                line = CGRect(x: x - thickness / 2, y: container.minY, width: thickness, height: container.height)
+            } else {
+                let y = rects[i].minY // boundary between child i (top) and i+1 (below)
+                line = CGRect(x: container.minX, y: y - thickness / 2, width: container.width, height: thickness)
+            }
+            out.append(DividerHandle(path: path, index: i, axis: axis, line: line, container: container))
+        }
+        for (i, child) in children.enumerated() where rects.indices.contains(i) {
+            out += dividerHandles(child, container: rects[i], pixelsWide: pixelsWide, path: path + [i], thickness: thickness)
+        }
+        return out
+    }
+
     /// The root's top-level column rects when the root is a vertical split (NOT recursed
     /// into nested zones), else nil. Used by quick actions (left/center/right) and the
     /// left/right cycle's first step so they honor the screen's seam-aligned columns.

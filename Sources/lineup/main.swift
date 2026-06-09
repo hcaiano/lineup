@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configCanWrite: Bool { configState == .ok } // block writes unless clean
     private var failedHotkeys = 0
     private var overlay: AlignmentOverlayController?
+    private var settings: SettingsWindowController?
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
         self?.config ?? LineupConfig()
     })
@@ -121,6 +122,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func reloadConfigFromMenu() {
         reloadConfig()
         buildStatusItem()
+    }
+
+    // MARK: - Settings window
+
+    @objc private func openSettings() {
+        if settings != nil { settings?.show(); return }
+        let ctx = SettingsContext(
+            config: { [weak self] in self?.config ?? LineupConfig() },
+            applyLayout: { [weak self] node, info in self?.applyLayout(node, for: info) },
+            isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
+            toggleDragSnap: { [weak self] in self?.toggleDragSnap() },
+            isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
+            toggleLaunchAtLogin: { [weak self] in self?.toggleLaunchAtLogin() },
+            isTrusted: { AXIsProcessTrusted() },
+            requestAccessibility: { [weak self] in self?.requestAccessibility() })
+        let controller = SettingsWindowController(context: ctx)
+        controller.onClose = { [weak self] in self?.settings = nil }
+        settings = controller
+        controller.show()
+    }
+
+    /// Persist an edited layout for a specific screen. write() validates first, so an
+    /// invalid tree never reaches disk and the in-memory config isn't updated on failure.
+    private func applyLayout(_ node: Node, for screen: ScreenInfo) {
+        guard configCanWrite else { return }
+        let updated = config.setting(layout: node, for: screen, now: ISO8601DateFormatter().string(from: Date()))
+        do {
+            try updated.write(to: AppDelegate.configURL)
+            config = updated
+            buildStatusItem()
+        } catch {
+            FileHandle.standardError.write(Data("settings layout save failed (not applied): \(error)\n".utf8))
+        }
     }
 
     // MARK: - Alignment overlay
@@ -231,6 +265,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action: nil, keyEquivalent: "")
         cfgLine.isEnabled = false
         menu.addItem(cfgLine)
+        let settingsItem = NSMenuItem(
+            title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(settingsItem)
         let alignItem = NSMenuItem(
             title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: "")
         alignItem.isEnabled = configCanWrite // never overwrite a preserved corrupt/future config
