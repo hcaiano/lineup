@@ -49,7 +49,7 @@ public struct Boundary: Codable, Equatable {
 /// edge *is* the next column's left edge. Move one divider and both neighbouring columns
 /// adapt together — no second number to keep in sync.
 ///
-/// `N` dividers produce `N+1` columns. For the G9 three-way split, give two dividers.
+/// `N` dividers produce `N+1` columns. For a three-way split, give two dividers.
 /// Horizontal extent comes from the full `screen.frame` (so it lands on physical seams);
 /// vertical extent fills the usable `visibleFrame` (never under the menu bar / Dock).
 public struct ColumnConfig: Codable, Equatable {

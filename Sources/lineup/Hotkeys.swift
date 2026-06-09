@@ -15,12 +15,12 @@ final class HotkeyManager {
     private var refs: [EventHotKeyRef?] = []
     private var nextID: UInt32 = 1
     private var handlerInstalled = false
-    // FourCharCode 'G9WM'
+    // FourCharCode 'LNUP' (Lineup) — internal namespace for this app's Carbon hotkeys.
     private let signature: FourCharCode =
-        (FourCharCode(UInt8(ascii: "G")) << 24) |
-        (FourCharCode(UInt8(ascii: "9")) << 16) |
-        (FourCharCode(UInt8(ascii: "W")) << 8) |
-        FourCharCode(UInt8(ascii: "M"))
+        (FourCharCode(UInt8(ascii: "L")) << 24) |
+        (FourCharCode(UInt8(ascii: "N")) << 16) |
+        (FourCharCode(UInt8(ascii: "U")) << 8) |
+        FourCharCode(UInt8(ascii: "P"))
 
     /// Register a global hotkey. `keyCode` is a Carbon virtual key (kVK_*).
     /// Returns true on success. The action is stored ONLY if registration succeeded, so
