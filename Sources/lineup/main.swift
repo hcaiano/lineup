@@ -142,17 +142,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
     }
 
-    /// Persist an edited layout for a specific screen. write() validates first, so an
-    /// invalid tree never reaches disk and the in-memory config isn't updated on failure.
-    private func applyLayout(_ node: Node, for screen: ScreenInfo) {
-        guard configCanWrite else { return }
-        let updated = config.setting(layout: node, for: screen, now: ISO8601DateFormatter().string(from: Date()))
+    /// Persist edited layouts for one or more screens ATOMICALLY: build a single updated
+    /// config and write once (validates the whole thing). Returns false on failure WITHOUT
+    /// mutating the live config — so the editor can keep the user's draft and report it,
+    /// and a multi-screen save can never partially persist.
+    @discardableResult
+    private func applyLayouts(_ changes: [(screen: ScreenInfo, layout: Node)]) -> Bool {
+        guard configCanWrite else { return false }
+        guard !changes.isEmpty else { return true }
+        var updated = config
+        let now = ISO8601DateFormatter().string(from: Date())
+        for change in changes { updated = updated.setting(layout: change.layout, for: change.screen, now: now) }
         do {
             try updated.write(to: AppDelegate.configURL)
             config = updated
             buildStatusItem()
+            return true
         } catch {
-            FileHandle.standardError.write(Data("settings layout save failed (not applied): \(error)\n".utf8))
+            FileHandle.standardError.write(Data("layout save failed (not applied): \(error)\n".utf8))
+            return false
         }
     }
 
@@ -180,7 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             config: config,
             canWrite: configCanWrite,
             blockedMessage: configBlockedMessage,
-            applyLayout: { [weak self] node, info in self?.applyLayout(node, for: info) },
+            commit: { [weak self] changes in self?.applyLayouts(changes) ?? false },
             onClose: { [weak self] in self?.editorOverlay = nil })
         editorOverlay = controller
         controller.show()

@@ -22,7 +22,7 @@ final class LayoutEditorOverlayController {
     private let baseConfig: LineupConfig
     private let canWrite: Bool
     private let blockedMessage: String?
-    private let applyLayout: (Node, ScreenInfo) -> Void
+    private let commit: ([(screen: ScreenInfo, layout: Node)]) -> Bool
     private let onClose: () -> Void
 
     private let picker = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -30,12 +30,12 @@ final class LayoutEditorOverlayController {
     init(config: LineupConfig,
          canWrite: Bool,
          blockedMessage: String?,
-         applyLayout: @escaping (Node, ScreenInfo) -> Void,
+         commit: @escaping ([(screen: ScreenInfo, layout: Node)]) -> Bool,
          onClose: @escaping () -> Void) {
         self.baseConfig = config
         self.canWrite = canWrite
         self.blockedMessage = blockedMessage
-        self.applyLayout = applyLayout
+        self.commit = commit
         self.onClose = onClose
         self.screens = NSScreen.screens.map { ($0, ScreenIdentity.info(for: $0)) }
         // Open on the display under the pointer; widest as fallback.
@@ -66,6 +66,7 @@ final class LayoutEditorOverlayController {
         win.level = .screenSaver
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         win.ignoresMouseEvents = false
+        win.acceptsMouseMovedEvents = true // hover is the primary reveal path
 
         let container = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
         let cv = EditorCanvas(frame: container.bounds, screenFrame: screen.frame, visibleFrame: screen.visibleFrame, info: info)
@@ -73,6 +74,7 @@ final class LayoutEditorOverlayController {
         cv.editable = canWrite
         cv.root = draft(for: info)
         cv.onChange = { [weak self] node in self?.drafts[info.key] = node }
+        cv.onCancel = { [weak self] in self?.cancelTapped() }
         container.addSubview(cv)
         self.canvas = cv
 
@@ -139,12 +141,22 @@ final class LayoutEditorOverlayController {
     }
 
     @objc private func doneTapped() {
-        // Persist every screen whose draft differs from the stored layout.
-        for (_, info) in screens {
-            guard let edited = drafts[info.key] else { continue }
-            if edited != baseConfig.layout(forKey: info.key) { applyLayout(edited, info) }
+        // Collect every screen whose draft differs, then save ATOMICALLY (one write).
+        let changes: [(screen: ScreenInfo, layout: Node)] = screens.compactMap { (_, info) in
+            guard let edited = drafts[info.key], edited != baseConfig.layout(forKey: info.key) else { return nil }
+            return (info, edited)
         }
-        close()
+        if changes.isEmpty { close(); return }
+        if commit(changes) {
+            close()
+        } else {
+            // Save failed — keep the draft and the overlay open, tell the user.
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t save the layout"
+            alert.informativeText = "Your changes are still here. Try Done again, or Cancel to discard."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
     }
 
     @objc private func resetTapped() { close() } // blocked state: Reset lives on the menu
@@ -171,6 +183,7 @@ final class EditorWindow: NSWindow {
 private final class EditorCanvas: NSView {
     var root: Node = .halves { didSet { rebuildIfNeeded() } }
     var onChange: ((Node) -> Void)?
+    var onCancel: (() -> Void)?
     var editable = true
 
     private let screenFrame: CGRect
@@ -252,8 +265,41 @@ private final class EditorCanvas: NSView {
                 let r = viewRect(h.line)
                 NSColor.white.withAlphaComponent(0.85).setFill()
                 NSBezierPath(roundedRect: r.insetBy(dx: r.width > r.height ? 0 : 2, dy: r.width > r.height ? 2 : 0), xRadius: 2, yRadius: 2).fill()
+                drawDividerReadout(h, viewLine: r)
             }
         }
+    }
+
+    /// Root vertical dividers show their physical pixel x (seam alignment); nested/horizontal
+    /// dividers show a percent of their parent.
+    private func drawDividerReadout(_ h: Layout.DividerHandle, viewLine: CGRect) {
+        let text: String
+        if h.path.isEmpty && h.axis == .vertical {
+            let pointsFromLeft = h.line.midX - h.container.minX
+            let pixels = pointsFromLeft / max(h.container.width, 1) * CGFloat(info.pixelsWide)
+            text = "\(Int(pixels.rounded())) px"
+        } else if h.axis == .vertical {
+            let pct = (h.line.midX - h.container.minX) / max(h.container.width, 1) * 100
+            text = "\(Int(pct.rounded()))%"
+        } else {
+            let pct = (h.container.maxY - h.line.midY) / max(h.container.height, 1) * 100
+            text = "\(Int(pct.rounded()))%"
+        }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.white]
+        let s = NSAttributedString(string: text, attributes: attrs)
+        let sz = s.size()
+        let pad: CGFloat = 5
+        let pillW = sz.width + pad * 2, pillH = sz.height + pad
+        // vertical divider -> label near top; horizontal -> near left.
+        let center = h.axis == .vertical
+            ? CGPoint(x: viewLine.midX, y: viewLine.maxY - pillH / 2 - 10)
+            : CGPoint(x: viewLine.minX + pillW / 2 + 10, y: viewLine.midY)
+        let pill = CGRect(x: center.x - pillW / 2, y: center.y - pillH / 2, width: pillW, height: pillH)
+        NSColor.black.withAlphaComponent(0.6).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 5, yRadius: 5).fill()
+        s.draw(at: NSPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2))
     }
 
     private func drawNumber(_ n: Int, in r: CGRect) {
@@ -328,6 +374,12 @@ private final class EditorCanvas: NSView {
     }
 
     override func mouseUp(with event: NSEvent) { dragging = nil }
+
+    // Robust dismissal independent of button key-equivalent routing on a borderless overlay.
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onCancel?() } else { super.keyDown(with: event) } // Esc
+    }
 
     @objc private func splitV() { edit { LayoutEdit.split($0, at: activePath ?? [], axis: .vertical) } }
     @objc private func splitH() { edit { LayoutEdit.split($0, at: activePath ?? [], axis: .horizontal) } }
