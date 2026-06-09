@@ -55,46 +55,27 @@ ctx.drawLinearGradient(sheen,
     start: CGPoint(x: body.midX, y: body.maxY),
     end: CGPoint(x: body.midX, y: body.midY + body.height * 0.06), options: [])
 
-// Inner "screen": a wide rounded panel (reads as an ultrawide monitor) split into three
-// columns — left / center / right — with the center gently highlighted.
-let padX = body.width * 0.11
-let padY = body.height * 0.255
+// The mark: three near-white columns (the lineup motif, same as the menu-bar logo). Solid
+// fills with the center brightest, so the mark survives at 16 px. Unequal widths echo the
+// ultrawide split.
+let padX = body.width * 0.13
+let padY = body.height * 0.245
 let inner = body.insetBy(dx: padX, dy: padY)
-let innerRadius = inner.height * 0.14
-let innerPath = CGPath(roundedRect: inner, cornerWidth: innerRadius, cornerHeight: innerRadius, transform: nil)
+let gap = inner.width * 0.045
+let usable = inner.width - gap * 2
+let widths = [0.30, 0.40, 0.30].map { $0 * usable }
+let alphas: [CGFloat] = [0.82, 1.0, 0.82] // center brightest
+let colRadius = inner.height * 0.10
 
 ctx.saveGState()
-ctx.addPath(innerPath)
-ctx.clip()
-
-// Darken slightly so it reads as a display and the dividers pop.
-ctx.setFillColor(NSColor.black.withAlphaComponent(0.16).cgColor)
-ctx.fill(inner)
-
-let d0 = inner.minX + inner.width * 0.30   // left|center divider
-let d1 = inner.minX + inner.width * 0.70   // center|right divider
-
-// Center column highlight.
-ctx.setFillColor(NSColor.white.withAlphaComponent(0.20).cgColor)
-ctx.fill(CGRect(x: d0, y: inner.minY, width: d1 - d0, height: inner.height))
-
-// Two crisp divider lines with a faint glow.
-let lineW: CGFloat = 14
-ctx.saveGState()
-ctx.setShadow(offset: .zero, blur: 18, color: NSColor.white.withAlphaComponent(0.6).cgColor)
-ctx.setFillColor(NSColor.white.cgColor)
-for x in [d0, d1] {
-    ctx.fill(CGRect(x: x - lineW / 2, y: inner.minY, width: lineW, height: inner.height))
+var x = inner.minX
+for (w, a) in zip(widths, alphas) {
+    let bar = CGRect(x: x, y: inner.minY, width: w, height: inner.height)
+    ctx.addPath(CGPath(roundedRect: bar, cornerWidth: colRadius, cornerHeight: colRadius, transform: nil))
+    ctx.setFillColor(NSColor.white.withAlphaComponent(a).cgColor)
+    ctx.fillPath()
+    x += w + gap
 }
-ctx.restoreGState()
-ctx.restoreGState() // unclip the screen
-
-// Screen edge.
-ctx.addPath(innerPath)
-ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.24).cgColor)
-ctx.setLineWidth(4)
-ctx.strokePath()
-
 ctx.restoreGState()
 
 // Subtle inner edge for crispness.

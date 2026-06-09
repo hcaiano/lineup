@@ -1,12 +1,6 @@
 import AppKit
 import LineupCore
 
-/// Brand blue (#2F6BFF) used across overlays/highlights/selection. Fixed, not the system
-/// accent, so the product reads as one brand. (Unified into a Theme in a later phase.)
-enum Brand {
-    static let blue = NSColor(srgbRed: 0.184, green: 0.420, blue: 1.0, alpha: 1)
-}
-
 /// Full-screen, WYSIWYG layout editor — the ONE place to shape a per-screen layout. Shows
 /// the display's actual zones (the whole recursive tree, so nested splits render correctly),
 /// reveals visual split/merge controls on hover, drags dividers, and commits a DRAFT on Done

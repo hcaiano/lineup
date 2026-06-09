@@ -233,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildStatusItem() {
         if statusItem == nil {
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            statusItem.button?.title = "▦"
+            statusItem.button?.image = Brand.menuBarLogo()
             statusItem.button?.toolTip = "Lineup — window manager"
         }
         let menu = NSMenu()
