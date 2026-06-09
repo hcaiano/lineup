@@ -2,11 +2,11 @@ import AppKit
 
 // Renders a faithful still of the on-screen layout editor for the README — same brand blue,
 // zone numbering, divider px/% readouts and hover controls as Sources/lineup/LayoutEditorOverlay.swift,
-// drawn over a G9-proportioned (32:9) frame with zone 2 hovered. This is a documentation mock;
+// drawn over a neutral widescreen frame with zone 2 hovered. This is a documentation mock;
 // replace it with a real screenshot from your display anytime. Usage: swift make-editor-shot.swift out.png
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "editor.png"
 
-let W: CGFloat = 1920, H: CGFloat = 540 // 32:9, the Odyssey G9 aspect
+let W: CGFloat = 1760, H: CGFloat = 1100 // 16:10, a common display aspect
 let rep = NSBitmapImageRep(
     bitmapDataPlanes: nil, pixelsWide: Int(W), pixelsHigh: Int(H),
     bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -33,11 +33,11 @@ NSBezierPath(rect: NSRect(x: 0, y: 0, width: W, height: H)).fill()
 let menuBar: CGFloat = 26
 let container = NSRect(x: 0, y: 0, width: W, height: H - menuBar)
 
-// The real stored G9 shape: a wide left column, then two columns from a nested split —
+// A representative shape: a wide left column, then two columns from a nested split —
 // 3 leaves total. Divider 0 is a root *vertical* divider (pixel readout); divider 1 is the
 // nested vertical split (percent readout). Zone 2 is hovered.
-let pxWide = 5120
-let d0frac: CGFloat = 0.46          // root divider, ~2355 px
+let pxWide = 1760
+let d0frac: CGFloat = 0.46          // root divider, ~810 px
 let zones: [(n: Int, rect: NSRect)] = {
     let split0 = container.minX + container.width * d0frac
     let left = NSRect(x: container.minX, y: container.minY, width: split0 - container.minX, height: container.height)
@@ -143,7 +143,7 @@ label("Editing layout", NSPoint(x: topPanel.minX + 20, y: topPanel.midY - 9), si
 let pick = NSRect(x: topPanel.minX + 170, y: topPanel.midY - 16, width: 350, height: 32)
 NSColor.white.withAlphaComponent(0.14).setFill()
 NSBezierPath(roundedRect: pick, xRadius: 7, yRadius: 7).fill()
-label("Odyssey G9  (5120 × 1440)", NSPoint(x: pick.minX + 12, y: pick.midY - 8), size: 14, weight: .regular)
+label("Main Display", NSPoint(x: pick.minX + 12, y: pick.midY - 8), size: 14, weight: .regular)
 // chevrons
 blue.setStroke()
 let ch = NSBezierPath()

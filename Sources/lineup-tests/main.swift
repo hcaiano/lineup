@@ -240,25 +240,25 @@ do { // Node JSON round-trips (nested)
 }
 
 // ---- P1: per-screen config + migration ----
-let g9 = ScreenInfo(key: "uuid-G9", label: "Odyssey G9", pixelsWide: 5120, pixelsHigh: 1440, keyIsStable: true)
+let wide = ScreenInfo(key: "uuid-wide", label: "Wide Display", pixelsWide: 5120, pixelsHigh: 1440, keyIsStable: true)
 let mbp = ScreenInfo(key: "uuid-MBP", label: "Built-in", pixelsWide: 3456, pixelsHigh: 2234, keyIsStable: true)
 
 do { // per-screen lookup + default fallback
     var cfg = LineupConfig()
-    cfg = cfg.setting(layout: .thirds, for: g9, now: nil)
+    cfg = cfg.setting(layout: .thirds, for: wide, now: nil)
     cfg = cfg.setting(layout: .halves, for: mbp, now: nil)
-    check(Layout.zones(cfg.layout(forKey: "uuid-G9"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 3, "per-screen: G9 -> thirds")
+    check(Layout.zones(cfg.layout(forKey: "uuid-wide"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 3, "per-screen: wide -> thirds")
     check(Layout.zones(cfg.layout(forKey: "uuid-MBP"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "per-screen: MBP -> halves")
     check(Layout.zones(cfg.layout(forKey: "uuid-UNKNOWN"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "per-screen: unknown -> default halves")
 }
 
-do { // out-of-range Zone-N across screens: Zone 3 exists on G9, not on MBP
+do { // out-of-range Zone-N across screens: Zone 3 exists on wide, not on MBP
     var cfg = LineupConfig()
-    cfg = cfg.setting(layout: .thirds, for: g9, now: nil)
+    cfg = cfg.setting(layout: .thirds, for: wide, now: nil)
     cfg = cfg.setting(layout: .halves, for: mbp, now: nil)
-    let g9Z3 = Layout.zoneRect(index: 2, root: cfg.layout(forKey: "uuid-G9"), frame: frame, visibleFrame: visible, pixelsWide: px)
+    let wideZ3 = Layout.zoneRect(index: 2, root: cfg.layout(forKey: "uuid-wide"), frame: frame, visibleFrame: visible, pixelsWide: px)
     let mbpZ3 = Layout.zoneRect(index: 2, root: cfg.layout(forKey: "uuid-MBP"), frame: frame, visibleFrame: visible, pixelsWide: px)
-    check(g9Z3 != nil, "Zone 3 available on G9 (3 zones)")
+    check(wideZ3 != nil, "Zone 3 available on wide (3 zones)")
     check(mbpZ3 == nil, "Zone 3 unavailable on MBP (2 zones) -> binding disables itself")
 }
 
@@ -268,12 +268,12 @@ do { // migration from legacy ColumnConfig -> schema 3 onto current screen
     try? FileManager.default.removeItem(at: tmp)
     try legacy.write(to: tmp)
     var backedUp = false
-    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in backedUp = true }, resolveLegacyTarget: { _ in g9 })
+    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in backedUp = true }, resolveLegacyTarget: { _ in wide })
     check(isMigrated(outcome), "migration: legacy detected")
     check(backedUp, "migration: backup taken before write")
     let cfg = outcomeConfig(outcome)!
     check(cfg.schemaVersion == 3, "migration: schema bumped to 3")
-    let z = Layout.zones(cfg.layout(forKey: g9.key), frame: frame, visibleFrame: visible, pixelsWide: px)
+    let z = Layout.zones(cfg.layout(forKey: wide.key), frame: frame, visibleFrame: visible, pixelsWide: px)
     eq(z[0].maxX, 1133, "migration: seams preserved (1133)")
     eq(z[1].maxX, 2865, "migration: seams preserved (2865)")
     try? FileManager.default.removeItem(at: tmp)
@@ -282,23 +282,23 @@ do { // migration from legacy ColumnConfig -> schema 3 onto current screen
 do { // schema-3 file loads without migration; absent file = fresh config
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v3-\(checks).json")
     try? FileManager.default.removeItem(at: tmp)
-    try LineupConfig().setting(layout: .thirds, for: g9, now: nil).write(to: tmp)
-    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    try LineupConfig().setting(layout: .thirds, for: wide, now: nil).write(to: tmp)
+    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in wide })
     check(!isMigrated(outcome), "schema-3 file: no migration")
-    check(outcomeConfig(outcome)!.screens["uuid-G9"] != nil, "schema-3 file: G9 layout present")
+    check(outcomeConfig(outcome)!.screens["uuid-wide"] != nil, "schema-3 file: wide layout present")
     try? FileManager.default.removeItem(at: tmp)
     let absent = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-absent-\(checks).json")
     try? FileManager.default.removeItem(at: absent)
-    let absentOutcome = try LineupConfig.loadOrMigrate(from: absent, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    let absentOutcome = try LineupConfig.loadOrMigrate(from: absent, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in wide })
     check(isFresh(absentOutcome), "absent file: outcome is .fresh (writable)")
     check(outcomeConfig(absentOutcome)!.screens.isEmpty, "absent file: fresh empty config")
 }
 
 do { // fallback screen key composition (never resolution-only)
-    let k = ScreenKey.fallback(vendor: 1552, model: 42, serial: 7, width: 5120, height: 1440, name: "G9")
+    let k = ScreenKey.fallback(vendor: 1552, model: 42, serial: 7, width: 5120, height: 1440, name: "wide")
     check(k.hasPrefix("fallback:"), "fallback key prefixed")
     check(k.contains("1552:42:7"), "fallback key includes vendor:model:serial")
-    let k2 = ScreenKey.fallback(vendor: 1552, model: 42, serial: 0, width: 5120, height: 1440, name: "G9", tieBreaker: "unit3")
+    let k2 = ScreenKey.fallback(vendor: 1552, model: 42, serial: 0, width: 5120, height: 1440, name: "wide", tieBreaker: "unit3")
     check(k2.hasSuffix(":unit3"), "fallback key appends tie-breaker")
     check(k != k2, "tie-breaker disambiguates identical fallback displays")
 }
@@ -350,7 +350,7 @@ do { // present-but-corrupt config throws (no clobber); absent stays fresh
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-corrupt-\(checks).json")
     try "{ not valid json at all ".write(to: tmp, atomically: true, encoding: .utf8)
     expectThrow("corrupt present config throws (no data loss)") {
-        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in wide })
     }
     try? FileManager.default.removeItem(at: tmp)
 }
@@ -365,7 +365,7 @@ do { // write() validates: invalid layout throws and never creates/overwrites th
 }
 
 do { // a future schema-4 file (v3-shaped) is rejected, not loaded lossily
-    var future = LineupConfig().setting(layout: .halves, for: g9, now: nil)
+    var future = LineupConfig().setting(layout: .halves, for: wide, now: nil)
     future.schemaVersion = 4
     // bypass write()'s schema-agnostic encode by encoding directly
     let enc = JSONEncoder()
@@ -373,7 +373,7 @@ do { // a future schema-4 file (v3-shaped) is rejected, not loaded lossily
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v4-\(checks).json")
     try data.write(to: tmp)
     expectThrow("future schema (v4) throws unsupportedSchema, not loaded") {
-        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in wide })
     }
     try? FileManager.default.removeItem(at: tmp)
 }
@@ -395,7 +395,7 @@ do { // defer migration when the target display isn't connected (resolveLegacyTa
     let outcome = try LineupConfig.loadOrMigrate(
         from: tmp, now: "T",
         backup: { _ in backedUp = true },
-        resolveLegacyTarget: { _ in nil }) // G9 disconnected -> defer
+        resolveLegacyTarget: { _ in nil }) // wide display disconnected -> defer
     // DISTINCT from absent-fresh: deferral is its own outcome so the runtime can block writes.
     check(outcome == .deferred, "defer: outcome is .deferred (distinct from .fresh)")
     check(!isFresh(outcome), "defer: not .fresh (so writes get blocked, unlike a real fresh config)")
@@ -416,7 +416,7 @@ do { // backup failure aborts migration (closure throws -> loadOrMigrate throws,
     expectThrow("backup failure aborts migration (no clobber)") {
         _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T",
             backup: { _ in throw BackupFailed() },
-            resolveLegacyTarget: { _ in g9 })
+            resolveLegacyTarget: { _ in wide })
     }
     let still = try JSONDecoder().decode(ColumnConfig.self, from: try Data(contentsOf: tmp))
     eq(CGFloat(still.dividers[1].value), 2865, "backup fail: legacy file preserved (2865)")
@@ -425,22 +425,22 @@ do { // backup failure aborts migration (closure throws -> loadOrMigrate throws,
 
 // ---- P2: quick actions honor per-screen root columns ----
 do {
-    let g9Layout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    let wideLayout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
     func qa(_ id: String, _ root: Node) -> CGRect { QuickAction.rect(id, root: root, frame: frame, visibleFrame: visible, pixelsWide: px)! }
     // With a 3-column layout, left/center/right land on the seam columns
-    eq(qa("left", g9Layout).maxX, 1133, "quick left -> root column 0 (seam)")
-    eq(qa("right", g9Layout).minX, 2865, "quick right -> root column 2 (seam)")
-    eq(qa("center", g9Layout).minX, 1133, "quick center -> middle column left edge")
-    eq(qa("center", g9Layout).maxX, 2865, "quick center -> middle column right edge")
-    eq(qa("full", g9Layout).width, 5120, "quick full -> whole screen")
-    eq(qa("leftHalf", g9Layout).maxX, 2560, "quick leftHalf -> screen half")
-    eq(qa("rightHalf", g9Layout).minX, 2560, "quick rightHalf -> screen half")
+    eq(qa("left", wideLayout).maxX, 1133, "quick left -> root column 0 (seam)")
+    eq(qa("right", wideLayout).minX, 2865, "quick right -> root column 2 (seam)")
+    eq(qa("center", wideLayout).minX, 1133, "quick center -> middle column left edge")
+    eq(qa("center", wideLayout).maxX, 2865, "quick center -> middle column right edge")
+    eq(qa("full", wideLayout).width, 5120, "quick full -> whole screen")
+    eq(qa("leftHalf", wideLayout).maxX, 2560, "quick leftHalf -> screen half")
+    eq(qa("rightHalf", wideLayout).minX, 2560, "quick rightHalf -> screen half")
     // With a bare leaf (no columns), left/right fall back to halves
     eq(qa("left", .leaf).maxX, 2560, "quick left (leaf) -> left half fallback")
     eq(qa("right", .leaf).minX, 2560, "quick right (leaf) -> right half fallback")
     // rootColumns nil for non-vertical-split roots
     check(Layout.rootColumns(.leaf, frame: frame, visibleFrame: visible, pixelsWide: px) == nil, "rootColumns: leaf -> nil")
-    check(Layout.rootColumns(g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)?.count == 3, "rootColumns: 3 columns")
+    check(Layout.rootColumns(wideLayout, frame: frame, visibleFrame: visible, pixelsWide: px)?.count == 3, "rootColumns: 3 columns")
 }
 
 // ---- P3: layout editor tree mutations ----
@@ -575,27 +575,27 @@ do { // zone action id <-> index
 }
 
 do { // shortcuts are optional + backward compatible in LineupConfig
-    var cfg = LineupConfig().setting(layout: .thirds, for: g9, now: nil)
+    var cfg = LineupConfig().setting(layout: .thirds, for: wide, now: nil)
     check(cfg.shortcuts == nil, "config: shortcuts absent by default")
     cfg.shortcuts = Shortcuts().setting(action: "full", keyCode: 126, modifiers: 0x1B00)
     let data = try JSONEncoder().encode(cfg)
     let back = try JSONDecoder().decode(LineupConfig.self, from: data)
     check(back.shortcuts?.binding(for: "full")?.keyCode == 126, "config: shortcuts round-trip")
     // a schema-3 doc without the shortcuts key still decodes (absent -> nil)
-    let noShortcuts = LineupConfig().setting(layout: .halves, for: g9, now: nil)
+    let noShortcuts = LineupConfig().setting(layout: .halves, for: wide, now: nil)
     let d2 = try JSONEncoder().encode(noShortcuts)
     check((try JSONDecoder().decode(LineupConfig.self, from: d2)).shortcuts == nil, "config: missing shortcuts decodes to nil")
 }
 
 // ---- P5: left/right cycling ----
 do { // step 0 honors the seam column; later steps are fractions; dedup
-    let g9Layout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
-    let left = Cycle.steps(.left, root: g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)
+    let wideLayout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    let left = Cycle.steps(.left, root: wideLayout, frame: frame, visibleFrame: visible, pixelsWide: px)
     eq(left[0].maxX, 1133, "cycle left step0 = seam column (1133)")
     eq(left[1].maxX, 2560, "cycle left step1 = 1/2")
     eq(left[2].maxX, 5120.0 / 3.0, "cycle left step2 = 1/3")
     eq(left[3].maxX, 2.0 / 3.0 * 5120, "cycle left step3 = 2/3")
-    let right = Cycle.steps(.right, root: g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)
+    let right = Cycle.steps(.right, root: wideLayout, frame: frame, visibleFrame: visible, pixelsWide: px)
     eq(right[0].minX, 2865, "cycle right step0 = seam column (2865)")
     eq(right[1].minX, 2560, "cycle right step1 = 1/2")
     // halves layout: step0 == step1 -> deduped
@@ -614,22 +614,22 @@ do { // continuation predicate
     let steps = 4
     let rect0 = CGRect(x: 0, y: 0, width: 1133, height: 1392)
     // no prior -> step 0
-    check(Cycle.nextStep(action: "left", now: 100, screenKey: "G9", focusedFrame: rect0, prev: nil, stepCount: steps) == 0, "cycle: no prev -> 0")
-    let prev = CycleState(action: "left", stepIndex: 0, lastTime: 100, screenKey: "G9", lastRect: rect0)
+    check(Cycle.nextStep(action: "left", now: 100, screenKey: "wide", focusedFrame: rect0, prev: nil, stepCount: steps) == 0, "cycle: no prev -> 0")
+    let prev = CycleState(action: "left", stepIndex: 0, lastTime: 100, screenKey: "wide", lastRect: rect0)
     // same key, in time, same screen, window still at lastRect -> advance
-    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 1, "cycle: continuation -> advance")
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "wide", focusedFrame: rect0, prev: prev, stepCount: steps) == 1, "cycle: continuation -> advance")
     // timed out -> reset
-    check(Cycle.nextStep(action: "left", now: 103, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: timeout -> reset")
+    check(Cycle.nextStep(action: "left", now: 103, screenKey: "wide", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: timeout -> reset")
     // different screen -> reset
     check(Cycle.nextStep(action: "left", now: 101, screenKey: "MBP", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: screen change -> reset")
     // window moved (frame != lastRect) -> reset
     let moved = CGRect(x: 50, y: 0, width: 1133, height: 1392)
-    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: moved, prev: prev, stepCount: steps) == 0, "cycle: window moved -> reset")
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "wide", focusedFrame: moved, prev: prev, stepCount: steps) == 0, "cycle: window moved -> reset")
     // wraps at end
-    let prevLast = CycleState(action: "left", stepIndex: 3, lastTime: 100, screenKey: "G9", lastRect: rect0)
-    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: rect0, prev: prevLast, stepCount: steps) == 0, "cycle: wraps to 0")
+    let prevLast = CycleState(action: "left", stepIndex: 3, lastTime: 100, screenKey: "wide", lastRect: rect0)
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "wide", focusedFrame: rect0, prev: prevLast, stepCount: steps) == 0, "cycle: wraps to 0")
     // clock stepped backward (now < lastTime) -> reset, never advance
-    check(Cycle.nextStep(action: "left", now: 99, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: negative clock delta -> reset")
+    check(Cycle.nextStep(action: "left", now: 99, screenKey: "wide", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: negative clock delta -> reset")
 }
 
 // ---- Report ----

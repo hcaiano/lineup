@@ -4,127 +4,92 @@
 
 # Lineup
 
-**A tiny, native macOS window manager for ultrawide monitors.**
-
-Snap windows into per-screen zones you design yourself — built for the Samsung Odyssey G9,
-useful on any display.
+**Snap your windows into place on any Mac.**
 
 </div>
 
 ---
 
-Lineup replaces Magnet/Rectangle-style tools with something made for big screens: you draw a
-**layout of zones** for each monitor, then snap windows into them by **dragging with a key
-held** or with **global shortcuts**. Layouts are recursive (split a zone into columns or rows,
-then split again), and each display remembers its own.
+Lineup keeps your windows where you want them. You draw a few zones on your screen, then drop any
+window into one with a quick drag or a keyboard shortcut. Every monitor remembers its own setup.
 
-- **Native & tiny.** Swift + AppKit, menu-bar only, no Electron, no background CPU.
-- **Per-screen layouts.** Your G9 can be three columns while your laptop is two — it switches
-  automatically based on which screen a window is on.
-- **Pixel-precise.** Column dividers can sit on exact pixels, so window edges land on a
-  monitor's physical seams.
+- **Design your own zones.** Two columns, three columns, a big main area with a stack beside it.
+  Set it up to match the way you work.
+- **Every screen remembers its layout.** Your laptop and your desk monitor can be arranged
+  differently, and Lineup switches between them on its own.
+- **It stays out of the way.** Lineup sits in your menu bar and barely uses any power while you work.
 
 ## Install
 
-Requires the Xcode **Command Line Tools** (`xcode-select --install`). Full Xcode is not needed.
-
-```sh
-git clone https://github.com/hcaiano/lineup.git
-cd lineup
-./Scripts/setup-signing.sh            # one-time: stable signature so the macOS permission sticks
-./Scripts/build-app.sh ~/Applications
-open ~/Applications/Lineup.app
-```
-
-On first launch, grant **Accessibility** (System Settings → Privacy & Security → Accessibility)
-— that's what lets Lineup move other apps' windows. If you use Magnet/Rectangle, disable it so
-the shortcuts don't collide.
-
-> Lineup is ad-hoc signed unless you run `setup-signing.sh`. Without it, macOS asks you to
-> re-grant Accessibility after every rebuild; with it, you grant once.
+1. Download the **Lineup DMG** (a file like `Lineup-1.0.0.dmg`) from the
+   [Releases page](https://github.com/hcaiano/lineup/releases/latest).
+2. Open it and drag **Lineup** into your **Applications** folder.
+3. The first time you open Lineup, macOS stops it because it doesn't recognize the developer yet.
+   To let it through (you only do this once):
+   - Double-click **Lineup**. You'll see a warning. Click **Done**.
+   - Open **System Settings**, go to **Privacy & Security**, and scroll down to **Security**.
+   - Click **Open Anyway** next to the message about Lineup, then confirm with your fingerprint or
+     password.
+   - The warning appears one more time. Click **Open**, and Lineup starts.
+4. Lineup needs your permission to move windows. When it asks, open **System Settings → Privacy &
+   Security → Accessibility** and switch **Lineup** on. If you already use Magnet or Rectangle, turn
+   it off so the shortcuts don't fight each other.
 
 ## Design your layout
 
-Click the menu-bar icon → **Edit Layout…**. An editor appears over your actual screen:
+Click the Lineup icon in your menu bar and choose **Edit Layout**. Your screen dims and your zones
+appear right where they'll live.
 
 <div align="center">
-<img src="docs/editor.png" width="900" alt="The Lineup layout editor, shown over a Samsung Odyssey G9: three numbered zones, the hovered zone offering split-side-by-side / split-stacked / merge, and pixel + percent readouts on the dividers.">
-<br><sub><i>The editor over a G9 — on your machine it floats over your real desktop.</i></sub>
+<img src="docs/editor.png" width="900" alt="The Lineup layout editor: three numbered zones over a screen, with buttons on the hovered zone to split it side by side, split it top and bottom, or merge it.">
 </div>
 
+- **Hover over a zone** to see its buttons. Split it side by side, split it top and bottom, or merge
+  it back together. The buttons show you the shape you'll get, so there's nothing to read.
+- **Drag any divider** to resize a zone. Split as many times as you like.
+- Editing more than one monitor? Pick another from the menu at the top.
+- Click **Done** to save, or **Cancel** to throw it away. Nothing changes until you click Done.
 
-- **Hover a zone** to reveal its controls: **split side-by-side**, **split stacked**, or
-  **merge**. (Icons, not words — split it however you like, as deep as you like.)
-- **Drag a divider** to resize. The top-level dividers show a **pixel** readout (drag one onto a
-  physical seam); inner dividers show a **percent**.
-- Use the **display picker** to edit another monitor.
-- **Done** saves; **Cancel**/**Esc** discards. Nothing is saved until you click Done.
+Each zone has a number. Those numbers are how the keyboard shortcuts find them.
 
-Each leaf zone is numbered (1, 2, 3 …) — those numbers are what zone shortcuts target.
+## Move windows around
 
-## Snap windows
+There are two ways to drop a window into a zone.
 
-**Drag with Shift held** — the zone under your cursor highlights; release to snap. Toggle it in
-**Settings → General** (it's on by default).
+**Drag and drop.** Hold **Shift** while you drag a window. The zone under your cursor lights up. Let
+go to drop the window in. You can turn this off in Settings.
 
-**Global shortcuts** (Hyperkey = `⌃⌥⇧⌘`, e.g. Caps Lock remapped via Karabiner):
+**Keyboard shortcuts.** Lineup comes with a few ready to go. They use a "Hyper" key, which is
+Control, Option, Shift and Command pressed together. Pressing four keys at once is a stretch, so
+most people turn a single key (often Caps Lock) into Hyper. Free apps like
+[Raycast](https://www.raycast.com) or [Karabiner](https://karabiner-elements.pqrs.org) set this up
+in a minute. If you'd rather not bother, the drag-and-drop above needs no setup at all.
 
-| Shortcut        | Action                                              |
-| --------------- | --------------------------------------------------- |
-| `Hyper + ←` / `→` | Left / right — **cycles** your column → ½ → ⅓ → ⅔  |
-| `Hyper + ↑`     | Full screen                                         |
-| `Hyper + ↓`     | Center                                             |
-| `Hyper + [` / `]` | Left / right half                                |
+| Press | What happens |
+| --- | --- |
+| Hyper + Left or Right | Move to that side. Press again to cycle through half, a third, two thirds. |
+| Hyper + Up | Fill the screen |
+| Hyper + Down | Center the window |
+| Hyper + [ or ] | Snap to the left or right half |
 
-These are the defaults. **Zone shortcuts (snap to Zone 1, 2, 3 …) start unassigned** so they
-don't clash with combos you already use. Assign any of them in **Settings → Shortcuts**: click
-**Record** and press a combo (Esc cancels, Delete clears). The arrow cycle resets if you pause,
-switch windows, or move the window.
+The shortcuts that snap to a numbered zone start empty, so they won't clash with anything you
+already use. Add the ones you want in Settings.
 
-## Customize
+## Settings
 
-**Settings…** has two tabs:
+Open **Settings** from the menu bar.
 
-- **Shortcuts** — rebind every action (quick actions + each numbered zone) with the key recorder.
-- **General** — shift-drag toggle, launch-at-login, Accessibility status.
+- **Shortcuts** lets you set or change any shortcut. Click **Record** and press the keys you want.
+- **General** has the drag-and-drop switch, an option to start Lineup when your Mac turns on, and
+  your permission status.
 
-Config lives at `~/.config/lineup/zones.json` (one layout per display, keyed to the monitor).
-You normally never touch it — the editor writes it for you.
+## Good to know
 
-## Known limitations
-
-- Window sizing via the Accessibility API is advisory: a few apps with a minimum size or a fixed
-  step (e.g. Terminal's character grid) may not land pixel-exact on a seam. Most apps do.
-- Top-level column dividers are pixel-exact; nested splits use fractions of their parent.
-- The editor edits **connected** displays; a layout for an unplugged monitor is preserved but not
-  editable until it's reconnected.
-
-## Build from source
-
-```sh
-swift run lineup-tests      # dependency-free test suite (no Xcode/XCTest needed)
-swift build -c release      # build the binary
-./Scripts/build-app.sh DIR  # assemble + sign Lineup.app into DIR
-```
-
-```
-Sources/LineupCore/         Pure, tested core (no AppKit)
-  ZoneTree.swift            Recursive split-tree model + resolver + editor geometry
-  LayoutEdit.swift          Pure split / merge / resize operations
-  LineupConfig.swift        Per-screen schema-3 config + migration
-  Shortcuts.swift           Shortcut bindings + conflicts + zone actions
-  Cycle.swift               Left/right cycle steps + continuation predicate
-Sources/lineup/             AppKit agent
-  main.swift                Menu-bar app, hotkeys, config lifecycle
-  LayoutEditorOverlay.swift The on-screen layout editor
-  DragSnap.swift            Shift-drag-to-snap
-  SettingsWindow.swift      Shortcuts + General
-  WindowMover.swift         Accessibility window get/set
-  ShortcutKit.swift         Defaults + Cocoa↔Carbon + combo strings
-  Theme.swift               Brand colour + menu-bar logo
-Scripts/                    build-app, setup-signing, make-icon, make-icns
-```
+- Lineup moves and resizes windows the same way you would by hand. A few apps that insist on a fixed
+  size (like Terminal) might not land exactly on the line. Most apps fit perfectly.
+- Lineup only touches the monitors you have plugged in right now. Unplug one and its layout waits
+  safely until you connect it again.
 
 ## License
 
-[MIT](LICENSE) © 2026 Henrique Caiano
+Lineup is free and open source under the [MIT license](LICENSE).
