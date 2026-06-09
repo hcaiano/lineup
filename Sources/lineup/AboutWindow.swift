@@ -67,7 +67,7 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
             view.addSubview(build)
         }
 
-        let card = NSView(frame: NSRect(x: 42, y: 104, width: size.width - 84, height: 150))
+        let card = NSView(frame: NSRect(x: 42, y: 150, width: size.width - 84, height: 104))
         card.wantsLayer = true
         card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         card.layer?.cornerRadius = 10
@@ -75,11 +75,9 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         card.layer?.borderWidth = 1
         view.addSubview(card)
 
-        addLinkRow(to: card, y: 102, title: "Website", value: "lineup.caiano.com", url: "https://lineup.caiano.com")
-        addDivider(to: card, y: 93)
-        addLinkRow(to: card, y: 56, title: "GitHub", value: "github.com/hcaiano/lineup", url: "https://github.com/hcaiano/lineup")
+        addLinkRow(to: card, y: 56, title: "Website", value: "lineup.caiano.com", url: "https://lineup.caiano.com")
         addDivider(to: card, y: 47)
-        addLinkRow(to: card, y: 10, title: "Email", value: "henrique@gam3s.gg", url: "mailto:henrique@gam3s.gg")
+        addLinkRow(to: card, y: 10, title: "GitHub", value: "github.com/hcaiano/lineup", url: "https://github.com/hcaiano/lineup")
 
         let footerDivider = NSBox(frame: NSRect(x: 42, y: 82, width: size.width - 84, height: 1))
         footerDivider.boxType = .separator
