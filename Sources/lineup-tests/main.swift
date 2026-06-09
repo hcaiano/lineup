@@ -290,6 +290,61 @@ do { // fallback screen key composition (never resolution-only)
     let k = ScreenKey.fallback(vendor: 1552, model: 42, serial: 7, width: 5120, height: 1440, name: "G9")
     check(k.hasPrefix("fallback:"), "fallback key prefixed")
     check(k.contains("1552:42:7"), "fallback key includes vendor:model:serial")
+    let k2 = ScreenKey.fallback(vendor: 1552, model: 42, serial: 0, width: 5120, height: 1440, name: "G9", tieBreaker: "unit3")
+    check(k2.hasSuffix(":unit3"), "fallback key appends tie-breaker")
+    check(k != k2, "tie-breaker disambiguates identical fallback displays")
+}
+
+// ---- P1 review fixes: validation ----
+func expectThrow(_ name: String, _ body: () throws -> Void) {
+    checks += 1
+    do { try body(); failures += 1; FileHandle.standardError.write(Data("FAIL: \(name) (no throw)\n".utf8)) }
+    catch { /* expected */ }
+}
+func expectNoThrow(_ name: String, _ body: () throws -> Void) {
+    checks += 1
+    do { try body() } catch { failures += 1; FileHandle.standardError.write(Data("FAIL: \(name) (threw \(error))\n".utf8)) }
+}
+
+expectNoThrow("valid: root vertical pixels ok") {
+    try Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)]).validate()
+}
+expectNoThrow("valid: nested fraction tree (his example)") {
+    try Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf, .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ]).validate()
+}
+expectThrow("invalid: too few dividers") {
+    try Node.split(axis: .vertical, dividers: [], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: too many dividers") {
+    try Node.split(axis: .vertical, dividers: [Boundary(0.3, .fraction), Boundary(0.6, .fraction)], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: single-child split") {
+    try Node.split(axis: .vertical, dividers: [], children: [.leaf]).validate()
+}
+expectThrow("invalid: nested vertical pixels") {
+    try Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf, .split(axis: .vertical, dividers: [Boundary(100, .pixels)], children: [.leaf, .leaf]),
+    ]).validate()
+}
+expectThrow("invalid: horizontal pixels") {
+    try Node.split(axis: .horizontal, dividers: [Boundary(100, .pixels)], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: horizontal points") {
+    try Node.split(axis: .horizontal, dividers: [Boundary(100, .points)], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: root horizontal pixels (only root VERTICAL may use absolutes)") {
+    try Node.split(axis: .horizontal, dividers: [Boundary(100, .pixels)], children: [.leaf, .leaf]).validate()
+}
+
+do { // present-but-corrupt config throws (no clobber); absent stays fresh
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-corrupt-\(checks).json")
+    try "{ not valid json at all ".write(to: tmp, atomically: true, encoding: .utf8)
+    expectThrow("corrupt present config throws (no data loss)") {
+        _ = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in })
+    }
+    try? FileManager.default.removeItem(at: tmp)
 }
 
 // ---- Report ----

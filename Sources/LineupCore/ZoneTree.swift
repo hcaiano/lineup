@@ -52,6 +52,37 @@ extension Node: Codable {
     }
 }
 
+// MARK: - Validation
+
+public enum LayoutError: Error, Equatable {
+    /// A split must have >= 2 children and exactly `children.count - 1` dividers.
+    case arity(dividers: Int, children: Int)
+    /// Absolute units (.points/.pixels) are allowed ONLY on the root vertical split (the
+    /// physical seams). Every nested split and every horizontal split must be fraction-only.
+    case illegalUnit(axis: Axis, isRoot: Bool)
+}
+
+extension Node {
+    /// Validate the tree's structure and unit rules. The resolver assumes valid input, so
+    /// validation happens at the edges (config load + before save). `isRoot` is true only
+    /// for the top node.
+    public func validate(isRoot: Bool = true) throws {
+        switch self {
+        case .leaf:
+            return
+        case let .split(axis, dividers, children):
+            guard children.count >= 2, dividers.count == children.count - 1 else {
+                throw LayoutError.arity(dividers: dividers.count, children: children.count)
+            }
+            let absoluteAllowed = isRoot && axis == .vertical
+            if !absoluteAllowed, dividers.contains(where: { $0.unit != .fraction }) {
+                throw LayoutError.illegalUnit(axis: axis, isRoot: isRoot)
+            }
+            for child in children { try child.validate(isRoot: false) }
+        }
+    }
+}
+
 // MARK: - Seed layouts
 
 extension Node {

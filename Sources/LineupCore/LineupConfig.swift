@@ -23,9 +23,20 @@ public struct ScreenInfo: Equatable {
 /// (virtual/headless displays). Never key on resolution alone — it collides on two
 /// identical monitors.
 public enum ScreenKey {
-    public static func fallback(vendor: Int, model: Int, serial: Int, width: Int, height: Int, name: String) -> String {
-        "fallback:\(vendor):\(model):\(serial):\(width)x\(height):\(name)"
+    /// `tieBreaker` (e.g. CGDisplay unitNumber / displayID) disambiguates two otherwise
+    /// identical fallback displays (same model, serial 0, same label). Always best-effort
+    /// (keyIsStable=false) — the UUID path is preferred when available.
+    public static func fallback(vendor: Int, model: Int, serial: Int, width: Int, height: Int, name: String, tieBreaker: String? = nil) -> String {
+        var key = "fallback:\(vendor):\(model):\(serial):\(width)x\(height):\(name)"
+        if let t = tieBreaker, !t.isEmpty { key += ":\(t)" }
+        return key
     }
+}
+
+public enum LineupConfigError: Error, Equatable {
+    /// A present config file couldn't be recognized/decoded — surfaced rather than
+    /// silently replaced, so a user's layout is never clobbered by a corrupt read.
+    case unreadable
 }
 
 /// One screen's saved layout plus identifying metadata (for the Settings UI + debugging).
@@ -69,6 +80,12 @@ public struct LineupConfig: Codable, Equatable {
         screens[key]?.layout ?? defaultLayout
     }
 
+    /// Validate every stored layout (structure + unit rules). Throws on the first invalid.
+    public func validate() throws {
+        try defaultLayout.validate()
+        for layout in screens.values.map(\.layout) { try layout.validate() }
+    }
+
     /// Return a copy with `screen`'s layout set/updated (keeps metadata fresh).
     public func setting(layout: Node, for screen: ScreenInfo, now: String?) -> LineupConfig {
         var copy = self
@@ -100,8 +117,9 @@ public struct LineupConfig: Codable, Equatable {
         }
         let data = try Data(contentsOf: url)
 
-        // Already schema 3?
+        // Already schema 3? Validate before trusting it.
         if let cfg = try? JSONDecoder().decode(LineupConfig.self, from: data), cfg.schemaVersion >= 3 {
+            try cfg.validate()
             return (cfg, false)
         }
         // Legacy ColumnConfig (dividers + halfDivider)?
@@ -115,7 +133,8 @@ public struct LineupConfig: Codable, Equatable {
                 lastSeenAt: now, layout: root)
             return (cfg, true)
         }
-        // Unknown contents — start fresh rather than clobber blindly.
-        return (LineupConfig(), false)
+        // Present but unrecognized/corrupt — surface it; NEVER overwrite a user's layout
+        // with a fresh default just because a read failed.
+        throw LineupConfigError.unreadable
     }
 }
