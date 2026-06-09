@@ -162,45 +162,23 @@ private final class EditorCanvas: NSView {
     private var dragging: Layout.DividerHandle?
     private var tracking: NSTrackingArea?
 
-    private let splitVBtn = EditorCanvas.controlButton("rectangle.split.2x1", "Side by side")
-    private let splitHBtn = EditorCanvas.controlButton("rectangle.split.1x2", "Stacked")
-    private let mergeBtn = EditorCanvas.controlButton("arrow.down.right.and.arrow.up.left", "Merge")
+    private let controlBar = ZoneControlBar()
 
     init(frame: NSRect, screenFrame: CGRect, visibleFrame: CGRect, info: ScreenInfo) {
         self.screenFrame = screenFrame
         self.visibleFrame = visibleFrame
         self.info = info
         super.init(frame: frame)
-        for b in [splitVBtn, splitHBtn, mergeBtn] { b.isHidden = true; addSubview(b) }
-        splitVBtn.target = self; splitVBtn.action = #selector(splitV)
-        splitHBtn.target = self; splitHBtn.action = #selector(splitH)
-        mergeBtn.target = self; mergeBtn.action = #selector(mergeZone)
+        controlBar.isHidden = true
+        controlBar.onSplitV = { [weak self] in self?.splitV() }
+        controlBar.onSplitH = { [weak self] in self?.splitH() }
+        controlBar.onMerge = { [weak self] in self?.mergeZone() }
+        addSubview(controlBar)
     }
     required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
-
-    /// A labeled control chip (icon above a short word), big enough to read and tap.
-    private static func controlButton(_ symbol: String, _ title: String) -> NSButton {
-        let b = NSButton()
-        b.bezelStyle = .regularSquare
-        b.isBordered = false
-        b.imagePosition = .imageAbove
-        b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        b.symbolConfiguration = .init(pointSize: 22, weight: .semibold)
-        b.attributedTitle = NSAttributedString(string: title, attributes: [
-            .foregroundColor: NSColor.black.withAlphaComponent(0.75),
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold)])
-        b.contentTintColor = Brand.blue
-        b.toolTip = title
-        b.wantsLayer = true
-        b.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.96).cgColor
-        b.layer?.cornerRadius = 12
-        b.layer?.shadowColor = NSColor.black.cgColor
-        b.layer?.shadowOpacity = 0.25; b.layer?.shadowRadius = 8; b.layer?.shadowOffset = .init(width: 0, height: -2)
-        return b
-    }
 
     // MARK: geometry (overlay is 1:1 over the screen; subtract the screen origin)
     private func viewRect(_ globalCocoa: CGRect) -> CGRect {
@@ -243,13 +221,36 @@ private final class EditorCanvas: NSView {
             (isActive ? Brand.blue : Brand.blue.withAlphaComponent(0.55)).setStroke()
             p.lineWidth = isActive ? 3 : 1.5; p.stroke()
             drawNumber(i + 1, in: r)
+            drawSize(of: leaf.rect, in: r, controlsShown: isActive && !controlBar.isHidden)
         }
         if editable {
             for h in handles() { drawHandle(h) }
         }
     }
 
-    /// A divider: a soft line plus a clearly-grabbable grip pill with dots, and a readout.
+    /// Every zone shows its size in physical pixels, centered — the one number that matters,
+    /// where the eye already is. It updates live while a divider drags. (Replaces the old
+    /// px-on-root / %-on-nested divider pills, which mixed units across the same screen.)
+    private func drawSize(of globalRect: CGRect, in viewR: CGRect, controlsShown: Bool) {
+        let w = Int((globalRect.width / max(container.width, 1) * CGFloat(info.pixelsWide)).rounded())
+        let h = Int((globalRect.height / max(container.height, 1) * CGFloat(info.pixelsHigh)).rounded())
+        let s = NSAttributedString(string: "\(w) × \(h) px", attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold),
+            .foregroundColor: NSColor.white])
+        let sz = s.size()
+        let pad: CGFloat = 8
+        // Centered; while this zone's control bar is up, sit just below it instead.
+        let cy = controlsShown ? viewR.midY - 56 - sz.height : viewR.midY
+        let pill = CGRect(x: viewR.midX - sz.width / 2 - pad, y: cy - sz.height / 2 - pad / 2,
+                          width: sz.width + pad * 2, height: sz.height + pad)
+        guard pill.width < viewR.width - 8 else { return } // zone too small for a readout
+        NSColor.black.withAlphaComponent(0.55).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 7, yRadius: 7).fill()
+        s.draw(at: NSPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2))
+    }
+
+    /// A divider: a soft line plus a clearly-grabbable grip pill with dots. (Sizes live in
+    /// the zones themselves — see drawSize — so the handle carries no readout.)
     private func drawHandle(_ h: Layout.DividerHandle) {
         let r = viewRect(h.line)
         let vertical = h.axis == .vertical
@@ -274,38 +275,6 @@ private final class EditorCanvas: NSView {
                              : CGPoint(x: grip.midX + CGFloat(k) * 8, y: grip.midY)
             NSBezierPath(ovalIn: CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)).fill()
         }
-        drawDividerReadout(h, viewLine: r, grip: grip)
-    }
-
-    /// Root vertical dividers show physical pixels (seam alignment); nested/horizontal show a percent.
-    private func drawDividerReadout(_ h: Layout.DividerHandle, viewLine: CGRect, grip: CGRect) {
-        let text: String
-        if h.path.isEmpty && h.axis == .vertical {
-            let pointsFromLeft = h.line.midX - h.container.minX
-            let pixels = pointsFromLeft / max(h.container.width, 1) * CGFloat(info.pixelsWide)
-            text = "\(Int(pixels.rounded())) px"
-        } else if h.axis == .vertical {
-            let pct = (h.line.midX - h.container.minX) / max(h.container.width, 1) * 100
-            text = "\(Int(pct.rounded()))%"
-        } else {
-            let pct = (h.container.maxY - h.line.midY) / max(h.container.height, 1) * 100
-            text = "\(Int(pct.rounded()))%"
-        }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold),
-            .foregroundColor: NSColor.white]
-        let s = NSAttributedString(string: text, attributes: attrs)
-        let sz = s.size()
-        let pad: CGFloat = 7
-        let pillW = sz.width + pad * 2, pillH = sz.height + pad
-        // Place the readout just beside the grip so it's clearly tied to the handle you're moving.
-        let center = h.axis == .vertical
-            ? CGPoint(x: grip.midX, y: grip.maxY + pillH / 2 + 6)
-            : CGPoint(x: grip.maxX + pillW / 2 + 6, y: grip.midY)
-        let pill = CGRect(x: center.x - pillW / 2, y: center.y - pillH / 2, width: pillW, height: pillH)
-        NSColor.black.withAlphaComponent(0.72).setFill()
-        NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
-        s.draw(at: NSPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2))
     }
 
     private func drawNumber(_ n: Int, in r: CGRect) {
@@ -320,18 +289,20 @@ private final class EditorCanvas: NSView {
 
     private func positionControls() {
         guard editable, let path = activePath, let rect = leaves().first(where: { $0.path == path })?.rect else {
-            for b in [splitVBtn, splitHBtn, mergeBtn] { b.isHidden = true }
+            controlBar.isHidden = true
             return
         }
         let vr = viewRect(rect)
-        let w: CGFloat = 92, hgt: CGFloat = 72, gap: CGFloat = 14
-        let cx = vr.midX, cy = vr.midY
-        splitVBtn.frame = NSRect(x: cx - w - gap / 2, y: cy - hgt / 2, width: w, height: hgt)
-        splitHBtn.frame = NSRect(x: cx + gap / 2, y: cy - hgt / 2, width: w, height: hgt)
-        let mergeEnabled = !path.isEmpty
-        mergeBtn.isHidden = !mergeEnabled
-        mergeBtn.frame = NSRect(x: cx - w / 2, y: cy - hgt / 2 - hgt - 12, width: w, height: hgt)
-        for b in [splitVBtn, splitHBtn] { b.isHidden = false }
+        controlBar.showsMerge = !path.isEmpty
+        let size = controlBar.preferredSize
+        // Centered in the zone; hide rather than overflow a zone too small to host it.
+        guard vr.width > size.width + 16, vr.height > size.height + 60 else {
+            controlBar.isHidden = true
+            return
+        }
+        controlBar.frame = NSRect(x: vr.midX - size.width / 2, y: vr.midY - size.height / 2,
+                                  width: size.width, height: size.height)
+        controlBar.isHidden = false
     }
 
     private func setActive(_ path: [Int]?, pinned: Bool) {
@@ -400,5 +371,122 @@ private final class EditorCanvas: NSView {
         root = updated
         onChange?(root)
         setActive(nil, pinned: false) // structure changed; re-hover to act again
+    }
+}
+
+// MARK: - Zone control bar
+
+/// One HUD bar per active zone: Split ▯|▯ · Split ▯/▯ · Merge. Same dark material as the rest
+/// of the overlay chrome (one component vocabulary), glyphs that depict the result, hover
+/// highlight in the brand blue. Replaces the old floating white chips.
+private final class ZoneControlBar: NSView {
+    var onSplitV: () -> Void = {}
+    var onSplitH: () -> Void = {}
+    var onMerge: () -> Void = {}
+    var showsMerge = true { didSet { mergeButton.isHidden = !showsMerge; relayout() } }
+
+    var preferredSize: NSSize {
+        let count = showsMerge ? 3 : 2
+        return NSSize(width: CGFloat(count) * segmentW + 2 * padding, height: segmentH + 2 * padding)
+    }
+
+    private let segmentW: CGFloat = 86, segmentH: CGFloat = 58, padding: CGFloat = 6
+    private var splitVButton: GlyphButton!
+    private var splitHButton: GlyphButton!
+    private var mergeButton: GlyphButton!
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
+        layer?.cornerRadius = 14
+        splitVButton = GlyphButton(title: "Split", kind: .splitVertical) { [weak self] in self?.onSplitV() }
+        splitHButton = GlyphButton(title: "Stack", kind: .splitHorizontal) { [weak self] in self?.onSplitH() }
+        mergeButton = GlyphButton(title: "Merge", kind: .merge) { [weak self] in self?.onMerge() }
+        for b in [splitVButton!, splitHButton!, mergeButton!] { addSubview(b) }
+        relayout()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func relayout() {
+        var x = padding
+        for b in [splitVButton!, splitHButton!, mergeButton!] where !b.isHidden {
+            b.frame = NSRect(x: x, y: padding, width: segmentW, height: segmentH)
+            x += segmentW
+        }
+    }
+
+    /// A segment: a glyph that shows the resulting shape, over a short label. Hover fills the
+    /// segment with the brand blue; the glyph and label stay white throughout.
+    private final class GlyphButton: NSView {
+        enum Kind { case splitVertical, splitHorizontal, merge }
+        private let kind: Kind
+        private let title: String
+        private let action: () -> Void
+        private var hovered = false { didSet { needsDisplay = true } }
+
+        init(title: String, kind: Kind, action: @escaping () -> Void) {
+            self.kind = kind
+            self.title = title
+            self.action = action
+            super.init(frame: .zero)
+            setAccessibilityElement(true)
+            setAccessibilityRole(.button)
+            setAccessibilityLabel(accessibilityText)
+            toolTip = accessibilityText
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        private var accessibilityText: String {
+            switch kind {
+            case .splitVertical: return "Split into two, side by side"
+            case .splitHorizontal: return "Split into two, stacked"
+            case .merge: return "Merge back into one zone"
+            }
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseEnteredAndExited], owner: self))
+        }
+        override func mouseEntered(with event: NSEvent) { hovered = true }
+        override func mouseExited(with event: NSEvent) { hovered = false }
+        override func mouseDown(with event: NSEvent) { action() }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+
+        override func draw(_ dirtyRect: NSRect) {
+            if hovered {
+                Brand.blue.setFill()
+                NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 10, yRadius: 10).fill()
+            }
+            // Glyph: a 30×22 rounded rect depicting the result, centered above the label.
+            let gw: CGFloat = 30, gh: CGFloat = 22
+            let g = NSRect(x: bounds.midX - gw / 2, y: bounds.midY - gh / 2 + 7, width: gw, height: gh)
+            let white = NSColor.white
+            white.setStroke()
+            let outline = NSBezierPath(roundedRect: g, xRadius: 4, yRadius: 4)
+            outline.lineWidth = 2
+            outline.stroke()
+            let line = NSBezierPath()
+            switch kind {
+            case .splitVertical:
+                line.move(to: NSPoint(x: g.midX, y: g.minY + 2)); line.line(to: NSPoint(x: g.midX, y: g.maxY - 2))
+            case .splitHorizontal:
+                line.move(to: NSPoint(x: g.minX + 2, y: g.midY)); line.line(to: NSPoint(x: g.maxX - 2, y: g.midY))
+            case .merge:
+                // Two halves becoming one: a dashed center line fading out reads as "remove the split".
+                line.move(to: NSPoint(x: g.midX, y: g.minY + 3)); line.line(to: NSPoint(x: g.midX, y: g.maxY - 3))
+                line.setLineDash([2, 3], count: 2, phase: 0)
+            }
+            line.lineWidth = 2
+            line.stroke()
+            // Label.
+            let s = NSAttributedString(string: title, attributes: [
+                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: white])
+            let sz = s.size()
+            s.draw(at: NSPoint(x: bounds.midX - sz.width / 2, y: bounds.minY + 6))
+        }
     }
 }

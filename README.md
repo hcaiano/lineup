@@ -46,9 +46,10 @@ appear right where they'll live.
 
 - **Hover over a zone** to see its buttons. Split it side by side, split it top and bottom, or merge
   it back together. The buttons show you the shape you'll get, so there's nothing to read.
-- **Drag any divider** to resize a zone. Split as many times as you like.
-- Editing more than one monitor? Pick another from the menu at the top.
-- Click **Done** to save, or **Cancel** to throw it away. Nothing changes until you click Done.
+- **Drag a divider handle** to resize. Every zone shows its size in pixels and updates live while
+  you drag. Split as many times as you like.
+- Using more than one monitor? The editor appears on each screen with that screen's own layout.
+- Click **Save** when it looks right, or **Cancel** to throw the changes away.
 
 Each zone has a number. Those numbers are how the keyboard shortcuts find them.
 
