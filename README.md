@@ -21,7 +21,7 @@ window into one with a quick drag or a keyboard shortcut. Every monitor remember
 
 ## Install
 
-1. Download the **Lineup DMG** (a file like `Lineup-1.0.0.dmg`) from the
+1. Download the **Lineup DMG** (a file like `Lineup-1.2.0.dmg`) from the
    [Releases page](https://github.com/hcaiano/lineup/releases/latest).
 2. Open it and drag **Lineup** into your **Applications** folder.
 3. The first time you open Lineup, macOS stops it because it doesn't recognize the developer yet.
@@ -70,7 +70,7 @@ in a minute. If you'd rather not bother, the drag-and-drop above needs no setup 
 | --- | --- |
 | Hyper + Left or Right | Move to that side. Press again to cycle through half, a third, two thirds. |
 | Hyper + Up | Fill the screen |
-| Hyper + Down | Center the window |
+| Hyper + Down | Center the window. Press again to cycle the centered widths. |
 | Hyper + [ or ] | Snap to the left or right half |
 
 The shortcuts that snap to a numbered zone start empty, so they won't clash with anything you

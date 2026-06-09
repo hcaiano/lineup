@@ -41,8 +41,12 @@ public enum Cycle {
         case .right:
             raw = [hasCols ? cols.last! : frac(0.5, 1), frac(0.5, 1), frac(2.0 / 3.0, 1), frac(1.0 / 3.0, 1)]
         case .center:
-            // The layout's middle zone, then progressively different centered widths.
-            raw = [hasCols ? cols[cols.count / 2] : frac(0.25, 0.75),
+            // The layout's middle zone in SEMANTIC visual order (left→right, top→bottom —
+            // the same order as the editor's zone numbers), then progressively different
+            // centered widths. leafColumns sorts by minX alone, which is ambiguous for
+            // stacked zones sharing an x; the numbered order is deterministic.
+            let ordered = Layout.zones(root, container: c, pixelsWide: pixelsWide)
+            raw = [ordered.count >= 2 ? ordered[ordered.count / 2] : frac(0.25, 0.75),
                    frac(0.25, 0.75),                       // centered half
                    frac(1.0 / 3.0, 2.0 / 3.0),             // centered third
                    frac(1.0 / 6.0, 5.0 / 6.0)]             // centered two-thirds

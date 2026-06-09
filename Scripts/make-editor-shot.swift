@@ -52,8 +52,10 @@ let activeN = 2
 // Zones — same fills/strokes as EditorCanvas.draw, with the per-zone size readout.
 let pxHigh = Int(CGFloat(pxWide) * H / W)
 func sizePill(_ z: (n: Int, rect: NSRect), offsetY: CGFloat = 0) {
-    let w = Int((z.rect.width / container.width * CGFloat(pxWide)).rounded())
-    let h = Int((z.rect.height / container.height * CGFloat(pxHigh)).rounded())
+    // Screen-frame scale on both axes (matches the app: the container is shorter than the
+    // screen by the menu bar, so container-height scaling would overstate full-height zones).
+    let w = Int((z.rect.width * CGFloat(pxWide) / W).rounded())
+    let h = Int((z.rect.height * CGFloat(pxHigh) / H).rounded())
     let s = NSAttributedString(string: "\(w) × \(h) px", attributes: [
         .font: NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold),
         .foregroundColor: NSColor.white])

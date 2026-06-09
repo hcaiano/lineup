@@ -231,9 +231,14 @@ private final class EditorCanvas: NSView {
     /// Every zone shows its size in physical pixels, centered — the one number that matters,
     /// where the eye already is. It updates live while a divider drags. (Replaces the old
     /// px-on-root / %-on-nested divider pills, which mixed units across the same screen.)
+    /// Conversion uses the SCREEN frame's points→pixels scale on both axes; the layout
+    /// container is shorter than the screen (visibleFrame height), so scaling by container
+    /// height would overstate a full-height zone by the menu bar/Dock.
     private func drawSize(of globalRect: CGRect, in viewR: CGRect, controlsShown: Bool) {
-        let w = Int((globalRect.width / max(container.width, 1) * CGFloat(info.pixelsWide)).rounded())
-        let h = Int((globalRect.height / max(container.height, 1) * CGFloat(info.pixelsHigh)).rounded())
+        let pxPerPtX = CGFloat(info.pixelsWide) / max(screenFrame.width, 1)
+        let pxPerPtY = CGFloat(info.pixelsHigh) / max(screenFrame.height, 1)
+        let w = Int((globalRect.width * pxPerPtX).rounded())
+        let h = Int((globalRect.height * pxPerPtY).rounded())
         let s = NSAttributedString(string: "\(w) × \(h) px", attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold),
             .foregroundColor: NSColor.white])

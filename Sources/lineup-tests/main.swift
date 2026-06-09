@@ -643,6 +643,19 @@ do { // step 0 honors the seam column; later steps are fractions; dedup
     let centerLeaf = Cycle.steps(.center, root: .leaf, frame: frame, visibleFrame: visible, pixelsWide: px)
     check(centerLeaf.count == 3, "cycle center on leaf: fallback dedups (4 -> 3)")
     eq(centerLeaf[0].minX, 1280, "cycle center leaf step0 = centered half")
+
+    // left column + right stacked: the two right leaves share a minX, so an x-sort is
+    // ambiguous. Center step 0 must be the SEMANTIC middle — zones order [L, R-top, R-bottom]
+    // -> index 1 = right-TOP — deterministically, not whichever equal-key sort emits.
+    let stacked = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)],
+                             children: [.leaf,
+                                        Node.split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)],
+                                                   children: [.leaf, .leaf])])
+    let cSteps = Cycle.steps(.center, root: stacked, frame: frame, visibleFrame: visible, pixelsWide: px)
+    let zonesOrdered = Layout.zones(stacked, container: Layout.rootContainer(frame: frame, visibleFrame: visible), pixelsWide: px)
+    eq(cSteps[0].minX, zonesOrdered[1].minX, "cycle center step0 = semantic middle x (right column)")
+    eq(cSteps[0].minY, zonesOrdered[1].minY, "cycle center step0 picks the TOP of the stacked pair")
+    eq(cSteps[0].height, zonesOrdered[1].height, "cycle center step0 height = the stacked zone, not the column")
 }
 
 do { // continuation predicate
