@@ -6,6 +6,8 @@ import LineupCore
 struct SettingsContext {
     var config: () -> LineupConfig
     var applyLayout: (Node, ScreenInfo) -> Void          // validate + persist per-screen
+    var canWrite: () -> Bool                             // false when config writes are blocked
+    var blockedMessage: () -> String?                    // why editing is disabled, if so
     var isDragSnapOn: () -> Bool
     var toggleDragSnap: () -> Void
     var isLaunchAtLoginOn: () -> Bool
@@ -60,6 +62,11 @@ private final class LayoutEditorView: NSView {
     private let canvas: LayoutCanvasView
     private let hint = NSTextField(labelWithString: "")
     private var screens: [(screen: NSScreen, info: ScreenInfo)] = []
+    private var splitColsBtn: NSButton!
+    private var splitRowsBtn: NSButton!
+    private var mergeBtn: NSButton!
+    private var resetBtn: NSButton!
+    private let defaultHint = "Click a zone to select it, then split or merge. Drag a divider to resize. Changes save automatically."
 
     init(context: SettingsContext) {
         self.ctx = context
@@ -87,27 +94,30 @@ private final class LayoutEditorView: NSView {
         canvas.onChange = { [weak self] node in self?.apply(node) }
         addSubview(canvas)
 
-        let buttons: [(String, Selector)] = [
-            ("Split into Columns", #selector(splitCols)),
-            ("Split into Rows", #selector(splitRows)),
-            ("Merge", #selector(merge)),
-            ("Reset to halves", #selector(resetHalves)),
-        ]
-        var x: CGFloat = 16
-        for (title, sel) in buttons {
+        func makeButton(_ title: String, _ sel: Selector) -> NSButton {
             let b = NSButton(title: title, target: self, action: sel)
             b.bezelStyle = .rounded
             b.sizeToFit()
-            b.frame = NSRect(x: x, y: 52, width: b.frame.width + 16, height: 28)
+            b.frame.size.height = 28
+            b.frame.size.width += 16
             addSubview(b)
-            x += b.frame.width + 24
+            return b
+        }
+        splitColsBtn = makeButton("Split into Columns", #selector(splitCols))
+        splitRowsBtn = makeButton("Split into Rows", #selector(splitRows))
+        mergeBtn = makeButton("Merge", #selector(merge))
+        resetBtn = makeButton("Reset to halves", #selector(resetHalves))
+        var x: CGFloat = 16
+        for b in [splitColsBtn!, splitRowsBtn!, mergeBtn!, resetBtn!] {
+            b.frame.origin = CGPoint(x: x, y: 52)
+            x += b.frame.width + 12
         }
 
         hint.frame = NSRect(x: 16, y: 16, width: 608, height: 28)
         hint.autoresizingMask = [.width]
         hint.textColor = .secondaryLabelColor
         hint.font = .systemFont(ofSize: 11)
-        hint.stringValue = "Click a zone to select it, then split or merge. Drag a divider to resize. Changes save automatically."
+        hint.stringValue = defaultHint
         addSubview(hint)
     }
 
@@ -139,8 +149,19 @@ private final class LayoutEditorView: NSView {
     }
 
     private func updateButtons() {
-        // Split only enabled when a leaf is selected; merge when a split (or its child) is.
-        // Kept simple: buttons always act on selection and no-op when invalid.
+        let writable = ctx.canWrite()
+        canvas.isEditable = writable
+        splitColsBtn.isEnabled = writable && canvas.selectedIsLeaf
+        splitRowsBtn.isEnabled = writable && canvas.selectedIsLeaf
+        mergeBtn.isEnabled = writable && canvas.selectedCanMerge
+        resetBtn.isEnabled = writable
+        if writable {
+            hint.stringValue = defaultHint
+            hint.textColor = .secondaryLabelColor
+        } else {
+            hint.stringValue = ctx.blockedMessage() ?? "Editing is disabled."
+            hint.textColor = .systemOrange
+        }
     }
 
     private func apply(_ node: Node) {
@@ -159,6 +180,7 @@ private final class LayoutEditorView: NSView {
 private final class LayoutCanvasView: NSView {
     var onSelect: (([Int]?) -> Void)?
     var onChange: ((Node) -> Void)?
+    var isEditable = true
 
     private var root: Node = .halves
     private var pixelsWide = 0
@@ -167,6 +189,17 @@ private final class LayoutCanvasView: NSView {
     private var dragging: Layout.DividerHandle?
 
     override var isFlipped: Bool { false }
+
+    /// True only when a leaf zone is selected (so Split is valid).
+    var selectedIsLeaf: Bool {
+        guard let p = selectedPath, case .leaf = root.node(at: p) else { return false }
+        return true
+    }
+    /// True when the selected leaf has a parent split that can be merged.
+    var selectedCanMerge: Bool {
+        guard let p = selectedPath, !p.isEmpty, case .leaf? = root.node(at: p) else { return false }
+        return true
+    }
 
     func configure(root: Node, pixelsWide: Int, aspect: CGSize) {
         self.root = root
@@ -178,20 +211,23 @@ private final class LayoutCanvasView: NSView {
     }
 
     func replaceRoot(_ node: Node) {
-        root = node; selectedPath = nil; onSelect?(nil); needsDisplay = true; onChange?(root)
+        guard isEditable else { return }
+        root = node; clearSelection(); needsDisplay = true; onChange?(root)
     }
 
     func splitSelected(axis: Axis) {
-        let path = selectedPath ?? []
+        guard isEditable, let path = selectedPath, selectedIsLeaf else { return }
         let updated = LayoutEdit.split(root, at: path, axis: axis)
-        if updated != root { root = updated; needsDisplay = true; onChange?(root) }
+        if updated != root { root = updated; clearSelection(); needsDisplay = true; onChange?(root) }
     }
 
     func mergeSelected() {
-        let path = selectedPath ?? []
+        guard isEditable, let path = selectedPath, !path.isEmpty else { return }
         let updated = LayoutEdit.merge(root, at: path)
-        if updated != root { root = updated; selectedPath = nil; onSelect?(nil); needsDisplay = true; onChange?(root) }
+        if updated != root { root = updated; clearSelection(); needsDisplay = true; onChange?(root) }
     }
+
+    private func clearSelection() { selectedPath = nil; onSelect?(nil) }
 
     // Virtual container (config coords) and its mapping into the view.
     private var virtualContainer: CGRect { CGRect(origin: .zero, size: aspect) }
@@ -248,11 +284,13 @@ private final class LayoutCanvasView: NSView {
         let (scale, offset) = fit()
         let vp = CGPoint(x: (p.x - offset.x) / scale, y: (p.y - offset.y) / scale)
 
-        // Divider first (drag to resize).
-        for h in Layout.dividerHandles(root, container: virtualContainer, pixelsWide: pixelsWide) {
-            if viewRect(for: h.line, scale: scale, offset: offset).insetBy(dx: -3, dy: -3).contains(p) {
-                dragging = h
-                return
+        // Divider first (drag to resize) — only when editing is allowed.
+        if isEditable {
+            for h in Layout.dividerHandles(root, container: virtualContainer, pixelsWide: pixelsWide) {
+                if viewRect(for: h.line, scale: scale, offset: offset).insetBy(dx: -3, dy: -3).contains(p) {
+                    dragging = h
+                    return
+                }
             }
         }
         // Else select the leaf under the cursor.

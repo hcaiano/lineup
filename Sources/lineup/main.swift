@@ -131,6 +131,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ctx = SettingsContext(
             config: { [weak self] in self?.config ?? LineupConfig() },
             applyLayout: { [weak self] node, info in self?.applyLayout(node, for: info) },
+            canWrite: { [weak self] in self?.configCanWrite ?? false },
+            blockedMessage: { [weak self] in
+                switch self?.configState {
+                case .migrationDeferred: return "Your saved layout is waiting for its display. Editing is disabled until it reconnects or you reset from the menu."
+                case .loadError: return "The config file couldn't be loaded. Editing is disabled until you reset it from the menu."
+                default: return nil
+                }
+            },
             isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
             toggleDragSnap: { [weak self] in self?.toggleDragSnap() },
             isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
@@ -180,13 +188,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onSave: { [weak self] dividerPixels, _ in
                 guard let self else { return }
                 let newRoot = Node.columns(dividerPixels.map { Boundary($0, .pixels) })
-                self.config = self.config.setting(layout: newRoot, for: info, now: ISO8601DateFormatter().string(from: Date()))
-                do {
-                    try self.config.write(to: AppDelegate.configURL)
-                } catch {
-                    FileHandle.standardError.write(Data("failed to save config: \(error)\n".utf8))
-                }
-                self.buildStatusItem()
+                // Apply via the shared path: write (validates) BEFORE mutating in-memory config.
+                self.applyLayout(newRoot, for: info)
             },
             onClose: { [weak self] in self?.overlay = nil })
         overlay?.show()
