@@ -83,6 +83,24 @@ enum WindowMover {
         return nil
     }
 
+    /// Snap the focused window into positional Zone `index` (0-based) of its screen's
+    /// layout. No-op if that zone doesn't exist on this screen (out-of-range binding).
+    @discardableResult
+    static func snapFocusedWindow(toZoneIndex index: Int, config: LineupConfig) -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        guard let window = focusedWindow() else { return false }
+        guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
+        guard let screen = screen(for: currentCocoa) else { return false }
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        guard let target = Layout.zoneRect(
+            index: index, root: root,
+            frame: screen.frame, visibleFrame: screen.visibleFrame,
+            pixelsWide: info.pixelsWide) else { return false }
+        setFrame(target, of: window)
+        return true
+    }
+
     /// Snap a specific window element to a Cocoa-space rect (used by shift-drag snapping,
     /// where the dragged window isn't necessarily the focused one yet).
     static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {

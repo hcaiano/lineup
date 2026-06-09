@@ -79,13 +79,18 @@ public struct LineupConfig: Codable, Equatable {
     public var schemaVersion: Int
     public var screens: [String: ScreenLayout]
     public var defaultLayout: Node
+    /// Global shortcuts (optional; nil means "use the app's defaults"). Backward-compatible:
+    /// a schema-3 file written before shortcuts existed decodes with this absent.
+    public var shortcuts: Shortcuts?
 
     public init(schemaVersion: Int = LineupConfig.currentSchema,
                 screens: [String: ScreenLayout] = [:],
-                defaultLayout: Node = .halves) {
+                defaultLayout: Node = .halves,
+                shortcuts: Shortcuts? = nil) {
         self.schemaVersion = schemaVersion
         self.screens = screens
         self.defaultLayout = defaultLayout
+        self.shortcuts = shortcuts
     }
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.

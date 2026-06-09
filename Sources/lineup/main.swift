@@ -19,16 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self?.config ?? LineupConfig()
     })
 
-    /// Hyper+key -> quick-action id (resolved per-screen). Fixed-per-key for now; left/right
-    /// cycling lands in a later phase.
-    private let bindings: [(key: Int, zone: String)] = [
-        (kVK_UpArrow, "full"),
-        (kVK_DownArrow, "center"),
-        (kVK_LeftArrow, "left"),
-        (kVK_RightArrow, "right"),
-        (kVK_ANSI_LeftBracket, "leftHalf"),
-        (kVK_ANSI_RightBracket, "rightHalf"),
-    ]
+    /// The effective shortcut set (user config, or built-in defaults).
+    private var shortcuts: Shortcuts { config.shortcuts ?? ShortcutKit.defaults }
 
     static var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -139,6 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 default: return nil
                 }
             },
+            shortcuts: { [weak self] in self?.shortcuts ?? ShortcutKit.defaults },
+            setShortcuts: { [weak self] s in self?.applyShortcuts(s) },
             isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
             toggleDragSnap: { [weak self] in self?.toggleDragSnap() },
             isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
@@ -162,6 +156,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             buildStatusItem()
         } catch {
             FileHandle.standardError.write(Data("settings layout save failed (not applied): \(error)\n".utf8))
+        }
+    }
+
+    /// Persist a new shortcut set and re-register the global hotkeys.
+    private func applyShortcuts(_ newShortcuts: Shortcuts) {
+        guard configCanWrite else { return }
+        var updated = config
+        updated.shortcuts = newShortcuts
+        do {
+            try updated.write(to: AppDelegate.configURL)
+            config = updated
+            HotkeyManager.shared.unregisterAll()
+            registerHotkeys()
+            buildStatusItem()
+        } catch {
+            FileHandle.standardError.write(Data("shortcuts save failed (not applied): \(error)\n".utf8))
         }
     }
 
@@ -199,10 +209,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerHotkeys() {
         var failed = 0
-        for b in bindings {
-            let ok = HotkeyManager.shared.register(keyCode: b.key) { [weak self] in
+        for b in shortcuts.bindings {
+            let action = b.action
+            let ok = HotkeyManager.shared.register(keyCode: b.keyCode, modifiers: UInt32(b.modifiers)) { [weak self] in
                 guard let self else { return }
-                WindowMover.snapFocusedWindow(toQuickAction: b.zone, config: self.config)
+                if let zoneIndex = ZoneAction.zeroBasedIndex(from: action) {
+                    WindowMover.snapFocusedWindow(toZoneIndex: zoneIndex, config: self.config)
+                } else {
+                    WindowMover.snapFocusedWindow(toQuickAction: action, config: self.config)
+                }
             }
             if !ok { failed += 1 }
         }
@@ -237,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 action: #selector(requestAccessibility), keyEquivalent: ""))
         }
 
-        let total = bindings.count
+        let total = shortcuts.bindings.count
         let hkLine = NSMenuItem(
             title: failedHotkeys == 0
                 ? "Hotkeys: OK (\(total) active)"
@@ -289,8 +304,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
-        for b in bindings {
-            let item = NSMenuItem(title: "Hyper + \(keyLabel(b.key))  →  \(b.zone)", action: nil, keyEquivalent: "")
+        // Quick-action shortcuts at a glance; full list (incl. zones) lives in Settings.
+        for qa in ShortcutKit.quickActions {
+            let combo = shortcuts.binding(for: qa.id).map { ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers) } ?? "—"
+            let item = NSMenuItem(title: "\(combo)  →  \(qa.label)", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
         }
@@ -298,18 +315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Lineup", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
-    }
-
-    private func keyLabel(_ keyCode: Int) -> String {
-        switch keyCode {
-        case kVK_UpArrow: return "↑"
-        case kVK_DownArrow: return "↓"
-        case kVK_LeftArrow: return "←"
-        case kVK_RightArrow: return "→"
-        case kVK_ANSI_LeftBracket: return "["
-        case kVK_ANSI_RightBracket: return "]"
-        default: return "?"
-        }
     }
 
     @objc private func toggleLaunchAtLogin() {

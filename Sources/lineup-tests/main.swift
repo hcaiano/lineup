@@ -515,6 +515,46 @@ do { // setDivider: root vertical keeps pixels (seams); nested keeps fractions
     try nestedMoved.validate()
 }
 
+// ---- P4: shortcuts model ----
+do {
+    var sc = Shortcuts()
+    sc = sc.setting(action: "left", keyCode: 123, modifiers: 0x1B00)   // Hyper+Left
+    sc = sc.setting(action: ZoneAction.id(2), keyCode: 19, modifiers: 0x1B00) // Hyper+2 -> Zone 2
+    check(sc.binding(for: "left")?.keyCode == 123, "shortcut: left bound")
+    check(sc.binding(for: "zone:2")?.keyCode == 19, "shortcut: zone:2 bound")
+    // setting replaces, not duplicates
+    sc = sc.setting(action: "left", keyCode: 124, modifiers: 0x1B00)
+    check(sc.bindings.filter { $0.action == "left" }.count == 1, "shortcut: setting replaces")
+    check(sc.binding(for: "left")?.keyCode == 124, "shortcut: left rebound to 124")
+    // conflict detection
+    sc = sc.setting(action: "right", keyCode: 124, modifiers: 0x1B00) // same combo as left
+    check(sc.conflicts(keyCode: 124, modifiers: 0x1B00, excluding: "right") == ["left"], "shortcut: conflict detected")
+    check(sc.conflicts(keyCode: 999, modifiers: 0, excluding: "right").isEmpty, "shortcut: no false conflict")
+    // removing
+    sc = sc.removing(action: "left")
+    check(sc.binding(for: "left") == nil, "shortcut: removed -> unassigned")
+}
+
+do { // zone action id <-> index
+    check(ZoneAction.id(3) == "zone:3", "zone id")
+    check(ZoneAction.zeroBasedIndex(from: "zone:3") == 2, "zone parse -> 0-based 2")
+    check(ZoneAction.zeroBasedIndex(from: "left") == nil, "non-zone action -> nil")
+    check(ZoneAction.zeroBasedIndex(from: "zone:0") == nil, "zone:0 invalid -> nil")
+}
+
+do { // shortcuts are optional + backward compatible in LineupConfig
+    var cfg = LineupConfig().setting(layout: .thirds, for: g9, now: nil)
+    check(cfg.shortcuts == nil, "config: shortcuts absent by default")
+    cfg.shortcuts = Shortcuts().setting(action: "full", keyCode: 126, modifiers: 0x1B00)
+    let data = try JSONEncoder().encode(cfg)
+    let back = try JSONDecoder().decode(LineupConfig.self, from: data)
+    check(back.shortcuts?.binding(for: "full")?.keyCode == 126, "config: shortcuts round-trip")
+    // a schema-3 doc without the shortcuts key still decodes (absent -> nil)
+    let noShortcuts = LineupConfig().setting(layout: .halves, for: g9, now: nil)
+    let d2 = try JSONEncoder().encode(noShortcuts)
+    check((try JSONDecoder().decode(LineupConfig.self, from: d2)).shortcuts == nil, "config: missing shortcuts decodes to nil")
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")

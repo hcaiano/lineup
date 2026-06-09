@@ -8,6 +8,8 @@ struct SettingsContext {
     var applyLayout: (Node, ScreenInfo) -> Void          // validate + persist per-screen
     var canWrite: () -> Bool                             // false when config writes are blocked
     var blockedMessage: () -> String?                    // why editing is disabled, if so
+    var shortcuts: () -> Shortcuts                       // effective shortcut set
+    var setShortcuts: (Shortcuts) -> Void                // persist + re-register hotkeys
     var isDragSnapOn: () -> Bool
     var toggleDragSnap: () -> Void
     var isLaunchAtLoginOn: () -> Bool
@@ -37,10 +39,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let layoutItem = NSTabViewItem(identifier: "layout")
         layoutItem.label = "Layout"
         layoutItem.view = LayoutEditorView(context: context)
+        let shortcutsItem = NSTabViewItem(identifier: "shortcuts")
+        shortcutsItem.label = "Shortcuts"
+        shortcutsItem.view = ShortcutsView(context: context)
         let generalItem = NSTabViewItem(identifier: "general")
         generalItem.label = "General"
         generalItem.view = GeneralView(context: context)
         tabs.addTabViewItem(layoutItem)
+        tabs.addTabViewItem(shortcutsItem)
         tabs.addTabViewItem(generalItem)
         window.contentView?.addSubview(tabs)
     }
@@ -318,6 +324,143 @@ private final class LayoutCanvasView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if dragging != nil { dragging = nil; onChange?(root) }
+    }
+}
+
+// MARK: - Shortcuts tab (key recorder)
+
+private final class ShortcutsView: NSView {
+    private let ctx: SettingsContext
+    private var rows: [(action: String, field: NSTextField, record: NSButton)] = []
+    private var recordingAction: String?
+    private var monitor: Any?
+
+    init(context: SettingsContext) {
+        self.ctx = context
+        super.init(frame: NSRect(x: 0, y: 0, width: 640, height: 492))
+        autoresizingMask = [.width, .height]
+        build()
+        refresh()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    deinit { if let m = monitor { NSEvent.removeMonitor(m) } }
+
+    private func build() {
+        let header = NSTextField(labelWithString: "Click Record, then press a key combo (must include a modifier). Esc cancels, Delete clears.")
+        header.frame = NSRect(x: 16, y: 460, width: 608, height: 20)
+        header.font = .systemFont(ofSize: 11); header.textColor = .secondaryLabelColor
+        header.autoresizingMask = [.width]
+        addSubview(header)
+
+        let scroll = NSScrollView(frame: NSRect(x: 12, y: 12, width: 616, height: 440))
+        scroll.autoresizingMask = [.width, .height]
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+
+        var actions: [(id: String, label: String)] = ShortcutKit.quickActions
+        for i in 1...ShortcutKit.zoneRows { actions.append((ZoneAction.id(i), "Zone \(i)")) }
+
+        let rowH: CGFloat = 34
+        let doc = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: CGFloat(actions.count) * rowH))
+        for (i, a) in actions.enumerated() {
+            let y = doc.frame.height - CGFloat(i + 1) * rowH + 4
+            let label = NSTextField(labelWithString: a.label)
+            label.frame = NSRect(x: 8, y: y + 4, width: 150, height: 20)
+            doc.addSubview(label)
+
+            let field = NSTextField(frame: NSRect(x: 170, y: y + 2, width: 200, height: 24))
+            field.isEditable = false; field.alignment = .center; field.placeholderString = "Unassigned"
+            doc.addSubview(field)
+
+            let record = NSButton(title: "Record", target: self, action: #selector(recordTapped(_:)))
+            record.bezelStyle = .rounded; record.frame = NSRect(x: 382, y: y, width: 90, height: 28)
+            record.tag = i
+            doc.addSubview(record)
+
+            let clear = NSButton(title: "Clear", target: self, action: #selector(clearTapped(_:)))
+            clear.bezelStyle = .rounded; clear.frame = NSRect(x: 478, y: y, width: 70, height: 28)
+            clear.tag = i
+            doc.addSubview(clear)
+
+            rows.append((a.id, field, record))
+        }
+        scroll.documentView = doc
+        doc.scroll(NSPoint(x: 0, y: doc.frame.height)) // start at top
+        addSubview(scroll)
+    }
+
+    private func refresh() {
+        let sc = ctx.shortcuts()
+        for row in rows {
+            if let b = sc.binding(for: row.action) {
+                row.field.stringValue = ShortcutKit.display(keyCode: b.keyCode, modifiers: b.modifiers)
+            } else {
+                row.field.stringValue = ""
+            }
+            row.record.title = (row.action == recordingAction) ? "Press…" : "Record"
+        }
+    }
+
+    @objc private func recordTapped(_ sender: NSButton) {
+        let action = rows[sender.tag].action
+        if recordingAction == action { stopRecording(); return }
+        startRecording(action)
+    }
+
+    @objc private func clearTapped(_ sender: NSButton) {
+        let action = rows[sender.tag].action
+        ctx.setShortcuts(ctx.shortcuts().removing(action: action))
+        refresh()
+    }
+
+    private func startRecording(_ action: String) {
+        recordingAction = action
+        refresh()
+        if monitor == nil {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+                self?.handle(event) == true ? nil : event
+            }
+        }
+    }
+
+    private func stopRecording() {
+        recordingAction = nil
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        refresh()
+    }
+
+    /// Returns true if the event was consumed by the recorder.
+    private func handle(_ event: NSEvent) -> Bool {
+        guard let action = recordingAction else { return false }
+        let keyCode = Int(event.keyCode)
+        if keyCode == 53 { stopRecording(); return true }            // Esc cancels
+        if keyCode == 51 {                                            // Delete clears
+            ctx.setShortcuts(ctx.shortcuts().removing(action: action)); stopRecording(); return true
+        }
+        guard ShortcutKit.hasModifier(event.modifierFlags) else { NSSound.beep(); return true } // need a modifier
+        let mods = ShortcutKit.carbonModifiers(from: event.modifierFlags)
+
+        let existing = ctx.shortcuts()
+        let conflicts = existing.conflicts(keyCode: keyCode, modifiers: mods, excluding: action)
+        if !conflicts.isEmpty, !confirmConflict(conflicts) { stopRecording(); return true }
+
+        // Take the combo; clear it from any conflicting action so there's no duplicate.
+        var updated = existing
+        for c in conflicts { updated = updated.removing(action: c) }
+        updated = updated.setting(action: action, keyCode: keyCode, modifiers: mods)
+        ctx.setShortcuts(updated)
+        stopRecording()
+        return true
+    }
+
+    private func confirmConflict(_ conflicts: [String]) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Shortcut already in use"
+        alert.informativeText = "This combo is assigned to: \(conflicts.joined(separator: ", ")). Reassign it here? The other action becomes unassigned."
+        alert.addButton(withTitle: "Reassign")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 
