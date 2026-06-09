@@ -160,6 +160,18 @@ do { // clampPixelDividers: out-of-range divider clamped inside the screen
     check(out[0] <= out[1], "clamp: sorted")
 }
 
+do { // columnRect(containingX:) picks the block under the cursor (shift-drag snapping)
+    let cfg = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
+    func hit(_ x: CGFloat) -> CGRect { cfg.columnRect(containingX: x, frame: frame, visibleFrame: visible, pixelsWide: px)! }
+    eq(hit(500).maxX, 1133, "cursor in left col -> left block")
+    eq(hit(2000).minX, 1133, "cursor in center col -> center block (left edge)")
+    eq(hit(2000).maxX, 2865, "cursor in center col -> center block (right edge)")
+    eq(hit(4000).minX, 2865, "cursor in right col -> right block")
+    check(hit(1133).width > 0, "cursor on a divider still resolves a column")
+    eq(hit(-50).maxX, 1133, "cursor left of screen -> left block")
+    eq(hit(9999).minX, 2865, "cursor right of screen -> right block")
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")

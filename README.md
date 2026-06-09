@@ -25,6 +25,13 @@ Hyperkey = `⌃⌥⇧⌘` (most people map Caps Lock → Hyper via Karabiner Ele
 
 Defaults are equal thirds + halves. Tune them to your seams in the config (below).
 
+### Shift-drag to snap
+
+Hold **⇧ Shift** while dragging a window with the mouse: the column under the cursor is
+highlighted live, and when you release, the window snaps into that column. Toggle it from
+the menu (**Shift-drag to snap**) if it ever collides with an app's own shift-drag
+behaviour. Uses a global mouse monitor — no extra permission beyond Accessibility.
+
 ## Build & install
 
 Requires the Xcode Command Line Tools (`xcode-select --install`). Full Xcode is **not**
@@ -156,6 +163,7 @@ Sources/lineup/main.swift           Menu-bar agent, config load, hotkey wiring
 Sources/lineup/WindowMover.swift    Accessibility focused-window get/set
 Sources/lineup/Hotkeys.swift        Carbon RegisterEventHotKey
 Sources/lineup/AlignmentOverlay.swift  Drag-the-lines-onto-the-seams overlay
+Sources/lineup/DragSnap.swift        Shift-drag-to-snap (global monitor + highlight)
 Sources/lineup-tests/main.swift     Dependency-free test harness
 Scripts/build-app.sh              Build + assemble + sign Lineup.app
 Scripts/setup-signing.sh          One-time stable self-signed identity

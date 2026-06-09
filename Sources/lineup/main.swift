@@ -11,6 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var config = ColumnConfig.default
     private var failedHotkeys = 0
     private var overlay: AlignmentOverlayController?
+    private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
+        self?.config ?? .default
+    })
 
     /// Hyper+key -> zone id. Fixed-per-key (deterministic seam alignment).
     private let bindings: [(key: Int, zone: String)] = [
@@ -31,8 +34,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory) // agent: no Dock icon (also LSUIElement)
         reloadConfig()
         registerHotkeys()      // must precede buildStatusItem so the menu shows real
+        dragSnap.start()       // shift-drag-to-snap (default on)
         buildStatusItem()      // hotkey status (e.g. failures if Magnet owns the combos)
         requestAccessibility() // prompt up front; hotkeys can't move windows without it
+    }
+
+    @objc private func toggleDragSnap() {
+        if dragSnap.isEnabled { dragSnap.stop() } else { dragSnap.start() }
+        buildStatusItem()
     }
 
     // MARK: - Config
@@ -147,6 +156,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: ""))
         menu.addItem(NSMenuItem(
             title: "Reload config", action: #selector(reloadConfigFromMenu), keyEquivalent: "r"))
+
+        let dragItem = NSMenuItem(
+            title: "Shift-drag to snap", action: #selector(toggleDragSnap), keyEquivalent: "")
+        dragItem.state = dragSnap.isEnabled ? .on : .off
+        menu.addItem(dragItem)
 
         let loginItem = NSMenuItem(
             title: "Launch at login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")

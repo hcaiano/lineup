@@ -79,6 +79,16 @@ public struct ColumnConfig: Codable, Equatable {
         return rects
     }
 
+    /// The column rect containing global x (points) — used by shift-drag snapping to pick
+    /// the block under the cursor. If x is outside all columns, returns the nearest end
+    /// column so a drag past the screen edge still snaps sensibly.
+    public func columnRect(containingX x: CGFloat, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> CGRect? {
+        let cols = columns(frame: frame, visibleFrame: visibleFrame, pixelsWide: pixelsWide)
+        guard !cols.isEmpty else { return nil }
+        if let hit = cols.first(where: { x >= $0.minX && x <= $0.maxX }) { return hit }
+        return x < frame.midX ? cols.first : cols.last
+    }
+
     /// Resolve a binding id ("full"/"left"/"center"/"right"/"leftHalf"/"rightHalf").
     public func rect(for id: String, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> CGRect? {
         let full = CGRect(

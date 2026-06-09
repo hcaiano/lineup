@@ -42,6 +42,53 @@ enum WindowMover {
         return (win as! AXUIElement)
     }
 
+    /// Hit-test the window under a global Cocoa point (bottom-left origin). Returns the
+    /// containing window element, or nil if there's no window there (e.g. the desktop).
+    static func window(atCocoaPoint p: CGPoint) -> AXUIElement? {
+        guard AXIsProcessTrusted() else { return nil }
+        let axY = primaryMaxY() - p.y // CG hit-test uses top-left origin from primary
+        let sys = AXUIElementCreateSystemWide()
+        var hitRef: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(axY), &hitRef) == .success,
+              let hit = hitRef else { return nil }
+        return enclosingWindow(of: hit)
+    }
+
+    /// Walk up the AX hierarchy to the element's window (via kAXWindow shortcut, then by
+    /// role). Bounded depth so a pathological tree can't spin.
+    private static func enclosingWindow(of element: AXUIElement) -> AXUIElement? {
+        var current: AXUIElement? = element
+        var depth = 0
+        while let e = current, depth < 16 {
+            var roleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(e, kAXRoleAttribute as CFString, &roleRef) == .success,
+               (roleRef as? String) == (kAXWindowRole as String) {
+                return e
+            }
+            var winRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(e, kAXWindowAttribute as CFString, &winRef) == .success,
+               let w = winRef {
+                return (w as! AXUIElement)
+            }
+            var parentRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(e, kAXParentAttribute as CFString, &parentRef) == .success,
+               let parent = parentRef {
+                current = (parent as! AXUIElement)
+            } else {
+                current = nil
+            }
+            depth += 1
+        }
+        return nil
+    }
+
+    /// Snap a specific window element to a Cocoa-space rect (used by shift-drag snapping,
+    /// where the dragged window isn't necessarily the focused one yet).
+    static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
+        guard AXIsProcessTrusted() else { return }
+        setFrame(rect, of: window)
+    }
+
     /// Read the window's AX frame and convert to Cocoa space.
     private static func currentCocoaFrame(of window: AXUIElement) -> CGRect? {
         guard let pos = axPoint(window, kAXPositionAttribute),
