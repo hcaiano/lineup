@@ -649,6 +649,15 @@ do { // continuation predicate
     check(Cycle.nextStep(action: "left", now: 99, screenKey: "wide", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: negative clock delta -> reset")
 }
 
+// ---- SemVer ----
+do {
+    check(SemVer.isNewer("1.2.0", than: "1.1.9"), "semver: 1.2.0 > 1.1.9")
+    check(!SemVer.isNewer("v1.0.0", than: "1.0.0"), "semver: v1.0.0 == 1.0.0 is not newer")
+    check(SemVer.isNewer("1.0.1", than: "1.0.0"), "semver: 1.0.1 > 1.0.0")
+    check(!SemVer.isNewer("not-a-version", than: "1.0.0"), "semver: malformed candidate -> false")
+    check(!SemVer.isNewer("1.0.1", than: "not-a-version"), "semver: malformed current -> false")
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")
