@@ -570,6 +570,12 @@ do { // step 0 honors the seam column; later steps are fractions; dedup
     let halvesSteps = Cycle.steps(.left, root: .halves, frame: frame, visibleFrame: visible, pixelsWide: px)
     check(halvesSteps.count == 3, "cycle: halves layout dedups step0==1/2 (4 -> 3)")
     eq(halvesSteps[0].maxX, 2560, "cycle halves step0 = 1/2")
+    // thirds layout: step0 (left third) == the 1/3 step -> NON-adjacent dedupe (4 -> 3 unique)
+    let thirdsSteps = Cycle.steps(.left, root: .thirds, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(thirdsSteps.count == 3, "cycle: thirds dedups non-adjacent 1/3 repeat (4 -> 3)")
+    let widths = Set(thirdsSteps.map { Int(($0.width).rounded()) })
+    check(widths.count == 3, "cycle: thirds steps are all unique widths")
+    eq(thirdsSteps[0].maxX, 5120.0 / 3.0, "cycle thirds step0 = left third")
 }
 
 do { // continuation predicate
@@ -590,6 +596,8 @@ do { // continuation predicate
     // wraps at end
     let prevLast = CycleState(action: "left", stepIndex: 3, lastTime: 100, screenKey: "G9", lastRect: rect0)
     check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: rect0, prev: prevLast, stepCount: steps) == 0, "cycle: wraps to 0")
+    // clock stepped backward (now < lastTime) -> reset, never advance
+    check(Cycle.nextStep(action: "left", now: 99, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: negative clock delta -> reset")
 }
 
 // ---- Report ----

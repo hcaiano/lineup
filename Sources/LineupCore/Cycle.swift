@@ -38,8 +38,10 @@ public enum Cycle {
         case .right:
             raw = [cols?.last ?? frac(0.5, 1), frac(0.5, 1), frac(2.0 / 3.0, 1), frac(1.0 / 3.0, 1)]
         }
+        // Dedupe against ALL emitted steps (not just the previous one), preserving order,
+        // so an equal-thirds root doesn't revisit the same rect mid-cycle.
         var out: [CGRect] = []
-        for r in raw where (out.last.map { !approxEqual($0, r) } ?? true) {
+        for r in raw where !out.contains(where: { approxEqual($0, r) }) {
             out.append(r)
         }
         return out
@@ -53,9 +55,10 @@ public enum Cycle {
         prev: CycleState?, stepCount: Int, timeout: Double = 1.5, tolerance: CGFloat = 4
     ) -> Int {
         guard stepCount > 0 else { return 0 }
-        guard let p = prev,
-              p.action == action,
-              (now - p.lastTime) <= timeout,
+        guard let p = prev else { return 0 }
+        let delta = now - p.lastTime // clamp clock skew: a backward step resets, never advances
+        guard p.action == action,
+              delta >= 0, delta <= timeout,
               p.screenKey == screenKey,
               approxEqual(focusedFrame, p.lastRect, tolerance: tolerance)
         else { return 0 }
