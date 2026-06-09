@@ -30,9 +30,15 @@ again), and each display remembers its own.
 **[Releases page](https://github.com/hcaiano/lineup/releases/latest)**, open it, and drag
 **Lineup** into **Applications**.
 
-Lineup isn't notarized by Apple yet, so the **first** time you open it macOS warns that it's from
-an unidentified developer. Get past it once: in **Applications**, right-click (Control-click)
-**Lineup → Open → Open**. After that it launches normally on every click.
+Lineup isn't notarized by Apple yet, so the **first** time you open it macOS blocks it as coming
+from an unidentified developer. Allow it once (you only do this the first time):
+
+1. Double-click **Lineup** — you'll see the block. That's expected; click **Done**.
+2. Open **System Settings → Privacy & Security** and scroll to the **Security** section.
+3. Click **Open Anyway** next to the Lineup message, then confirm with Touch ID or your password.
+
+After that it launches normally on every click. (On macOS Sequoia and later the old
+right-click → Open trick no longer works — the Open Anyway button is the way.)
 
 Then grant **Accessibility** (System Settings → Privacy & Security → Accessibility) — that's what
 lets Lineup move other apps' windows. If you use Magnet/Rectangle, turn it off so the shortcuts
