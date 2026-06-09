@@ -172,6 +172,126 @@ do { // columnRect(containingX:) picks the block under the cursor (shift-drag sn
     eq(hit(9999).minX, 2865, "cursor right of screen -> right block")
 }
 
+// ---- P1: recursive zone tree ----
+do { // single leaf = full screen
+    let z = Layout.zones(.leaf, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 1, "leaf: one zone")
+    eq(z[0].width, 5120, "leaf: full width")
+    eq(z[0].height, 1392, "leaf: usable height")
+}
+
+do { // vertical thirds via tree, left→right order, gapless
+    let z = Layout.zones(.thirds, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 3, "thirds: 3 zones")
+    eq(z[0].minX, 0, "thirds[0] leftmost")
+    eq(z[0].maxX, z[1].minX, "thirds glued 0|1")
+    eq(z[2].maxX, 5120, "thirds[2] rightmost")
+}
+
+do { // root pixel columns at his seams
+    let root = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    let z = Layout.zones(root, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(z[0].maxX, 1133, "seam columns: zone 0 ends on 1133")
+    eq(z[1].minX, 1133, "seam columns: zone 1 starts on 1133")
+    eq(z[1].maxX, 2865, "seam columns: zone 1 ends on 2865")
+}
+
+do { // HIS EXAMPLE: left half full-height; right half split top/bottom
+    let root = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf,
+        .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ])
+    let z = Layout.zones(root, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 3, "nested: 3 zones (Left, Right-Top, Right-Bottom)")
+    // Zone 0 = Left, full height, left half
+    eq(z[0].minX, 0, "nested Left minX"); eq(z[0].maxX, 2560, "nested Left maxX")
+    eq(z[0].height, 1392, "nested Left full height")
+    // Semantic order: Zone 1 = Right-TOP (higher y), Zone 2 = Right-Bottom
+    eq(z[1].minX, 2560, "nested Right-Top minX")
+    eq(z[1].maxX, 5120, "nested Right-Top maxX")
+    check(z[1].minY > z[2].minY, "nested: Zone 1 is the TOP row (top-to-bottom order)")
+    eq(z[1].height, 1392 / 2, "nested Right-Top half height")
+    eq(z[2].height, 1392 / 2, "nested Right-Bottom half height")
+    eq(z[1].maxY, visible.maxY, "nested Right-Top touches top")
+    eq(z[2].minY, visible.minY, "nested Right-Bottom touches bottom")
+}
+
+do { // zoneIndex(at:) and out-of-range zoneRect
+    let root = Node.thirds
+    let i = Layout.zoneIndex(at: CGPoint(x: 4000, y: 700), root: root, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(i == 2, "zoneIndex: point in right third -> index 2")
+    check(Layout.zoneRect(index: 5, root: root, frame: frame, visibleFrame: visible, pixelsWide: px) == nil,
+          "zoneRect: out-of-range index -> nil (disabled binding)")
+}
+
+do { // Node JSON round-trips (nested)
+    let root = Node.split(axis: .vertical, dividers: [Boundary(1133, .pixels)], children: [
+        .leaf, .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ])
+    let data = try JSONEncoder().encode(root)
+    let back = try JSONDecoder().decode(Node.self, from: data)
+    check(back == root, "Node JSON round-trips (nested split)")
+}
+
+// ---- P1: per-screen config + migration ----
+let g9 = ScreenInfo(key: "uuid-G9", label: "Odyssey G9", pixelsWide: 5120, pixelsHigh: 1440, keyIsStable: true)
+let mbp = ScreenInfo(key: "uuid-MBP", label: "Built-in", pixelsWide: 3456, pixelsHigh: 2234, keyIsStable: true)
+
+do { // per-screen lookup + default fallback
+    var cfg = LineupConfig()
+    cfg = cfg.setting(layout: .thirds, for: g9, now: nil)
+    cfg = cfg.setting(layout: .halves, for: mbp, now: nil)
+    check(Layout.zones(cfg.layout(forKey: "uuid-G9"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 3, "per-screen: G9 -> thirds")
+    check(Layout.zones(cfg.layout(forKey: "uuid-MBP"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "per-screen: MBP -> halves")
+    check(Layout.zones(cfg.layout(forKey: "uuid-UNKNOWN"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "per-screen: unknown -> default halves")
+}
+
+do { // out-of-range Zone-N across screens: Zone 3 exists on G9, not on MBP
+    var cfg = LineupConfig()
+    cfg = cfg.setting(layout: .thirds, for: g9, now: nil)
+    cfg = cfg.setting(layout: .halves, for: mbp, now: nil)
+    let g9Z3 = Layout.zoneRect(index: 2, root: cfg.layout(forKey: "uuid-G9"), frame: frame, visibleFrame: visible, pixelsWide: px)
+    let mbpZ3 = Layout.zoneRect(index: 2, root: cfg.layout(forKey: "uuid-MBP"), frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(g9Z3 != nil, "Zone 3 available on G9 (3 zones)")
+    check(mbpZ3 == nil, "Zone 3 unavailable on MBP (2 zones) -> binding disables itself")
+}
+
+do { // migration from legacy ColumnConfig -> schema 3 onto current screen
+    let legacy = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-mig-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try legacy.write(to: tmp)
+    var backedUp = false
+    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in backedUp = true })
+    check(migrated, "migration: legacy detected")
+    check(backedUp, "migration: backup taken before write")
+    check(cfg.schemaVersion == 3, "migration: schema bumped to 3")
+    let z = Layout.zones(cfg.layout(forKey: g9.key), frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(z[0].maxX, 1133, "migration: seams preserved (1133)")
+    eq(z[1].maxX, 2865, "migration: seams preserved (2865)")
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+do { // schema-3 file loads without migration; absent file = fresh config
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v3-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try LineupConfig().setting(layout: .thirds, for: g9, now: nil).write(to: tmp)
+    let (cfg, migrated) = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in })
+    check(!migrated, "schema-3 file: no migration")
+    check(cfg.screens["uuid-G9"] != nil, "schema-3 file: G9 layout present")
+    try? FileManager.default.removeItem(at: tmp)
+    let absent = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-absent-\(checks).json")
+    try? FileManager.default.removeItem(at: absent)
+    let (fresh, _) = try LineupConfig.loadOrMigrate(from: absent, currentScreen: g9, now: "T", backup: { _ in })
+    check(fresh.screens.isEmpty, "absent file: fresh empty config")
+}
+
+do { // fallback screen key composition (never resolution-only)
+    let k = ScreenKey.fallback(vendor: 1552, model: 42, serial: 7, width: 5120, height: 1440, name: "G9")
+    check(k.hasPrefix("fallback:"), "fallback key prefixed")
+    check(k.contains("1552:42:7"), "fallback key includes vendor:model:serial")
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")
