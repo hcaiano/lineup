@@ -347,6 +347,29 @@ do { // present-but-corrupt config throws (no clobber); absent stays fresh
     try? FileManager.default.removeItem(at: tmp)
 }
 
+do { // write() validates: invalid layout throws and never creates/overwrites the file
+    var bad = LineupConfig()
+    bad.defaultLayout = .split(axis: .vertical, dividers: [], children: [.leaf]) // single-child = invalid
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-badwrite-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    expectThrow("write(invalid) throws before touching disk") { try bad.write(to: tmp) }
+    check(!FileManager.default.fileExists(atPath: tmp.path), "write(invalid) created no file (no clobber)")
+}
+
+do { // a future schema-4 file (v3-shaped) is rejected, not loaded lossily
+    var future = LineupConfig().setting(layout: .halves, for: g9, now: nil)
+    future.schemaVersion = 4
+    // bypass write()'s schema-agnostic encode by encoding directly
+    let enc = JSONEncoder()
+    let data = try enc.encode(future)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v4-\(checks).json")
+    try data.write(to: tmp)
+    expectThrow("future schema (v4) throws unsupportedSchema, not loaded") {
+        _ = try LineupConfig.loadOrMigrate(from: tmp, currentScreen: g9, now: "T", backup: { _ in })
+    }
+    try? FileManager.default.removeItem(at: tmp)
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")

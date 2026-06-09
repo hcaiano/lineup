@@ -37,6 +37,9 @@ public enum LineupConfigError: Error, Equatable {
     /// A present config file couldn't be recognized/decoded — surfaced rather than
     /// silently replaced, so a user's layout is never clobbered by a corrupt read.
     case unreadable
+    /// The file is a newer schema than this build understands. Don't load (and risk
+    /// writing it back lossily) — surface it instead.
+    case unsupportedSchema(Int)
 }
 
 /// One screen's saved layout plus identifying metadata (for the Settings UI + debugging).
@@ -96,6 +99,7 @@ public struct LineupConfig: Codable, Equatable {
     }
 
     public func write(to url: URL) throws {
+        try validate() // never persist an invalid layout — throws before touching the file
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try enc.encode(self)
@@ -117,10 +121,16 @@ public struct LineupConfig: Codable, Equatable {
         }
         let data = try Data(contentsOf: url)
 
-        // Already schema 3? Validate before trusting it.
-        if let cfg = try? JSONDecoder().decode(LineupConfig.self, from: data), cfg.schemaVersion >= 3 {
-            try cfg.validate()
-            return (cfg, false)
+        // Decodes as a LineupConfig? Gate on schema version, then validate.
+        if let cfg = try? JSONDecoder().decode(LineupConfig.self, from: data) {
+            if cfg.schemaVersion > currentSchema {
+                throw LineupConfigError.unsupportedSchema(cfg.schemaVersion)
+            }
+            if cfg.schemaVersion == currentSchema {
+                try cfg.validate()
+                return (cfg, false)
+            }
+            // schemaVersion < current with this shape shouldn't occur; fall through.
         }
         // Legacy ColumnConfig (dividers + halfDivider)?
         if let old = try? JSONDecoder().decode(ColumnConfig.self, from: data) {
