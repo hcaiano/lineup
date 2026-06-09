@@ -331,7 +331,8 @@ private final class LayoutCanvasView: NSView {
 
 private final class ShortcutsView: NSView {
     private let ctx: SettingsContext
-    private var rows: [(action: String, field: NSTextField, record: NSButton)] = []
+    private var rows: [(action: String, field: NSTextField, record: NSButton, clear: NSButton)] = []
+    private let banner = NSTextField(labelWithString: "")
     private var recordingAction: String?
     private var monitor: Any?
 
@@ -344,7 +345,23 @@ private final class ShortcutsView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    deinit { if let m = monitor { NSEvent.removeMonitor(m) } }
+    deinit {
+        if let m = monitor { NSEvent.removeMonitor(m) }
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // Stop recording when the window loses key/closes (the local monitor only fires while
+    // key, so a stuck "Press…" state would otherwise linger).
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self)
+        guard let w = window else { return }
+        for name in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowLeft), name: name, object: w)
+        }
+        refresh()
+    }
+    @objc private func windowLeft() { stopRecording() }
 
     private func build() {
         let header = NSTextField(labelWithString: "Click Record, then press a key combo (must include a modifier). Esc cancels, Delete clears.")
@@ -352,6 +369,11 @@ private final class ShortcutsView: NSView {
         header.font = .systemFont(ofSize: 11); header.textColor = .secondaryLabelColor
         header.autoresizingMask = [.width]
         addSubview(header)
+
+        banner.frame = NSRect(x: 16, y: 460, width: 608, height: 20)
+        banner.font = .systemFont(ofSize: 11); banner.textColor = .systemOrange
+        banner.autoresizingMask = [.width]; banner.isHidden = true
+        addSubview(banner)
 
         let scroll = NSScrollView(frame: NSRect(x: 12, y: 12, width: 616, height: 440))
         scroll.autoresizingMask = [.width, .height]
@@ -383,7 +405,7 @@ private final class ShortcutsView: NSView {
             clear.tag = i
             doc.addSubview(clear)
 
-            rows.append((a.id, field, record))
+            rows.append((a.id, field, record, clear))
         }
         scroll.documentView = doc
         doc.scroll(NSPoint(x: 0, y: doc.frame.height)) // start at top
@@ -392,6 +414,7 @@ private final class ShortcutsView: NSView {
 
     private func refresh() {
         let sc = ctx.shortcuts()
+        let writable = ctx.canWrite()
         for row in rows {
             if let b = sc.binding(for: row.action) {
                 row.field.stringValue = ShortcutKit.display(keyCode: b.keyCode, modifiers: b.modifiers)
@@ -399,22 +422,33 @@ private final class ShortcutsView: NSView {
                 row.field.stringValue = ""
             }
             row.record.title = (row.action == recordingAction) ? "Press…" : "Record"
+            row.record.isEnabled = writable
+            row.clear.isEnabled = writable
+        }
+        if writable {
+            banner.isHidden = true
+        } else {
+            banner.isHidden = false
+            banner.stringValue = ctx.blockedMessage() ?? "Editing is disabled."
         }
     }
 
     @objc private func recordTapped(_ sender: NSButton) {
+        guard ctx.canWrite() else { return }
         let action = rows[sender.tag].action
         if recordingAction == action { stopRecording(); return }
         startRecording(action)
     }
 
     @objc private func clearTapped(_ sender: NSButton) {
+        guard ctx.canWrite() else { return }
         let action = rows[sender.tag].action
         ctx.setShortcuts(ctx.shortcuts().removing(action: action))
         refresh()
     }
 
     private func startRecording(_ action: String) {
+        guard ctx.canWrite() else { return }
         recordingAction = action
         refresh()
         if monitor == nil {
@@ -433,6 +467,7 @@ private final class ShortcutsView: NSView {
     /// Returns true if the event was consumed by the recorder.
     private func handle(_ event: NSEvent) -> Bool {
         guard let action = recordingAction else { return false }
+        guard ctx.canWrite() else { stopRecording(); return true }
         let keyCode = Int(event.keyCode)
         if keyCode == 53 { stopRecording(); return true }            // Esc cancels
         if keyCode == 51 {                                            // Delete clears
@@ -441,16 +476,20 @@ private final class ShortcutsView: NSView {
         guard ShortcutKit.hasModifier(event.modifierFlags) else { NSSound.beep(); return true } // need a modifier
         let mods = ShortcutKit.carbonModifiers(from: event.modifierFlags)
 
+        // Stop recording (remove the local monitor) BEFORE any modal alert, so the alert's
+        // own Return/Esc keys aren't swallowed by the recorder.
+        stopRecording()
+
         let existing = ctx.shortcuts()
         let conflicts = existing.conflicts(keyCode: keyCode, modifiers: mods, excluding: action)
-        if !conflicts.isEmpty, !confirmConflict(conflicts) { stopRecording(); return true }
+        if !conflicts.isEmpty, !confirmConflict(conflicts) { return true }
 
         // Take the combo; clear it from any conflicting action so there's no duplicate.
         var updated = existing
         for c in conflicts { updated = updated.removing(action: c) }
         updated = updated.setting(action: action, keyCode: keyCode, modifiers: mods)
         ctx.setShortcuts(updated)
-        stopRecording()
+        refresh()
         return true
     }
 
