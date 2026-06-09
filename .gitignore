@@ -1,0 +1,15 @@
+# Swift / SwiftPM
+.build/
+.build-verify/
+*.xcuserstate
+
+# Build artifacts
+dist/
+Icon/AppIcon.iconset/
+
+# Local planning/dev logs (not part of the product)
+task_plan.md
+findings.md
+progress.md
+.planning/
+.plan-attestation

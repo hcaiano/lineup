@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to ~/.config/lineup/zones.json, then Reload config from the menu. You set the DIVIDER lines once; the columns are the regions between them, so they're always glued with no gaps. 'dividers' has one entry per line between columns (two dividers = three columns: left | center | right). 'halfDivider' is where Hyper+[ and Hyper+] split. unit: fraction (0..1 of width) | points | pixels (physical px from the left edge — use this to land exactly on a seam).",
+
+  "dividers": [
+    { "value": 0.3333333, "unit": "fraction" },
+    { "value": 0.6666667, "unit": "fraction" }
+  ],
+  "halfDivider": { "value": 0.5, "unit": "fraction" }
+}
