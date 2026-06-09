@@ -65,7 +65,7 @@ final class AlignmentOverlayController {
         let scale = w > 0 ? CGFloat(pixelsWide) / w : 1
         // Clamp to the screen (points) -> pixels (rounded) -> clamp to pixel range -> sort.
         let pxs = points.map { Double((min(max($0, 0), w) * scale).rounded()) }
-        let spaced = ColumnConfig.clampPixelDividers(pxs, pixelsWide: pixelsWide, minColumn: minColumnPixels)
+        let spaced = Layout.clampPixelDividers(pxs, pixelsWide: pixelsWide, minColumn: minColumnPixels)
         let halfPixels = Double(pixelsWide) / 2.0 // Hyper+[ ] splits at the physical center
         onSave(spaced, halfPixels)
         close()

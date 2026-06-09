@@ -20,6 +20,12 @@ func eq(_ a: CGFloat, _ b: CGFloat, _ name: String, accuracy: CGFloat = 0.001) {
     check(abs(a - b) <= accuracy, "\(name) (got \(a), want \(b))")
 }
 
+func outcomeConfig(_ o: LoadOutcome) -> LineupConfig? {
+    switch o { case .loaded(let c), .migrated(let c), .fresh(let c): return c; case .deferred: return nil }
+}
+func isMigrated(_ o: LoadOutcome) -> Bool { if case .migrated = o { return true }; return false }
+func isFresh(_ o: LoadOutcome) -> Bool { if case .fresh = o { return true }; return false }
+
 // ---- Coordinate flip ----
 let primaryMaxY: CGFloat = 1440
 
@@ -142,20 +148,20 @@ do { // fromPixels builds a sorted pixel-unit config
 }
 
 do { // clampPixelDividers: in-range values pass through, sorted
-    let out = ColumnConfig.clampPixelDividers([3413, 1707], pixelsWide: 5120, minColumn: 40)
+    let out = Layout.clampPixelDividers([3413, 1707], pixelsWide: 5120, minColumn: 40)
     eq(CGFloat(out[0]), 1707, "clamp: keeps valid divider 0")
     eq(CGFloat(out[1]), 3413, "clamp: keeps valid divider 1")
 }
 
 do { // clampPixelDividers: zero-width columns get pushed apart, stay in range
-    let out = ColumnConfig.clampPixelDividers([0, 0], pixelsWide: 5120, minColumn: 40)
+    let out = Layout.clampPixelDividers([0, 0], pixelsWide: 5120, minColumn: 40)
     check(out[0] >= 40, "clamp: left column >= minColumn")
     check(out[1] - out[0] >= 40, "clamp: center column >= minColumn")
     check(5120 - out[1] >= 40, "clamp: right column >= minColumn")
 }
 
 do { // clampPixelDividers: out-of-range divider clamped inside the screen
-    let out = ColumnConfig.clampPixelDividers([9999, 1000], pixelsWide: 5120, minColumn: 40)
+    let out = Layout.clampPixelDividers([9999, 1000], pixelsWide: 5120, minColumn: 40)
     check(out.allSatisfy { $0 >= 0 && $0 <= 5120 }, "clamp: within screen bounds")
     check(out[0] <= out[1], "clamp: sorted")
 }
@@ -170,6 +176,428 @@ do { // columnRect(containingX:) picks the block under the cursor (shift-drag sn
     check(hit(1133).width > 0, "cursor on a divider still resolves a column")
     eq(hit(-50).maxX, 1133, "cursor left of screen -> left block")
     eq(hit(9999).minX, 2865, "cursor right of screen -> right block")
+}
+
+// ---- P1: recursive zone tree ----
+do { // single leaf = full screen
+    let z = Layout.zones(.leaf, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 1, "leaf: one zone")
+    eq(z[0].width, 5120, "leaf: full width")
+    eq(z[0].height, 1392, "leaf: usable height")
+}
+
+do { // vertical thirds via tree, left→right order, gapless
+    let z = Layout.zones(.thirds, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 3, "thirds: 3 zones")
+    eq(z[0].minX, 0, "thirds[0] leftmost")
+    eq(z[0].maxX, z[1].minX, "thirds glued 0|1")
+    eq(z[2].maxX, 5120, "thirds[2] rightmost")
+}
+
+do { // root pixel columns at his seams
+    let root = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    let z = Layout.zones(root, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(z[0].maxX, 1133, "seam columns: zone 0 ends on 1133")
+    eq(z[1].minX, 1133, "seam columns: zone 1 starts on 1133")
+    eq(z[1].maxX, 2865, "seam columns: zone 1 ends on 2865")
+}
+
+do { // HIS EXAMPLE: left half full-height; right half split top/bottom
+    let root = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf,
+        .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ])
+    let z = Layout.zones(root, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 3, "nested: 3 zones (Left, Right-Top, Right-Bottom)")
+    // Zone 0 = Left, full height, left half
+    eq(z[0].minX, 0, "nested Left minX"); eq(z[0].maxX, 2560, "nested Left maxX")
+    eq(z[0].height, 1392, "nested Left full height")
+    // Semantic order: Zone 1 = Right-TOP (higher y), Zone 2 = Right-Bottom
+    eq(z[1].minX, 2560, "nested Right-Top minX")
+    eq(z[1].maxX, 5120, "nested Right-Top maxX")
+    check(z[1].minY > z[2].minY, "nested: Zone 1 is the TOP row (top-to-bottom order)")
+    eq(z[1].height, 1392 / 2, "nested Right-Top half height")
+    eq(z[2].height, 1392 / 2, "nested Right-Bottom half height")
+    eq(z[1].maxY, visible.maxY, "nested Right-Top touches top")
+    eq(z[2].minY, visible.minY, "nested Right-Bottom touches bottom")
+}
+
+do { // zoneIndex(at:) and out-of-range zoneRect
+    let root = Node.thirds
+    let i = Layout.zoneIndex(at: CGPoint(x: 4000, y: 700), root: root, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(i == 2, "zoneIndex: point in right third -> index 2")
+    check(Layout.zoneRect(index: 5, root: root, frame: frame, visibleFrame: visible, pixelsWide: px) == nil,
+          "zoneRect: out-of-range index -> nil (disabled binding)")
+}
+
+do { // Node JSON round-trips (nested)
+    let root = Node.split(axis: .vertical, dividers: [Boundary(1133, .pixels)], children: [
+        .leaf, .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ])
+    let data = try JSONEncoder().encode(root)
+    let back = try JSONDecoder().decode(Node.self, from: data)
+    check(back == root, "Node JSON round-trips (nested split)")
+}
+
+// ---- P1: per-screen config + migration ----
+let g9 = ScreenInfo(key: "uuid-G9", label: "Odyssey G9", pixelsWide: 5120, pixelsHigh: 1440, keyIsStable: true)
+let mbp = ScreenInfo(key: "uuid-MBP", label: "Built-in", pixelsWide: 3456, pixelsHigh: 2234, keyIsStable: true)
+
+do { // per-screen lookup + default fallback
+    var cfg = LineupConfig()
+    cfg = cfg.setting(layout: .thirds, for: g9, now: nil)
+    cfg = cfg.setting(layout: .halves, for: mbp, now: nil)
+    check(Layout.zones(cfg.layout(forKey: "uuid-G9"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 3, "per-screen: G9 -> thirds")
+    check(Layout.zones(cfg.layout(forKey: "uuid-MBP"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "per-screen: MBP -> halves")
+    check(Layout.zones(cfg.layout(forKey: "uuid-UNKNOWN"), frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "per-screen: unknown -> default halves")
+}
+
+do { // out-of-range Zone-N across screens: Zone 3 exists on G9, not on MBP
+    var cfg = LineupConfig()
+    cfg = cfg.setting(layout: .thirds, for: g9, now: nil)
+    cfg = cfg.setting(layout: .halves, for: mbp, now: nil)
+    let g9Z3 = Layout.zoneRect(index: 2, root: cfg.layout(forKey: "uuid-G9"), frame: frame, visibleFrame: visible, pixelsWide: px)
+    let mbpZ3 = Layout.zoneRect(index: 2, root: cfg.layout(forKey: "uuid-MBP"), frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(g9Z3 != nil, "Zone 3 available on G9 (3 zones)")
+    check(mbpZ3 == nil, "Zone 3 unavailable on MBP (2 zones) -> binding disables itself")
+}
+
+do { // migration from legacy ColumnConfig -> schema 3 onto current screen
+    let legacy = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-mig-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try legacy.write(to: tmp)
+    var backedUp = false
+    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in backedUp = true }, resolveLegacyTarget: { _ in g9 })
+    check(isMigrated(outcome), "migration: legacy detected")
+    check(backedUp, "migration: backup taken before write")
+    let cfg = outcomeConfig(outcome)!
+    check(cfg.schemaVersion == 3, "migration: schema bumped to 3")
+    let z = Layout.zones(cfg.layout(forKey: g9.key), frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(z[0].maxX, 1133, "migration: seams preserved (1133)")
+    eq(z[1].maxX, 2865, "migration: seams preserved (2865)")
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+do { // schema-3 file loads without migration; absent file = fresh config
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v3-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try LineupConfig().setting(layout: .thirds, for: g9, now: nil).write(to: tmp)
+    let outcome = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    check(!isMigrated(outcome), "schema-3 file: no migration")
+    check(outcomeConfig(outcome)!.screens["uuid-G9"] != nil, "schema-3 file: G9 layout present")
+    try? FileManager.default.removeItem(at: tmp)
+    let absent = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-absent-\(checks).json")
+    try? FileManager.default.removeItem(at: absent)
+    let absentOutcome = try LineupConfig.loadOrMigrate(from: absent, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    check(isFresh(absentOutcome), "absent file: outcome is .fresh (writable)")
+    check(outcomeConfig(absentOutcome)!.screens.isEmpty, "absent file: fresh empty config")
+}
+
+do { // fallback screen key composition (never resolution-only)
+    let k = ScreenKey.fallback(vendor: 1552, model: 42, serial: 7, width: 5120, height: 1440, name: "G9")
+    check(k.hasPrefix("fallback:"), "fallback key prefixed")
+    check(k.contains("1552:42:7"), "fallback key includes vendor:model:serial")
+    let k2 = ScreenKey.fallback(vendor: 1552, model: 42, serial: 0, width: 5120, height: 1440, name: "G9", tieBreaker: "unit3")
+    check(k2.hasSuffix(":unit3"), "fallback key appends tie-breaker")
+    check(k != k2, "tie-breaker disambiguates identical fallback displays")
+}
+
+// ---- P1 review fixes: validation ----
+func expectThrow(_ name: String, _ body: () throws -> Void) {
+    checks += 1
+    do { try body(); failures += 1; FileHandle.standardError.write(Data("FAIL: \(name) (no throw)\n".utf8)) }
+    catch { /* expected */ }
+}
+func expectNoThrow(_ name: String, _ body: () throws -> Void) {
+    checks += 1
+    do { try body() } catch { failures += 1; FileHandle.standardError.write(Data("FAIL: \(name) (threw \(error))\n".utf8)) }
+}
+
+expectNoThrow("valid: root vertical pixels ok") {
+    try Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)]).validate()
+}
+expectNoThrow("valid: nested fraction tree (his example)") {
+    try Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf, .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ]).validate()
+}
+expectThrow("invalid: too few dividers") {
+    try Node.split(axis: .vertical, dividers: [], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: too many dividers") {
+    try Node.split(axis: .vertical, dividers: [Boundary(0.3, .fraction), Boundary(0.6, .fraction)], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: single-child split") {
+    try Node.split(axis: .vertical, dividers: [], children: [.leaf]).validate()
+}
+expectThrow("invalid: nested vertical pixels") {
+    try Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf, .split(axis: .vertical, dividers: [Boundary(100, .pixels)], children: [.leaf, .leaf]),
+    ]).validate()
+}
+expectThrow("invalid: horizontal pixels") {
+    try Node.split(axis: .horizontal, dividers: [Boundary(100, .pixels)], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: horizontal points") {
+    try Node.split(axis: .horizontal, dividers: [Boundary(100, .points)], children: [.leaf, .leaf]).validate()
+}
+expectThrow("invalid: root horizontal pixels (only root VERTICAL may use absolutes)") {
+    try Node.split(axis: .horizontal, dividers: [Boundary(100, .pixels)], children: [.leaf, .leaf]).validate()
+}
+
+do { // present-but-corrupt config throws (no clobber); absent stays fresh
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-corrupt-\(checks).json")
+    try "{ not valid json at all ".write(to: tmp, atomically: true, encoding: .utf8)
+    expectThrow("corrupt present config throws (no data loss)") {
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    }
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+do { // write() validates: invalid layout throws and never creates/overwrites the file
+    var bad = LineupConfig()
+    bad.defaultLayout = .split(axis: .vertical, dividers: [], children: [.leaf]) // single-child = invalid
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-badwrite-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    expectThrow("write(invalid) throws before touching disk") { try bad.write(to: tmp) }
+    check(!FileManager.default.fileExists(atPath: tmp.path), "write(invalid) created no file (no clobber)")
+}
+
+do { // a future schema-4 file (v3-shaped) is rejected, not loaded lossily
+    var future = LineupConfig().setting(layout: .halves, for: g9, now: nil)
+    future.schemaVersion = 4
+    // bypass write()'s schema-agnostic encode by encoding directly
+    let enc = JSONEncoder()
+    let data = try enc.encode(future)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-v4-\(checks).json")
+    try data.write(to: tmp)
+    expectThrow("future schema (v4) throws unsupportedSchema, not loaded") {
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in g9 })
+    }
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+// ---- P2 review: migration display inference + defer ----
+do { // inferred width from the pixel half-divider; nil when not pixels
+    check(LineupConfig.inferredLegacyWidth(ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)) == 5120,
+          "inferredLegacyWidth: halfDivider*2 = 5120")
+    check(LineupConfig.inferredLegacyWidth(ColumnConfig(dividers: [Boundary(0.5, .fraction)], halfDivider: Boundary(0.5, .fraction))) == nil,
+          "inferredLegacyWidth: non-pixel half -> nil")
+}
+
+do { // defer migration when the target display isn't connected (resolveLegacyTarget=nil)
+    let legacy = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-defer-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try legacy.write(to: tmp)
+    var backedUp = false
+    let outcome = try LineupConfig.loadOrMigrate(
+        from: tmp, now: "T",
+        backup: { _ in backedUp = true },
+        resolveLegacyTarget: { _ in nil }) // G9 disconnected -> defer
+    // DISTINCT from absent-fresh: deferral is its own outcome so the runtime can block writes.
+    check(outcome == .deferred, "defer: outcome is .deferred (distinct from .fresh)")
+    check(!isFresh(outcome), "defer: not .fresh (so writes get blocked, unlike a real fresh config)")
+    check(outcomeConfig(outcome) == nil, "defer: carries no config (runtime runs defaults)")
+    check(!backedUp, "defer: no backup taken (legacy file untouched)")
+    // legacy file is still intact on disk
+    let still = try JSONDecoder().decode(ColumnConfig.self, from: try Data(contentsOf: tmp))
+    eq(CGFloat(still.dividers[0].value), 1133, "defer: legacy file preserved (1133)")
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+do { // backup failure aborts migration (closure throws -> loadOrMigrate throws, no write)
+    let legacy = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-bkpfail-\(checks).json")
+    try? FileManager.default.removeItem(at: tmp)
+    try legacy.write(to: tmp)
+    struct BackupFailed: Error {}
+    expectThrow("backup failure aborts migration (no clobber)") {
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T",
+            backup: { _ in throw BackupFailed() },
+            resolveLegacyTarget: { _ in g9 })
+    }
+    let still = try JSONDecoder().decode(ColumnConfig.self, from: try Data(contentsOf: tmp))
+    eq(CGFloat(still.dividers[1].value), 2865, "backup fail: legacy file preserved (2865)")
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+// ---- P2: quick actions honor per-screen root columns ----
+do {
+    let g9Layout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    func qa(_ id: String, _ root: Node) -> CGRect { QuickAction.rect(id, root: root, frame: frame, visibleFrame: visible, pixelsWide: px)! }
+    // With a 3-column layout, left/center/right land on the seam columns
+    eq(qa("left", g9Layout).maxX, 1133, "quick left -> root column 0 (seam)")
+    eq(qa("right", g9Layout).minX, 2865, "quick right -> root column 2 (seam)")
+    eq(qa("center", g9Layout).minX, 1133, "quick center -> middle column left edge")
+    eq(qa("center", g9Layout).maxX, 2865, "quick center -> middle column right edge")
+    eq(qa("full", g9Layout).width, 5120, "quick full -> whole screen")
+    eq(qa("leftHalf", g9Layout).maxX, 2560, "quick leftHalf -> screen half")
+    eq(qa("rightHalf", g9Layout).minX, 2560, "quick rightHalf -> screen half")
+    // With a bare leaf (no columns), left/right fall back to halves
+    eq(qa("left", .leaf).maxX, 2560, "quick left (leaf) -> left half fallback")
+    eq(qa("right", .leaf).minX, 2560, "quick right (leaf) -> right half fallback")
+    // rootColumns nil for non-vertical-split roots
+    check(Layout.rootColumns(.leaf, frame: frame, visibleFrame: visible, pixelsWide: px) == nil, "rootColumns: leaf -> nil")
+    check(Layout.rootColumns(g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)?.count == 3, "rootColumns: 3 columns")
+}
+
+// ---- P3: layout editor tree mutations ----
+do { // node(at:) / replacingNode addressing
+    let root = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [
+        .leaf, .split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf]),
+    ])
+    check(root.node(at: []) == root, "node(at: []) == root")
+    check(root.node(at: [0]) == .leaf, "node(at: [0]) == left leaf")
+    if case .split(.horizontal, _, _)? = root.node(at: [1]) { check(true, "node(at: [1]) == right split") }
+    else { check(false, "node(at: [1]) == right split") }
+    check(root.node(at: [9]) == nil, "node(at: invalid) == nil")
+    let replaced = root.replacingNode(at: [0], with: .leaf)
+    check(replaced == root, "replacingNode same value -> equal")
+}
+
+do { // split a leaf -> two equal children; non-leaf is a no-op
+    let twoCol = LayoutEdit.split(.leaf, at: [], axis: .vertical)
+    check(Layout.zones(twoCol, frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "split leaf vertical -> 2 zones")
+    try twoCol.validate()
+    // split the right zone into rows -> his example shape
+    let nested = LayoutEdit.split(twoCol, at: [1], axis: .horizontal)
+    let z = Layout.zones(nested, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(z.count == 3, "split [1] horizontal -> 3 zones (left + right top/bottom)")
+    try nested.validate()
+    // splitting a non-leaf path is a no-op
+    check(LayoutEdit.split(nested, at: [], axis: .vertical) == nested, "split non-leaf -> no-op")
+}
+
+do { // merge collapses the parent split back to a leaf
+    let nested = LayoutEdit.split(LayoutEdit.split(.leaf, at: [], axis: .vertical), at: [1], axis: .horizontal)
+    // merge a leaf inside the right split -> right becomes a single leaf again (2 zones)
+    let merged = LayoutEdit.merge(nested, at: [1, 0])
+    check(Layout.zones(merged, frame: frame, visibleFrame: visible, pixelsWide: px).count == 2, "merge inner -> back to 2 zones")
+    try merged.validate()
+    // merge at root collapses everything to one zone
+    let allMerged = LayoutEdit.merge(merged, at: [])
+    check(Layout.zones(allMerged, frame: frame, visibleFrame: visible, pixelsWide: px).count == 1, "merge root -> 1 zone")
+    check(allMerged == .leaf, "merge root -> leaf")
+}
+
+do { // leaves(withPaths) + dividerHandles for the editor canvas (his example)
+    let nested = LayoutEdit.split(LayoutEdit.split(.leaf, at: [], axis: .vertical), at: [1], axis: .horizontal)
+    let container = Layout.rootContainer(frame: frame, visibleFrame: visible)
+    let lv = Layout.leaves(nested, container: container, pixelsWide: px)
+    check(lv.count == 3, "leaves: 3 (paths + rects)")
+    check(lv[0].path == [0], "leaves[0] path = [0] (Left)")
+    check(lv[1].path == [1, 0], "leaves[1] path = [1,0] (Right-Top)")
+    check(lv[2].path == [1, 1], "leaves[2] path = [1,1] (Right-Bottom)")
+    check(lv[1].rect.minY > lv[2].rect.minY, "leaves: Right-Top above Right-Bottom")
+    let handles = Layout.dividerHandles(nested, container: container, pixelsWide: px)
+    check(handles.count == 2, "dividerHandles: 2 (root column + right row)")
+    check(handles.contains { $0.path == [] && $0.axis == .vertical }, "handle: root vertical divider")
+    check(handles.contains { $0.path == [1] && $0.axis == .horizontal }, "handle: nested horizontal divider")
+}
+
+do { // setDivider: root vertical keeps pixels (seams); nested keeps fractions
+    let twoCol = Node.columns([Boundary(2560, .pixels)])
+    let moved = LayoutEdit.setDivider(twoCol, at: [], index: 0, fraction: 1133.0 / 5120.0, rootPixelsWide: 5120)
+    if case let .split(_, dividers, _) = moved {
+        check(dividers[0].unit == .pixels, "setDivider root vertical -> pixels (seam precision kept)")
+        eq(CGFloat(dividers[0].value), 1133, "setDivider root -> 1133px", accuracy: 1)
+    } else { check(false, "setDivider root -> split") }
+    try moved.validate()
+    // nested split divider stays fraction
+    let nested = LayoutEdit.split(twoCol, at: [1], axis: .horizontal)
+    let nestedMoved = LayoutEdit.setDivider(nested, at: [1], index: 0, fraction: 0.3, rootPixelsWide: 5120)
+    if case let .split(_, _, children) = nestedMoved, case let .split(_, d, _) = children[1] {
+        check(d[0].unit == .fraction, "setDivider nested -> fraction")
+        eq(CGFloat(d[0].value), 0.3, "setDivider nested -> 0.3")
+    } else { check(false, "setDivider nested structure") }
+    try nestedMoved.validate()
+}
+
+// ---- P4: shortcuts model ----
+do {
+    var sc = Shortcuts()
+    sc = sc.setting(action: "left", keyCode: 123, modifiers: 0x1B00)   // Hyper+Left
+    sc = sc.setting(action: ZoneAction.id(2), keyCode: 19, modifiers: 0x1B00) // Hyper+2 -> Zone 2
+    check(sc.binding(for: "left")?.keyCode == 123, "shortcut: left bound")
+    check(sc.binding(for: "zone:2")?.keyCode == 19, "shortcut: zone:2 bound")
+    // setting replaces, not duplicates
+    sc = sc.setting(action: "left", keyCode: 124, modifiers: 0x1B00)
+    check(sc.bindings.filter { $0.action == "left" }.count == 1, "shortcut: setting replaces")
+    check(sc.binding(for: "left")?.keyCode == 124, "shortcut: left rebound to 124")
+    // conflict detection
+    sc = sc.setting(action: "right", keyCode: 124, modifiers: 0x1B00) // same combo as left
+    check(sc.conflicts(keyCode: 124, modifiers: 0x1B00, excluding: "right") == ["left"], "shortcut: conflict detected")
+    check(sc.conflicts(keyCode: 999, modifiers: 0, excluding: "right").isEmpty, "shortcut: no false conflict")
+    // removing
+    sc = sc.removing(action: "left")
+    check(sc.binding(for: "left") == nil, "shortcut: removed -> unassigned")
+}
+
+do { // zone action id <-> index
+    check(ZoneAction.id(3) == "zone:3", "zone id")
+    check(ZoneAction.zeroBasedIndex(from: "zone:3") == 2, "zone parse -> 0-based 2")
+    check(ZoneAction.zeroBasedIndex(from: "left") == nil, "non-zone action -> nil")
+    check(ZoneAction.zeroBasedIndex(from: "zone:0") == nil, "zone:0 invalid -> nil")
+}
+
+do { // shortcuts are optional + backward compatible in LineupConfig
+    var cfg = LineupConfig().setting(layout: .thirds, for: g9, now: nil)
+    check(cfg.shortcuts == nil, "config: shortcuts absent by default")
+    cfg.shortcuts = Shortcuts().setting(action: "full", keyCode: 126, modifiers: 0x1B00)
+    let data = try JSONEncoder().encode(cfg)
+    let back = try JSONDecoder().decode(LineupConfig.self, from: data)
+    check(back.shortcuts?.binding(for: "full")?.keyCode == 126, "config: shortcuts round-trip")
+    // a schema-3 doc without the shortcuts key still decodes (absent -> nil)
+    let noShortcuts = LineupConfig().setting(layout: .halves, for: g9, now: nil)
+    let d2 = try JSONEncoder().encode(noShortcuts)
+    check((try JSONDecoder().decode(LineupConfig.self, from: d2)).shortcuts == nil, "config: missing shortcuts decodes to nil")
+}
+
+// ---- P5: left/right cycling ----
+do { // step 0 honors the seam column; later steps are fractions; dedup
+    let g9Layout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
+    let left = Cycle.steps(.left, root: g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(left[0].maxX, 1133, "cycle left step0 = seam column (1133)")
+    eq(left[1].maxX, 2560, "cycle left step1 = 1/2")
+    eq(left[2].maxX, 5120.0 / 3.0, "cycle left step2 = 1/3")
+    eq(left[3].maxX, 2.0 / 3.0 * 5120, "cycle left step3 = 2/3")
+    let right = Cycle.steps(.right, root: g9Layout, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(right[0].minX, 2865, "cycle right step0 = seam column (2865)")
+    eq(right[1].minX, 2560, "cycle right step1 = 1/2")
+    // halves layout: step0 == step1 -> deduped
+    let halvesSteps = Cycle.steps(.left, root: .halves, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(halvesSteps.count == 3, "cycle: halves layout dedups step0==1/2 (4 -> 3)")
+    eq(halvesSteps[0].maxX, 2560, "cycle halves step0 = 1/2")
+    // thirds layout: step0 (left third) == the 1/3 step -> NON-adjacent dedupe (4 -> 3 unique)
+    let thirdsSteps = Cycle.steps(.left, root: .thirds, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(thirdsSteps.count == 3, "cycle: thirds dedups non-adjacent 1/3 repeat (4 -> 3)")
+    let widths = Set(thirdsSteps.map { Int(($0.width).rounded()) })
+    check(widths.count == 3, "cycle: thirds steps are all unique widths")
+    eq(thirdsSteps[0].maxX, 5120.0 / 3.0, "cycle thirds step0 = left third")
+}
+
+do { // continuation predicate
+    let steps = 4
+    let rect0 = CGRect(x: 0, y: 0, width: 1133, height: 1392)
+    // no prior -> step 0
+    check(Cycle.nextStep(action: "left", now: 100, screenKey: "G9", focusedFrame: rect0, prev: nil, stepCount: steps) == 0, "cycle: no prev -> 0")
+    let prev = CycleState(action: "left", stepIndex: 0, lastTime: 100, screenKey: "G9", lastRect: rect0)
+    // same key, in time, same screen, window still at lastRect -> advance
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 1, "cycle: continuation -> advance")
+    // timed out -> reset
+    check(Cycle.nextStep(action: "left", now: 103, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: timeout -> reset")
+    // different screen -> reset
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "MBP", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: screen change -> reset")
+    // window moved (frame != lastRect) -> reset
+    let moved = CGRect(x: 50, y: 0, width: 1133, height: 1392)
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: moved, prev: prev, stepCount: steps) == 0, "cycle: window moved -> reset")
+    // wraps at end
+    let prevLast = CycleState(action: "left", stepIndex: 3, lastTime: 100, screenKey: "G9", lastRect: rect0)
+    check(Cycle.nextStep(action: "left", now: 101, screenKey: "G9", focusedFrame: rect0, prev: prevLast, stepCount: steps) == 0, "cycle: wraps to 0")
+    // clock stepped backward (now < lastTime) -> reset, never advance
+    check(Cycle.nextStep(action: "left", now: 99, screenKey: "G9", focusedFrame: rect0, prev: prev, stepCount: steps) == 0, "cycle: negative clock delta -> reset")
 }
 
 // ---- Report ----

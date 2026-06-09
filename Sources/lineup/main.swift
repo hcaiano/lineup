@@ -8,22 +8,20 @@ import LineupCore
 /// and snaps the focused window into the matching zone.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var config = ColumnConfig.default
+    private enum ConfigState { case ok, loadError, migrationDeferred }
+    private var config = LineupConfig()
+    private var configState: ConfigState = .ok
+    private var configCanWrite: Bool { configState == .ok } // block writes unless clean
     private var failedHotkeys = 0
+    private var cycleState: CycleState?   // carries left/right cycle progress between presses
     private var overlay: AlignmentOverlayController?
+    private var settings: SettingsWindowController?
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
-        self?.config ?? .default
+        self?.config ?? LineupConfig()
     })
 
-    /// Hyper+key -> zone id. Fixed-per-key (deterministic seam alignment).
-    private let bindings: [(key: Int, zone: String)] = [
-        (kVK_UpArrow, "full"),
-        (kVK_DownArrow, "center"),
-        (kVK_LeftArrow, "left"),
-        (kVK_RightArrow, "right"),
-        (kVK_ANSI_LeftBracket, "leftHalf"),
-        (kVK_ANSI_RightBracket, "rightHalf"),
-    ]
+    /// The effective shortcut set (user config, or built-in defaults).
+    private var shortcuts: Shortcuts { config.shortcuts ?? ShortcutKit.defaults }
 
     static var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -47,12 +45,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Config
 
     private func reloadConfig() {
+        let url = AppDelegate.configURL
+        let now = ISO8601DateFormatter().string(from: Date())
         do {
-            config = try ColumnConfig.load(from: AppDelegate.configURL)
+            let outcome = try LineupConfig.loadOrMigrate(
+                from: url, now: now,
+                backup: { data in
+                    // Must succeed before we risk replacing the only legacy copy.
+                    let backupURL = url.deletingPathExtension().appendingPathExtension("backup-\(Self.timestamp()).json")
+                    try data.write(to: backupURL, options: .atomic)
+                },
+                resolveLegacyTarget: { old in
+                    // Migrate the seams onto the display they were drawn on. If the legacy
+                    // pixel width implies a specific display and it isn't connected, DEFER.
+                    let screens = NSScreen.screens.map { ScreenIdentity.info(for: $0) }
+                    if let w = LineupConfig.inferredLegacyWidth(old) {
+                        return screens.filter { abs($0.pixelsWide - w) <= 8 }
+                            .max(by: { $0.pixelsWide < $1.pixelsWide })
+                    }
+                    return screens.max(by: { $0.pixelsWide < $1.pixelsWide })
+                })
+            switch outcome {
+            case .loaded(let cfg), .fresh(let cfg):
+                config = cfg
+                configState = .ok
+            case .migrated(let cfg):
+                config = cfg
+                configState = .ok
+                do { try config.write(to: url) }
+                catch { FileHandle.standardError.write(Data("migration write failed (legacy file + backup preserved): \(error)\n".utf8)) }
+            case .deferred:
+                // The saved layout belongs to a display that isn't connected. Run defaults
+                // but BLOCK writes so a save can't overwrite the preserved legacy file. It
+                // migrates automatically the next time that display is present.
+                FileHandle.standardError.write(Data("legacy config deferred: original display not connected\n".utf8))
+                config = LineupConfig()
+                configState = .migrationDeferred
+            }
         } catch {
-            FileHandle.standardError.write(Data("config load failed, using defaults: \(error)\n".utf8))
-            config = .default
+            // Corrupt/unsupported file: surface it, do NOT overwrite, and BLOCK writes until
+            // an explicit reset — so a later save can't clobber the preserved file.
+            FileHandle.standardError.write(Data("config could not be loaded (left untouched): \(error)\n".utf8))
+            config = LineupConfig()
+            configState = .loadError
         }
+    }
+
+    /// Millisecond-precision stamp so rapid backup/rejected copies don't collide.
+    private static func timestamp() -> Int { Int(Date().timeIntervalSince1970 * 1000) }
+
+    @objc private func resetConfig() {
+        let url = AppDelegate.configURL
+        do {
+            // Preserve the rejected/deferred file FIRST; if that fails, do not reset.
+            if let data = try? Data(contentsOf: url) {
+                let rejected = url.deletingPathExtension().appendingPathExtension("rejected-\(Self.timestamp()).json")
+                try data.write(to: rejected, options: .atomic) // throws -> abort reset (no clobber)
+            }
+            config = LineupConfig()
+            try config.write(to: url)
+            configState = .ok
+        } catch {
+            FileHandle.standardError.write(Data("reset aborted (preservation or write failed; config left untouched): \(error)\n".utf8))
+            // leave configState as-is so writes stay blocked
+        }
+        buildStatusItem()
     }
 
     @objc private func reloadConfigFromMenu() {
@@ -60,31 +117,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
     }
 
+    // MARK: - Settings window
+
+    @objc private func openSettings() {
+        if settings != nil { settings?.show(); return }
+        let ctx = SettingsContext(
+            config: { [weak self] in self?.config ?? LineupConfig() },
+            applyLayout: { [weak self] node, info in self?.applyLayout(node, for: info) },
+            canWrite: { [weak self] in self?.configCanWrite ?? false },
+            blockedMessage: { [weak self] in
+                switch self?.configState {
+                case .migrationDeferred: return "Your saved layout is waiting for its display. Editing is disabled until it reconnects or you reset from the menu."
+                case .loadError: return "The config file couldn't be loaded. Editing is disabled until you reset it from the menu."
+                default: return nil
+                }
+            },
+            shortcuts: { [weak self] in self?.shortcuts ?? ShortcutKit.defaults },
+            setShortcuts: { [weak self] s in self?.applyShortcuts(s) },
+            isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
+            toggleDragSnap: { [weak self] in self?.toggleDragSnap() },
+            isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
+            toggleLaunchAtLogin: { [weak self] in self?.toggleLaunchAtLogin() },
+            isTrusted: { AXIsProcessTrusted() },
+            requestAccessibility: { [weak self] in self?.requestAccessibility() })
+        let controller = SettingsWindowController(context: ctx)
+        controller.onClose = { [weak self] in self?.settings = nil }
+        settings = controller
+        controller.show()
+    }
+
+    /// Persist an edited layout for a specific screen. write() validates first, so an
+    /// invalid tree never reaches disk and the in-memory config isn't updated on failure.
+    private func applyLayout(_ node: Node, for screen: ScreenInfo) {
+        guard configCanWrite else { return }
+        let updated = config.setting(layout: node, for: screen, now: ISO8601DateFormatter().string(from: Date()))
+        do {
+            try updated.write(to: AppDelegate.configURL)
+            config = updated
+            buildStatusItem()
+        } catch {
+            FileHandle.standardError.write(Data("settings layout save failed (not applied): \(error)\n".utf8))
+        }
+    }
+
+    /// Persist a new shortcut set and re-register the global hotkeys.
+    private func applyShortcuts(_ newShortcuts: Shortcuts) {
+        guard configCanWrite else { return }
+        var updated = config
+        updated.shortcuts = newShortcuts
+        do {
+            try updated.write(to: AppDelegate.configURL)
+            config = updated
+            HotkeyManager.shared.unregisterAll()
+            registerHotkeys()
+            buildStatusItem()
+        } catch {
+            FileHandle.standardError.write(Data("shortcuts save failed (not applied): \(error)\n".utf8))
+        }
+    }
+
     // MARK: - Alignment overlay
 
     @objc private func openAlignmentOverlay() {
-        // The G9 is the display with the most horizontal pixels; configure in its pixels.
+        // Never overwrite a preserved corrupt/future config via a save.
+        guard configCanWrite else { return }
+        // Edit the seams of the widest display (the G9). Per-screen: saves to that screen.
         guard let screen = NSScreen.screens.max(by: {
-                WindowMover.pixelsWide(of: $0) < WindowMover.pixelsWide(of: $1)
+                ScreenIdentity.info(for: $0).pixelsWide < ScreenIdentity.info(for: $1).pixelsWide
               }) ?? NSScreen.main else { return }
-        let pixelsWide = WindowMover.pixelsWide(of: screen)
+        let info = ScreenIdentity.info(for: screen)
         let frame = screen.frame
-        // Seed line positions from the current config (points from the screen's left).
-        let initial = config.dividers.map { $0.x(in: frame, pixelsWide: pixelsWide) - frame.minX }
+        // Seed the lines from the screen's current root columns (interior divider x's).
+        let root = config.layout(forKey: info.key)
+        let cols = Layout.rootColumns(root, frame: frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
+        let initial: [CGFloat] = cols?.dropLast().map { $0.maxX - frame.minX } ?? [frame.width / 2]
 
         overlay = AlignmentOverlayController(
             screen: screen,
-            pixelsWide: pixelsWide,
+            pixelsWide: info.pixelsWide,
             initialDividerPoints: initial,
-            onSave: { [weak self] dividerPixels, halfPixels in
+            onSave: { [weak self] dividerPixels, _ in
                 guard let self else { return }
-                self.config = ColumnConfig.fromPixels(dividers: dividerPixels, halfPixels: halfPixels)
-                do {
-                    try self.config.write(to: AppDelegate.configURL)
-                } catch {
-                    FileHandle.standardError.write(Data("failed to save config: \(error)\n".utf8))
-                }
-                self.buildStatusItem()
+                let newRoot = Node.columns(dividerPixels.map { Boundary($0, .pixels) })
+                // Apply via the shared path: write (validates) BEFORE mutating in-memory config.
+                self.applyLayout(newRoot, for: info)
             },
             onClose: { [weak self] in self?.overlay = nil })
         overlay?.show()
@@ -94,10 +210,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerHotkeys() {
         var failed = 0
-        for b in bindings {
-            let ok = HotkeyManager.shared.register(keyCode: b.key) { [weak self] in
+        for b in shortcuts.bindings {
+            let action = b.action
+            let ok = HotkeyManager.shared.register(keyCode: b.keyCode, modifiers: UInt32(b.modifiers)) { [weak self] in
                 guard let self else { return }
-                WindowMover.snapFocusedWindow(to: b.zone, config: self.config)
+                let now = Date().timeIntervalSinceReferenceDate
+                switch action {
+                case "left":
+                    self.cycleState = WindowMover.cycleFocusedWindow(.left, config: self.config, now: now, prev: self.cycleState)
+                case "right":
+                    self.cycleState = WindowMover.cycleFocusedWindow(.right, config: self.config, now: now, prev: self.cycleState)
+                default:
+                    self.cycleState = nil // any other action breaks an in-progress cycle
+                    if let zoneIndex = ZoneAction.zeroBasedIndex(from: action) {
+                        WindowMover.snapFocusedWindow(toZoneIndex: zoneIndex, config: self.config)
+                    } else {
+                        WindowMover.snapFocusedWindow(toQuickAction: action, config: self.config)
+                    }
+                }
             }
             if !ok { failed += 1 }
         }
@@ -132,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 action: #selector(requestAccessibility), keyEquivalent: ""))
         }
 
-        let total = bindings.count
+        let total = shortcuts.bindings.count
         let hkLine = NSMenuItem(
             title: failedHotkeys == 0
                 ? "Hotkeys: OK (\(total) active)"
@@ -147,13 +277,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        if configState != .ok {
+            let msg = configState == .migrationDeferred
+                ? "⚠︎ Saved layout waiting for its display — saving is disabled"
+                : "⚠︎ Config couldn't be loaded — saving is disabled"
+            let warn = NSMenuItem(title: msg, action: nil, keyEquivalent: "")
+            warn.isEnabled = false
+            menu.addItem(warn)
+            menu.addItem(NSMenuItem(
+                title: configState == .migrationDeferred ? "Discard saved layout & reset…" : "Reset configuration…",
+                action: #selector(resetConfig), keyEquivalent: ""))
+        }
         let cfgLine = NSMenuItem(
-            title: "Config: \(FileManager.default.fileExists(atPath: AppDelegate.configURL.path) ? AppDelegate.configURL.path : "defaults (thirds)")",
+            title: "Config: \(FileManager.default.fileExists(atPath: AppDelegate.configURL.path) ? AppDelegate.configURL.path : "defaults (halves)")",
             action: nil, keyEquivalent: "")
         cfgLine.isEnabled = false
         menu.addItem(cfgLine)
-        menu.addItem(NSMenuItem(
-            title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: ""))
+        let settingsItem = NSMenuItem(
+            title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(settingsItem)
+        let alignItem = NSMenuItem(
+            title: "Align dividers on screen…", action: #selector(openAlignmentOverlay), keyEquivalent: "")
+        alignItem.isEnabled = configCanWrite // never overwrite a preserved corrupt/future config
+        menu.addItem(alignItem)
         menu.addItem(NSMenuItem(
             title: "Reload config", action: #selector(reloadConfigFromMenu), keyEquivalent: "r"))
 
@@ -168,8 +314,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
-        for b in bindings {
-            let item = NSMenuItem(title: "Hyper + \(keyLabel(b.key))  →  \(b.zone)", action: nil, keyEquivalent: "")
+        // Quick-action shortcuts at a glance; full list (incl. zones) lives in Settings.
+        for qa in ShortcutKit.quickActions {
+            let combo = shortcuts.binding(for: qa.id).map { ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers) } ?? "—"
+            let item = NSMenuItem(title: "\(combo)  →  \(qa.label)", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
         }
@@ -177,18 +325,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Lineup", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
-    }
-
-    private func keyLabel(_ keyCode: Int) -> String {
-        switch keyCode {
-        case kVK_UpArrow: return "↑"
-        case kVK_DownArrow: return "↓"
-        case kVK_LeftArrow: return "←"
-        case kVK_RightArrow: return "→"
-        case kVK_ANSI_LeftBracket: return "["
-        case kVK_ANSI_RightBracket: return "]"
-        default: return "?"
-        }
     }
 
     @objc private func toggleLaunchAtLogin() {

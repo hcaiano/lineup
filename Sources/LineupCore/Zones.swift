@@ -22,14 +22,22 @@ public struct Boundary: Codable, Equatable {
     /// `pixelsWide` is the display's physical width (CGDisplayPixelsWide); only used
     /// for `.pixels`. Layout math stays in points everywhere else.
     public func x(in frame: CGRect, pixelsWide: Int) -> CGFloat {
+        frame.minX + distance(alongLength: frame.width, pixelsTotal: pixelsWide)
+    }
+
+    /// Resolve to a distance (points) measured from the reading-start of an axis (left
+    /// for a vertical split, top for a horizontal split). `pixelsTotal` is the axis's
+    /// physical pixel count, used only for `.pixels` (valid solely at the root vertical
+    /// split — the seams); nested/horizontal splits use `.fraction`.
+    public func distance(alongLength length: CGFloat, pixelsTotal: Int) -> CGFloat {
         switch unit {
         case .fraction:
-            return frame.minX + CGFloat(value) * frame.width
+            return CGFloat(value) * length
         case .points:
-            return frame.minX + CGFloat(value)
+            return CGFloat(value)
         case .pixels:
-            let scale = pixelsWide > 0 ? frame.width / CGFloat(pixelsWide) : 1
-            return frame.minX + CGFloat(value) * scale
+            let scale = pixelsTotal > 0 ? length / CGFloat(pixelsTotal) : 1
+            return CGFloat(value) * scale
         }
     }
 }
@@ -142,22 +150,5 @@ public struct ColumnConfig: Codable, Equatable {
         ColumnConfig(
             dividers: dividers.sorted().map { Boundary($0, .pixels) },
             halfDivider: Boundary(halfPixels, .pixels))
-    }
-
-    /// Sanitize raw pixel divider positions: clamp into `0...pixelsWide`, sort, and keep
-    /// every column (including the two outer ones) at least `minColumn` pixels wide, so a
-    /// user can't save a zero-width column. Pure so it's unit-tested.
-    public static func clampPixelDividers(_ xs: [Double], pixelsWide: Int, minColumn: Double) -> [Double] {
-        let maxX = Double(pixelsWide)
-        let sorted = xs.map { Swift.min(Swift.max($0, 0), maxX) }.sorted()
-        var out: [Double] = []
-        var lower = minColumn
-        for (i, x) in sorted.enumerated() {
-            let remaining = Double(sorted.count - i - 1)
-            let upper = maxX - minColumn * (remaining + 1)
-            out.append(Swift.min(Swift.max(x, lower), Swift.max(lower, upper)))
-            lower = out[i] + minColumn
-        }
-        return out
     }
 }

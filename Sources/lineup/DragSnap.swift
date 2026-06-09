@@ -9,14 +9,14 @@ import LineupCore
 /// mouse event's own modifier flags — no keyboard monitor.
 final class DragSnapController {
     private var monitor: Any?
-    private let configProvider: () -> ColumnConfig
+    private let configProvider: () -> LineupConfig
 
     private var captured: AXUIElement?   // the window grabbed at drag start
     private var armed = false            // SHIFT held + a window captured
     private var highlight: HighlightWindow?
     private var lastZoneRect: CGRect?
 
-    init(configProvider: @escaping () -> ColumnConfig) {
+    init(configProvider: @escaping () -> LineupConfig) {
         self.configProvider = configProvider
     }
 
@@ -69,11 +69,12 @@ final class DragSnapController {
     private func currentZoneRect() -> CGRect? {
         let p = NSEvent.mouseLocation
         guard let screen = screenContaining(p) else { return nil }
-        return configProvider().columnRect(
-            containingX: p.x,
-            frame: screen.frame,
-            visibleFrame: screen.visibleFrame,
-            pixelsWide: WindowMover.pixelsWide(of: screen))
+        let info = ScreenIdentity.info(for: screen)
+        let root = configProvider().layout(forKey: info.key)
+        // The leaf zone whose rect contains the cursor; fall back to the nearest by center.
+        let zones = Layout.zones(root, frame: screen.frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
+        if let hit = zones.first(where: { $0.contains(p) }) { return hit }
+        return zones.min(by: { hypot($0.midX - p.x, $0.midY - p.y) < hypot($1.midX - p.x, $1.midY - p.y) })
     }
 
     private func updateHighlight() {

@@ -6,10 +6,11 @@ import LineupCore
 /// All public input is Cocoa-space; the single AX coordinate flip happens here.
 enum WindowMover {
 
-    /// Snap the focused window into `zoneID` on the screen it currently occupies.
+    /// Snap the focused window via a quick-action id ("full"/"left"/.../"rightHalf"),
+    /// resolved against the per-screen layout for the screen the window is on.
     /// Returns false (silently) if there's no focused window or AX isn't trusted.
     @discardableResult
-    static func snapFocusedWindow(to zoneID: String, config: ColumnConfig) -> Bool {
+    static func snapFocusedWindow(toQuickAction id: String, config: LineupConfig) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let window = focusedWindow() else { return false }
 
@@ -17,12 +18,12 @@ enum WindowMover {
         guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
         guard let screen = screen(for: currentCocoa) else { return false }
 
-        let pixelsWide = pixelsWide(of: screen)
-        guard let target = config.rect(
-            for: zoneID,
-            frame: screen.frame,
-            visibleFrame: screen.visibleFrame,
-            pixelsWide: pixelsWide) else { return false }
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        guard let target = QuickAction.rect(
+            id, root: root,
+            frame: screen.frame, visibleFrame: screen.visibleFrame,
+            pixelsWide: info.pixelsWide) else { return false }
 
         setFrame(target, of: window)
         return true
@@ -80,6 +81,44 @@ enum WindowMover {
             depth += 1
         }
         return nil
+    }
+
+    /// Snap the focused window into positional Zone `index` (0-based) of its screen's
+    /// layout. No-op if that zone doesn't exist on this screen (out-of-range binding).
+    @discardableResult
+    static func snapFocusedWindow(toZoneIndex index: Int, config: LineupConfig) -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        guard let window = focusedWindow() else { return false }
+        guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
+        guard let screen = screen(for: currentCocoa) else { return false }
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        guard let target = Layout.zoneRect(
+            index: index, root: root,
+            frame: screen.frame, visibleFrame: screen.visibleFrame,
+            pixelsWide: info.pixelsWide) else { return false }
+        setFrame(target, of: window)
+        return true
+    }
+
+    /// Advance the left/right cycle for the focused window. Returns the new cycle state to
+    /// carry forward (or the previous state unchanged if nothing could be moved).
+    static func cycleFocusedWindow(_ side: Side, config: LineupConfig, now: Double, prev: CycleState?) -> CycleState? {
+        guard AXIsProcessTrusted() else { return prev }
+        guard let window = focusedWindow() else { return prev }
+        guard let currentCocoa = currentCocoaFrame(of: window) else { return prev }
+        guard let screen = screen(for: currentCocoa) else { return prev }
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        let steps = Cycle.steps(side, root: root, frame: screen.frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
+        guard !steps.isEmpty else { return prev }
+
+        let actionId = side == .left ? "left" : "right"
+        let idx = Cycle.nextStep(action: actionId, now: now, screenKey: info.key,
+                                 focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
+        let target = steps[idx]
+        setFrame(target, of: window)
+        return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
     /// Snap a specific window element to a Cocoa-space rect (used by shift-drag snapping,
