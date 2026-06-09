@@ -1,26 +1,23 @@
 import AppKit
 import LineupCore
 
-/// Full-screen, WYSIWYG layout editor — the ONE place to shape a per-screen layout. Shows
-/// the display's actual zones (the whole recursive tree, so nested splits render correctly),
-/// reveals visual split/merge controls on hover, drags dividers, and commits a DRAFT on Done
-/// (Esc/Cancel discards). Replaces the old root-only "align dividers" overlay.
+/// Full-screen, WYSIWYG layout editor. Opens an editor over EVERY connected display at once, each
+/// showing that display's own layout (no picker to get confused by). Hover a zone to reveal labeled
+/// split/merge controls, drag the grip handles to resize, and Save (bottom-center, reachable even on
+/// a very wide screen). Esc/Cancel discards. Commits all changed displays atomically on Save.
 final class LayoutEditorOverlayController {
-    private var window: EditorWindow?
-    private var canvas: EditorCanvas?
+    private var windows: [EditorWindow] = []
+    private var canvases: [EditorCanvas] = []
+    private var errorBanners: [NSView] = []
     private var previousApp: NSRunningApplication?
 
     private let screens: [(screen: NSScreen, info: ScreenInfo)]
-    private var currentIndex: Int
-    private var drafts: [String: Node] = [:]          // per-screen edited layouts (draft)
+    private var drafts: [String: Node] = [:]            // per-screen edited layout (draft)
     private let baseConfig: LineupConfig
     private let canWrite: Bool
     private let blockedMessage: String?
     private let commit: ([(screen: ScreenInfo, layout: Node)]) -> Bool
     private let onClose: () -> Void
-
-    private let picker = NSPopUpButton(frame: .zero, pullsDown: false)
-    private var errorPanel: NSView?  // inline save-failure banner (NSAlert would hide behind the overlay)
 
     init(config: LineupConfig,
          canWrite: Bool,
@@ -33,35 +30,27 @@ final class LayoutEditorOverlayController {
         self.commit = commit
         self.onClose = onClose
         self.screens = NSScreen.screens.map { ($0, ScreenIdentity.info(for: $0)) }
-        // Open on the display under the pointer; widest as fallback.
-        let mouse = NSEvent.mouseLocation
-        let underPointer = screens.firstIndex { NSMouseInRect(mouse, $0.screen.frame, false) }
-        let widest = screens.enumerated().max { $0.element.info.pixelsWide < $1.element.info.pixelsWide }?.offset
-        self.currentIndex = underPointer ?? widest ?? 0
     }
 
     func show() {
         guard !screens.isEmpty else { onClose(); return }
         previousApp = NSWorkspace.shared.frontmostApplication
-        openWindow(for: currentIndex)
+        for (screen, info) in screens { openWindow(for: screen, info: info) }
+        NSApp.activate(ignoringOtherApps: true)
+        windows.first?.makeKeyAndOrderFront(nil)
+        if let cv = canvases.first { windows.first?.makeFirstResponder(cv) }
     }
 
-    private func draft(for info: ScreenInfo) -> Node {
-        drafts[info.key] ?? baseConfig.layout(forKey: info.key)
-    }
+    private func draft(for info: ScreenInfo) -> Node { drafts[info.key] ?? baseConfig.layout(forKey: info.key) }
 
-    private func openWindow(for index: Int) {
-        window?.orderOut(nil)
-        currentIndex = index
-        let (screen, info) = screens[index]
-
+    private func openWindow(for screen: NSScreen, info: ScreenInfo) {
         let win = EditorWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
         win.isOpaque = false
-        win.backgroundColor = NSColor.black.withAlphaComponent(0.001) // catch clicks, see-through
+        win.backgroundColor = NSColor.black.withAlphaComponent(0.001)
         win.level = .screenSaver
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         win.ignoresMouseEvents = false
-        win.acceptsMouseMovedEvents = true // hover is the primary reveal path
+        win.acceptsMouseMovedEvents = true
 
         let container = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
         let cv = EditorCanvas(frame: container.bounds, screenFrame: screen.frame, visibleFrame: screen.visibleFrame, info: info)
@@ -70,84 +59,61 @@ final class LayoutEditorOverlayController {
         cv.root = draft(for: info)
         cv.onChange = { [weak self] node in self?.drafts[info.key] = node }
         cv.onCancel = { [weak self] in self?.cancelTapped() }
+        cv.onCommit = { [weak self] in self?.doneTapped() }
         container.addSubview(cv)
-        self.canvas = cv
+        canvases.append(cv)
 
-        addChrome(to: container, screenSize: screen.frame.size, info: info)
+        addChrome(to: container, screenSize: screen.frame.size, label: info.label)
         win.contentView = container
-        window = win
-
-        NSApp.activate(ignoringOtherApps: true)
-        win.makeKeyAndOrderFront(nil)
-        win.makeFirstResponder(cv)
+        windows.append(win)
+        win.orderFrontRegardless()
     }
 
-    private func addChrome(to container: NSView, screenSize: CGSize, info: ScreenInfo) {
-        // Top-left: "Editing: <Display>" + display picker, on a dark panel.
-        let topPanel = panel(NSRect(x: 24, y: screenSize.height - 76, width: 460, height: 52))
-        container.addSubview(topPanel)
-        let title = NSTextField(labelWithString: "Editing layout")
-        title.frame = NSRect(x: 16, y: 16, width: 110, height: 20)
-        title.textColor = .white; title.font = .systemFont(ofSize: 13, weight: .semibold)
-        topPanel.addSubview(title)
-        picker.removeAllItems()
-        for (i, s) in screens.enumerated() { picker.addItem(withTitle: s.info.label); picker.lastItem?.tag = i }
-        picker.selectItem(at: currentIndex)
-        picker.target = self; picker.action = #selector(pickerChanged)
-        picker.frame = NSRect(x: 132, y: 12, width: 300, height: 26)
-        topPanel.addSubview(picker)
-
-        // Top-center hint or blocked banner.
+    private func addChrome(to container: NSView, screenSize: CGSize, label: String) {
+        // Top-center: short instruction (or the blocked reason).
         let hint = NSTextField(labelWithString:
-            canWrite ? "Hover a zone, then split it ▮▮ / ▬▬ or merge. Drag a divider to resize."
+            canWrite ? "Hover a zone to split or merge it. Drag a handle to resize."
                      : (blockedMessage ?? "Editing is disabled."))
         hint.alignment = .center
         hint.textColor = canWrite ? .white : .systemOrange
-        hint.font = .systemFont(ofSize: 13, weight: canWrite ? .regular : .semibold)
-        let hp = panel(NSRect(x: screenSize.width / 2 - 320, y: screenSize.height - 70, width: 640, height: 40))
-        hint.frame = NSRect(x: 12, y: 9, width: 616, height: 22)
+        hint.font = .systemFont(ofSize: 14, weight: canWrite ? .regular : .semibold)
+        let hp = panel(NSRect(x: screenSize.width / 2 - 320, y: screenSize.height - 72, width: 640, height: 44))
+        hint.frame = NSRect(x: 14, y: 11, width: 612, height: 22)
         hp.addSubview(hint); container.addSubview(hp)
 
-        // Inline save-failure banner (hidden). An NSAlert would render behind the
-        // .screenSaver-level overlay, so failures must surface in-chrome.
-        let err = panel(NSRect(x: screenSize.width / 2 - 300, y: 96, width: 600, height: 40))
+        // Inline save-failure banner (hidden). An NSAlert would render behind the overlay.
+        let err = panel(NSRect(x: screenSize.width / 2 - 300, y: 150, width: 600, height: 40))
         err.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.92).cgColor // warning, never red
-        let errLabel = NSTextField(labelWithString: "Couldn’t save — your changes are still here. Try Done again.")
+        let errLabel = NSTextField(labelWithString: "Couldn’t save — your changes are still here. Try Save again.")
         errLabel.frame = NSRect(x: 12, y: 9, width: 576, height: 22)
         errLabel.alignment = .center; errLabel.textColor = .white; errLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         err.addSubview(errLabel); err.isHidden = true
-        container.addSubview(err)
-        errorPanel = err
+        container.addSubview(err); errorBanners.append(err)
 
-        // Bottom-right: Done + Cancel (Done disabled when blocked).
-        let bottom = panel(NSRect(x: screenSize.width - 320, y: 28, width: 296, height: 56))
-        container.addSubview(bottom)
+        // Bottom-CENTER: Cancel + Save (reachable on very wide displays, unlike a corner).
+        let barW: CGFloat = 300, barH: CGFloat = 60
+        let bar = panel(NSRect(x: screenSize.width / 2 - barW / 2, y: 36, width: barW, height: barH))
+        container.addSubview(bar)
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
         cancel.keyEquivalent = "\u{1b}"; cancel.bezelStyle = .rounded
-        cancel.frame = NSRect(x: 16, y: 14, width: 120, height: 28)
-        bottom.addSubview(cancel)
-        let done = NSButton(title: canWrite ? "Done" : "Reset…", target: self,
-                            action: canWrite ? #selector(doneTapped) : #selector(resetTapped))
-        done.keyEquivalent = "\r"; done.bezelStyle = .rounded
-        done.frame = NSRect(x: 160, y: 14, width: 120, height: 28)
-        bottom.addSubview(done)
+        cancel.frame = NSRect(x: 18, y: 16, width: 120, height: 28)
+        bar.addSubview(cancel)
+        let save = NSButton(title: canWrite ? "Save" : "Reset…", target: self,
+                            action: canWrite ? #selector(doneTapped) : #selector(cancelTapped))
+        save.keyEquivalent = "\r"; save.bezelStyle = .rounded
+        save.contentTintColor = Brand.blue
+        save.frame = NSRect(x: 162, y: 16, width: 120, height: 28)
+        bar.addSubview(save)
     }
 
     private func panel(_ frame: NSRect) -> NSView {
         let v = NSView(frame: frame); v.wantsLayer = true
-        v.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        v.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.58).cgColor
         v.layer?.cornerRadius = 12
         return v
     }
 
-    @objc private func pickerChanged() {
-        let idx = picker.selectedItem?.tag ?? currentIndex
-        guard idx != currentIndex, screens.indices.contains(idx) else { return }
-        openWindow(for: idx) // drafts persist per-screen in `drafts`
-    }
-
     @objc private func doneTapped() {
-        // Collect every screen whose draft differs, then save ATOMICALLY (one write).
         let changes: [(screen: ScreenInfo, layout: Node)] = screens.compactMap { (_, info) in
             guard let edited = drafts[info.key], edited != baseConfig.layout(forKey: info.key) else { return nil }
             return (info, edited)
@@ -156,18 +122,15 @@ final class LayoutEditorOverlayController {
         if commit(changes) {
             close()
         } else {
-            // Save failed — keep the draft, stay open, surface it INLINE (an NSAlert would
-            // hide behind the .screenSaver-level overlay).
-            errorPanel?.isHidden = false
+            errorBanners.forEach { $0.isHidden = false } // surface inline; NSAlert would hide behind the overlay
         }
     }
-
-    @objc private func resetTapped() { close() } // blocked state: Reset lives on the menu
 
     @objc private func cancelTapped() { close() }
 
     private func close() {
-        window?.orderOut(nil); window = nil; canvas = nil
+        windows.forEach { $0.orderOut(nil) }
+        windows.removeAll(); canvases.removeAll(); errorBanners.removeAll()
         if let prev = previousApp, prev != NSRunningApplication.current {
             if #available(macOS 14.0, *) { prev.activate() } else { prev.activate(options: []) }
         }
@@ -187,6 +150,7 @@ private final class EditorCanvas: NSView {
     var root: Node = .halves { didSet { rebuildIfNeeded() } }
     var onChange: ((Node) -> Void)?
     var onCancel: (() -> Void)?
+    var onCommit: (() -> Void)?
     var editable = true
 
     private let screenFrame: CGRect
@@ -198,9 +162,9 @@ private final class EditorCanvas: NSView {
     private var dragging: Layout.DividerHandle?
     private var tracking: NSTrackingArea?
 
-    private let splitVBtn = EditorCanvas.iconButton("rectangle.split.2x1", "Split side by side")
-    private let splitHBtn = EditorCanvas.iconButton("rectangle.split.1x2", "Split stacked")
-    private let mergeBtn = EditorCanvas.iconButton("arrow.down.right.and.arrow.up.left", "Merge")
+    private let splitVBtn = EditorCanvas.controlButton("rectangle.split.2x1", "Side by side")
+    private let splitHBtn = EditorCanvas.controlButton("rectangle.split.1x2", "Stacked")
+    private let mergeBtn = EditorCanvas.controlButton("arrow.down.right.and.arrow.up.left", "Merge")
 
     init(frame: NSRect, screenFrame: CGRect, visibleFrame: CGRect, info: ScreenInfo) {
         self.screenFrame = screenFrame
@@ -217,18 +181,24 @@ private final class EditorCanvas: NSView {
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
 
-    private static func iconButton(_ symbol: String, _ label: String) -> NSButton {
+    /// A labeled control chip (icon above a short word), big enough to read and tap.
+    private static func controlButton(_ symbol: String, _ title: String) -> NSButton {
         let b = NSButton()
         b.bezelStyle = .regularSquare
-        b.isBordered = true
-        b.imagePosition = .imageOnly
-        b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        b.isBordered = false
+        b.imagePosition = .imageAbove
+        b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
         b.symbolConfiguration = .init(pointSize: 22, weight: .semibold)
+        b.attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: NSColor.black.withAlphaComponent(0.75),
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold)])
         b.contentTintColor = Brand.blue
-        b.toolTip = label
+        b.toolTip = title
         b.wantsLayer = true
-        b.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.92).cgColor
-        b.layer?.cornerRadius = 10
+        b.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.96).cgColor
+        b.layer?.cornerRadius = 12
+        b.layer?.shadowColor = NSColor.black.cgColor
+        b.layer?.shadowOpacity = 0.25; b.layer?.shadowRadius = 8; b.layer?.shadowOffset = .init(width: 0, height: -2)
         return b
     }
 
@@ -241,6 +211,9 @@ private final class EditorCanvas: NSView {
     private func leaves() -> [(path: [Int], rect: CGRect)] {
         Layout.leaves(root, container: container, pixelsWide: info.pixelsWide)
     }
+    private func handles() -> [Layout.DividerHandle] {
+        Layout.dividerHandles(root, container: container, pixelsWide: info.pixelsWide)
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -249,33 +222,63 @@ private final class EditorCanvas: NSView {
         addTrackingArea(t); tracking = t
     }
 
-    private func rebuildIfNeeded() { positionControls(); needsDisplay = true }
+    override func resetCursorRects() {
+        guard editable else { return }
+        for h in handles() {
+            let r = viewRect(h.line).insetBy(dx: h.axis == .vertical ? -5 : 0, dy: h.axis == .vertical ? 0 : -5)
+            addCursorRect(r, cursor: h.axis == .vertical ? .resizeLeftRight : .resizeUpDown)
+        }
+    }
+
+    private func rebuildIfNeeded() { positionControls(); needsDisplay = true; window?.invalidateCursorRects(for: self) }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.withAlphaComponent(0.18).setFill(); bounds.fill()
+        NSColor.black.withAlphaComponent(0.20).setFill(); bounds.fill()
         let lv = leaves()
         for (i, leaf) in lv.enumerated() {
             let r = viewRect(leaf.rect).insetBy(dx: 3, dy: 3)
             let isActive = leaf.path == activePath
-            (isActive ? Brand.blue.withAlphaComponent(0.28) : Brand.blue.withAlphaComponent(0.12)).setFill()
+            (isActive ? Brand.blue.withAlphaComponent(0.30) : Brand.blue.withAlphaComponent(0.12)).setFill()
             let p = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10); p.fill()
-            (isActive ? Brand.blue : Brand.blue.withAlphaComponent(0.5)).setStroke()
+            (isActive ? Brand.blue : Brand.blue.withAlphaComponent(0.55)).setStroke()
             p.lineWidth = isActive ? 3 : 1.5; p.stroke()
             drawNumber(i + 1, in: r)
         }
         if editable {
-            for h in Layout.dividerHandles(root, container: container, pixelsWide: info.pixelsWide) {
-                let r = viewRect(h.line)
-                NSColor.white.withAlphaComponent(0.85).setFill()
-                NSBezierPath(roundedRect: r.insetBy(dx: r.width > r.height ? 0 : 2, dy: r.width > r.height ? 2 : 0), xRadius: 2, yRadius: 2).fill()
-                drawDividerReadout(h, viewLine: r)
-            }
+            for h in handles() { drawHandle(h) }
         }
     }
 
-    /// Root vertical dividers show their physical pixel x (seam alignment); nested/horizontal
-    /// dividers show a percent of their parent.
-    private func drawDividerReadout(_ h: Layout.DividerHandle, viewLine: CGRect) {
+    /// A divider: a soft line plus a clearly-grabbable grip pill with dots, and a readout.
+    private func drawHandle(_ h: Layout.DividerHandle) {
+        let r = viewRect(h.line)
+        let vertical = h.axis == .vertical
+        // The line.
+        NSColor.white.withAlphaComponent(0.9).setFill()
+        NSBezierPath(roundedRect: r.insetBy(dx: vertical ? 0 : 2, dy: vertical ? 2 : 0), xRadius: 2, yRadius: 2).fill()
+        // The grip pill at the divider's middle.
+        let gripL: CGFloat = 44, gripT: CGFloat = 16
+        let grip = vertical
+            ? NSRect(x: r.midX - gripT / 2, y: r.midY - gripL / 2, width: gripT, height: gripL)
+            : NSRect(x: r.midX - gripL / 2, y: r.midY - gripT / 2, width: gripL, height: gripT)
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: grip, xRadius: gripT / 2, yRadius: gripT / 2).fill()
+        Brand.blue.setStroke()
+        let gp = NSBezierPath(roundedRect: grip.insetBy(dx: 0.5, dy: 0.5), xRadius: gripT / 2, yRadius: gripT / 2)
+        gp.lineWidth = 1.5; gp.stroke()
+        // Three grip dots.
+        Brand.blue.withAlphaComponent(0.8).setFill()
+        for k in -1...1 {
+            let d: CGFloat = 3.2
+            let c = vertical ? CGPoint(x: grip.midX, y: grip.midY + CGFloat(k) * 8)
+                             : CGPoint(x: grip.midX + CGFloat(k) * 8, y: grip.midY)
+            NSBezierPath(ovalIn: CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)).fill()
+        }
+        drawDividerReadout(h, viewLine: r, grip: grip)
+    }
+
+    /// Root vertical dividers show physical pixels (seam alignment); nested/horizontal show a percent.
+    private func drawDividerReadout(_ h: Layout.DividerHandle, viewLine: CGRect, grip: CGRect) {
         let text: String
         if h.path.isEmpty && h.axis == .vertical {
             let pointsFromLeft = h.line.midX - h.container.minX
@@ -289,25 +292,25 @@ private final class EditorCanvas: NSView {
             text = "\(Int(pct.rounded()))%"
         }
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold),
             .foregroundColor: NSColor.white]
         let s = NSAttributedString(string: text, attributes: attrs)
         let sz = s.size()
-        let pad: CGFloat = 5
+        let pad: CGFloat = 7
         let pillW = sz.width + pad * 2, pillH = sz.height + pad
-        // vertical divider -> label near top; horizontal -> near left.
+        // Place the readout just beside the grip so it's clearly tied to the handle you're moving.
         let center = h.axis == .vertical
-            ? CGPoint(x: viewLine.midX, y: viewLine.maxY - pillH / 2 - 10)
-            : CGPoint(x: viewLine.minX + pillW / 2 + 10, y: viewLine.midY)
+            ? CGPoint(x: grip.midX, y: grip.maxY + pillH / 2 + 6)
+            : CGPoint(x: grip.maxX + pillW / 2 + 6, y: grip.midY)
         let pill = CGRect(x: center.x - pillW / 2, y: center.y - pillH / 2, width: pillW, height: pillH)
-        NSColor.black.withAlphaComponent(0.6).setFill()
-        NSBezierPath(roundedRect: pill, xRadius: 5, yRadius: 5).fill()
+        NSColor.black.withAlphaComponent(0.72).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
         s.draw(at: NSPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2))
     }
 
     private func drawNumber(_ n: Int, in r: CGRect) {
         let s = NSAttributedString(string: "\(n)", attributes: [
-            .font: NSFont.systemFont(ofSize: 22, weight: .bold),
+            .font: NSFont.systemFont(ofSize: 24, weight: .bold),
             .foregroundColor: NSColor.white.withAlphaComponent(0.85)])
         let sz = s.size()
         s.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.maxY - sz.height - 12))
@@ -321,14 +324,13 @@ private final class EditorCanvas: NSView {
             return
         }
         let vr = viewRect(rect)
-        let size: CGFloat = 52, gap: CGFloat = 14
+        let w: CGFloat = 92, hgt: CGFloat = 72, gap: CGFloat = 14
         let cx = vr.midX, cy = vr.midY
-        splitVBtn.frame = NSRect(x: cx - size - gap / 2, y: cy - size / 2, width: size, height: size)
-        splitHBtn.frame = NSRect(x: cx + gap / 2, y: cy - size / 2, width: size, height: size)
+        splitVBtn.frame = NSRect(x: cx - w - gap / 2, y: cy - hgt / 2, width: w, height: hgt)
+        splitHBtn.frame = NSRect(x: cx + gap / 2, y: cy - hgt / 2, width: w, height: hgt)
         let mergeEnabled = !path.isEmpty
         mergeBtn.isHidden = !mergeEnabled
-        mergeBtn.frame = NSRect(x: cx - 22, y: cy - size / 2 - 40, width: 44, height: 30)
-        mergeBtn.symbolConfiguration = .init(pointSize: 14, weight: .regular)
+        mergeBtn.frame = NSRect(x: cx - w / 2, y: cy - hgt / 2 - hgt - 12, width: w, height: hgt)
         for b in [splitVBtn, splitHBtn] { b.isHidden = false }
     }
 
@@ -354,11 +356,9 @@ private final class EditorCanvas: NSView {
     override func mouseDown(with event: NSEvent) {
         guard editable else { return }
         let p = convert(event.locationInWindow, from: nil)
-        // Divider drag first.
-        for h in Layout.dividerHandles(root, container: container, pixelsWide: info.pixelsWide) {
-            if viewRect(h.line).insetBy(dx: -4, dy: -4).contains(p) { dragging = h; return }
+        for h in handles() {
+            if viewRect(h.line).insetBy(dx: -6, dy: -6).contains(p) { dragging = h; return }
         }
-        // Else pin the clicked zone (stable target for trackpad users).
         if let path = leaves().first(where: { $0.rect.contains(globalPoint(p)) })?.path {
             setActive(path, pinned: true)
         } else {
@@ -380,10 +380,13 @@ private final class EditorCanvas: NSView {
 
     override func mouseUp(with event: NSEvent) { dragging = nil }
 
-    // Robust dismissal independent of button key-equivalent routing on a borderless overlay.
     override func cancelOperation(_ sender: Any?) { onCancel?() }
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { onCancel?() } else { super.keyDown(with: event) } // Esc
+        switch event.keyCode {
+        case 53: onCancel?()          // Esc
+        case 36, 76: onCommit?()      // Return / Enter
+        default: super.keyDown(with: event)
+        }
     }
 
     @objc private func splitV() { edit { LayoutEdit.split($0, at: activePath ?? [], axis: .vertical) } }

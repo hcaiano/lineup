@@ -441,6 +441,23 @@ do {
     // rootColumns nil for non-vertical-split roots
     check(Layout.rootColumns(.leaf, frame: frame, visibleFrame: visible, pixelsWide: px) == nil, "rootColumns: leaf -> nil")
     check(Layout.rootColumns(wideLayout, frame: frame, visibleFrame: visible, pixelsWide: px)?.count == 3, "rootColumns: 3 columns")
+
+    // NESTED layout (left column + right region split in two = 3 leaf zones, but the ROOT
+    // split has only 2 columns). Quick "right" must hit the RIGHTMOST LEAF (zone 3), not the
+    // wide root column that contains zones 2+3. This was the "Hyper+Right went to ~2/3 of the
+    // screen" bug.
+    let nested = Node.split(axis: .vertical, dividers: [Boundary(1394, .pixels)],
+                            children: [.leaf,
+                                       Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)],
+                                                  children: [.leaf, .leaf])])
+    check(Layout.leafColumns(nested, frame: frame, visibleFrame: visible, pixelsWide: px).count == 3, "leafColumns: nested -> 3 zones")
+    eq(qa("right", nested).minX, 3257, "quick right -> rightmost LEAF zone (not root column)", accuracy: 2)
+    eq(qa("left", nested).maxX, 1394, "quick left -> leftmost leaf (seam)")
+    eq(qa("center", nested).minX, 1394, "quick center -> middle leaf left edge")
+    eq(qa("center", nested).maxX, 3257, "quick center -> middle leaf right edge", accuracy: 2)
+    // Cycle first step for "right" also targets the rightmost leaf.
+    let rsteps = Cycle.steps(.right, root: nested, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(rsteps.first!.minX, 3257, "cycle right step 0 -> rightmost leaf zone", accuracy: 2)
 }
 
 // ---- P3: layout editor tree mutations ----

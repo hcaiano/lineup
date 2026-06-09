@@ -216,6 +216,16 @@ public enum Layout {
                           container: rootContainer(frame: frame, visibleFrame: visibleFrame), pixelsWide: pixelsWide)
     }
 
+    /// The actual leaf zones laid out left→right (the numbered zones the user drew). Quick
+    /// actions and the cycle's first step use this so "left"/"right" hit the real end zones
+    /// even when the layout is nested (e.g. a left column plus a right region split in two:
+    /// "right" lands on the rightmost zone, not the wide root column that contains two zones).
+    /// For a plain column layout this equals `rootColumns`.
+    public static func leafColumns(_ root: Node, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> [CGRect] {
+        let c = rootContainer(frame: frame, visibleFrame: visibleFrame)
+        return zones(root, container: c, pixelsWide: pixelsWide).sorted { $0.minX < $1.minX }
+    }
+
     /// Split a container into child rects, laid out in reading order (left→right for a
     /// vertical split, top→bottom for a horizontal one). Cocoa coords (origin bottom-left).
     private static func childRects(axis: Axis, dividers: [Boundary], count: Int, container: CGRect, pixelsWide: Int) -> [CGRect] {

@@ -12,17 +12,19 @@ public enum QuickAction {
         func frac(_ a: CGFloat, _ b: CGFloat) -> CGRect {
             CGRect(x: c.minX + a * c.width, y: c.minY, width: (b - a) * c.width, height: c.height)
         }
-        let cols = Layout.rootColumns(root, frame: frame, visibleFrame: visibleFrame, pixelsWide: pixelsWide)
+        // Need at least two zones for "snap to a column" to mean anything; a single-zone
+        // (whole-screen) layout falls back to Magnet-style halves.
+        let cols = Layout.leafColumns(root, frame: frame, visibleFrame: visibleFrame, pixelsWide: pixelsWide)
+        let hasCols = cols.count >= 2
 
         switch id {
         case "full": return c
         case "leftHalf": return frac(0, 0.5)
         case "rightHalf": return frac(0.5, 1)
-        case "left": return cols?.first ?? frac(0, 0.5)
-        case "right": return cols?.last ?? frac(0.5, 1)
+        case "left": return hasCols ? cols.first : frac(0, 0.5)
+        case "right": return hasCols ? cols.last : frac(0.5, 1)
         case "center":
-            if let cols, !cols.isEmpty { return cols[cols.count / 2] }
-            return frac(0.25, 0.75)
+            return hasCols ? cols[cols.count / 2] : frac(0.25, 0.75)
         default:
             return nil
         }

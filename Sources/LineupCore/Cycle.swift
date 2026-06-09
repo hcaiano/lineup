@@ -29,14 +29,16 @@ public enum Cycle {
         func frac(_ a: CGFloat, _ b: CGFloat) -> CGRect {
             CGRect(x: c.minX + a * c.width, y: c.minY, width: (b - a) * c.width, height: c.height)
         }
-        let cols = Layout.rootColumns(root, frame: frame, visibleFrame: visibleFrame, pixelsWide: pixelsWide)
+        // Need >= 2 zones for a real end column; otherwise the first step is a plain half.
+        let cols = Layout.leafColumns(root, frame: frame, visibleFrame: visibleFrame, pixelsWide: pixelsWide)
+        let hasCols = cols.count >= 2
 
         let raw: [CGRect]
         switch side {
         case .left:
-            raw = [cols?.first ?? frac(0, 0.5), frac(0, 0.5), frac(0, 1.0 / 3.0), frac(0, 2.0 / 3.0)]
+            raw = [hasCols ? cols.first! : frac(0, 0.5), frac(0, 0.5), frac(0, 1.0 / 3.0), frac(0, 2.0 / 3.0)]
         case .right:
-            raw = [cols?.last ?? frac(0.5, 1), frac(0.5, 1), frac(2.0 / 3.0, 1), frac(1.0 / 3.0, 1)]
+            raw = [hasCols ? cols.last! : frac(0.5, 1), frac(0.5, 1), frac(2.0 / 3.0, 1), frac(1.0 / 3.0, 1)]
         }
         // Dedupe against ALL emitted steps (not just the previous one), preserving order,
         // so an equal-thirds root doesn't revisit the same rect mid-cycle.
