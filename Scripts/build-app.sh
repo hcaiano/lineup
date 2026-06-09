@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="Lineup"
 EXEC_NAME="lineup"
-BUNDLE_ID="gg.gam3s.lineup"
+BUNDLE_ID="com.caiano.lineup"
 SIGN_IDENTITY="Lineup Self-Signed"
 BUILD_DIR=".build/release"
 OUT_DIR="${1:-dist}"          # pass a target dir, e.g. ~/Applications

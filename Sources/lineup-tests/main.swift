@@ -625,6 +625,37 @@ do { // step 0 honors the seam column; later steps are fractions; dedup
     let widths = Set(thirdsSteps.map { Int(($0.width).rounded()) })
     check(widths.count == 3, "cycle: thirds steps are all unique widths")
     eq(thirdsSteps[0].maxX, 5120.0 / 3.0, "cycle thirds step0 = left third")
+
+    // CENTER cycling: step 0 is the layout's middle zone, then centered 1/2, 1/3, 2/3.
+    let center = Cycle.steps(.center, root: wideLayout, frame: frame, visibleFrame: visible, pixelsWide: px)
+    eq(center[0].minX, 1133, "cycle center step0 = middle zone left edge (seam)")
+    eq(center[0].maxX, 2865, "cycle center step0 = middle zone right edge (seam)")
+    eq(center[1].minX, 1280, "cycle center step1 = centered half left")
+    eq(center[1].maxX, 3840, "cycle center step1 = centered half right")
+    eq(center[2].minX, 5120.0 / 3.0, "cycle center step2 = centered third left")
+    eq(center[3].minX, 5120.0 / 6.0, "cycle center step3 = centered two-thirds left")
+    // fraction steps (1+) are symmetric around the screen midline; step 0 honors the
+    // layout's own middle zone, which may sit off-center (seam columns aren't symmetric).
+    for (i, r) in center.enumerated() where i > 0 {
+        eq(r.midX, 2560, "cycle center step\(i) stays centered", accuracy: 1)
+    }
+    // single-zone layout: step 0 falls back to the centered half (then dedups)
+    let centerLeaf = Cycle.steps(.center, root: .leaf, frame: frame, visibleFrame: visible, pixelsWide: px)
+    check(centerLeaf.count == 3, "cycle center on leaf: fallback dedups (4 -> 3)")
+    eq(centerLeaf[0].minX, 1280, "cycle center leaf step0 = centered half")
+
+    // left column + right stacked: the two right leaves share a minX, so an x-sort is
+    // ambiguous. Center step 0 must be the SEMANTIC middle — zones order [L, R-top, R-bottom]
+    // -> index 1 = right-TOP — deterministically, not whichever equal-key sort emits.
+    let stacked = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)],
+                             children: [.leaf,
+                                        Node.split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)],
+                                                   children: [.leaf, .leaf])])
+    let cSteps = Cycle.steps(.center, root: stacked, frame: frame, visibleFrame: visible, pixelsWide: px)
+    let zonesOrdered = Layout.zones(stacked, container: Layout.rootContainer(frame: frame, visibleFrame: visible), pixelsWide: px)
+    eq(cSteps[0].minX, zonesOrdered[1].minX, "cycle center step0 = semantic middle x (right column)")
+    eq(cSteps[0].minY, zonesOrdered[1].minY, "cycle center step0 picks the TOP of the stacked pair")
+    eq(cSteps[0].height, zonesOrdered[1].height, "cycle center step0 height = the stacked zone, not the column")
 }
 
 do { // continuation predicate

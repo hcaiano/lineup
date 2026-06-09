@@ -1,11 +1,11 @@
 import CoreGraphics
 
-public enum Side { case left, right }
+public enum Side { case left, right, center }
 
 /// State carried between successive presses of a cycling shortcut, so repeated Hyper+←
 /// advances through widths instead of re-applying step 0.
 public struct CycleState: Equatable {
-    public var action: String       // "left" / "right"
+    public var action: String       // "left" / "right" / "center"
     public var stepIndex: Int
     public var lastTime: Double      // seconds (monotonic-ish; app passes Date-based value)
     public var screenKey: String
@@ -20,16 +20,17 @@ public struct CycleState: Equatable {
     }
 }
 
-/// Left/right edge cycling. Step 0 honors the screen's root seam column; later steps are
-/// generic anchored fractions (1/2, 1/3, 2/3). Duplicate rects anywhere in the list are
-/// removed (order preserved) so a halves/thirds layout never revisits the same width.
+/// Edge/center cycling. Step 0 honors the layout's own zone (end column for left/right, the
+/// middle zone for center); later steps are generic anchored fractions. Duplicate rects
+/// anywhere in the list are removed (order preserved) so a halves/thirds layout never
+/// revisits the same width.
 public enum Cycle {
     public static func steps(_ side: Side, root: Node, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> [CGRect] {
         let c = Layout.rootContainer(frame: frame, visibleFrame: visibleFrame)
         func frac(_ a: CGFloat, _ b: CGFloat) -> CGRect {
             CGRect(x: c.minX + a * c.width, y: c.minY, width: (b - a) * c.width, height: c.height)
         }
-        // Need >= 2 zones for a real end column; otherwise the first step is a plain half.
+        // Need >= 2 zones for a real end/middle column; otherwise step 0 is a plain fraction.
         let cols = Layout.leafColumns(root, frame: frame, visibleFrame: visibleFrame, pixelsWide: pixelsWide)
         let hasCols = cols.count >= 2
 
@@ -39,6 +40,16 @@ public enum Cycle {
             raw = [hasCols ? cols.first! : frac(0, 0.5), frac(0, 0.5), frac(0, 1.0 / 3.0), frac(0, 2.0 / 3.0)]
         case .right:
             raw = [hasCols ? cols.last! : frac(0.5, 1), frac(0.5, 1), frac(2.0 / 3.0, 1), frac(1.0 / 3.0, 1)]
+        case .center:
+            // The layout's middle zone in SEMANTIC visual order (left→right, top→bottom —
+            // the same order as the editor's zone numbers), then progressively different
+            // centered widths. leafColumns sorts by minX alone, which is ambiguous for
+            // stacked zones sharing an x; the numbered order is deterministic.
+            let ordered = Layout.zones(root, container: c, pixelsWide: pixelsWide)
+            raw = [ordered.count >= 2 ? ordered[ordered.count / 2] : frac(0.25, 0.75),
+                   frac(0.25, 0.75),                       // centered half
+                   frac(1.0 / 3.0, 2.0 / 3.0),             // centered third
+                   frac(1.0 / 6.0, 5.0 / 6.0)]             // centered two-thirds
         }
         // Dedupe against ALL emitted steps (not just the previous one), preserving order,
         // so an equal-thirds root doesn't revisit the same rect mid-cycle.

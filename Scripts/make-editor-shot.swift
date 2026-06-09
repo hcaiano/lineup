@@ -49,7 +49,23 @@ let zones: [(n: Int, rect: NSRect)] = {
 }()
 let activeN = 2
 
-// Zones — same fills/strokes as EditorCanvas.draw.
+// Zones — same fills/strokes as EditorCanvas.draw, with the per-zone size readout.
+let pxHigh = Int(CGFloat(pxWide) * H / W)
+func sizePill(_ z: (n: Int, rect: NSRect), offsetY: CGFloat = 0) {
+    // Screen-frame scale on both axes (matches the app: the container is shorter than the
+    // screen by the menu bar, so container-height scaling would overstate full-height zones).
+    let w = Int((z.rect.width * CGFloat(pxWide) / W).rounded())
+    let h = Int((z.rect.height * CGFloat(pxHigh) / H).rounded())
+    let s = NSAttributedString(string: "\(w) × \(h) px", attributes: [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold),
+        .foregroundColor: NSColor.white])
+    let sz = s.size(); let pad: CGFloat = 8
+    let pill = NSRect(x: z.rect.midX - sz.width / 2 - pad, y: z.rect.midY + offsetY - sz.height / 2 - pad / 2,
+                      width: sz.width + pad * 2, height: sz.height + pad)
+    NSColor.black.withAlphaComponent(0.55).setFill()
+    NSBezierPath(roundedRect: pill, xRadius: 7, yRadius: 7).fill()
+    s.draw(at: NSPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2))
+}
 for z in zones {
     let r = z.rect.insetBy(dx: 3, dy: 3)
     let active = z.n == activeN
@@ -63,66 +79,63 @@ for z in zones {
         .foregroundColor: NSColor.white.withAlphaComponent(0.85)])
     let sz = s.size()
     s.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.maxY - sz.height - 16))
+    // Size readout in the middle of every zone (below the control bar on the active one).
+    sizePill(z, offsetY: active ? -78 : 0)
 }
 
-// Dividers — white bars + readout pills (px for the root vertical, % for the nested one).
-func drawDivider(x: CGFloat, text: String) {
+// Dividers — white bars with grip pills (sizes live in the zones, not on the dividers).
+func drawDivider(x: CGFloat) {
     let bar = NSRect(x: x - 2, y: container.minY, width: 4, height: container.height)
     NSColor.white.withAlphaComponent(0.85).setFill()
     NSBezierPath(roundedRect: bar.insetBy(dx: 0, dy: 2), xRadius: 2, yRadius: 2).fill()
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold),
-        .foregroundColor: NSColor.white]
-    let s = NSAttributedString(string: text, attributes: attrs)
-    let sz = s.size(); let pad: CGFloat = 7
-    let pillW = sz.width + pad * 2, pillH = sz.height + pad
-    let pill = NSRect(x: x - pillW / 2, y: container.maxY - pillH - 16, width: pillW, height: pillH)
-    NSColor.black.withAlphaComponent(0.6).setFill()
-    NSBezierPath(roundedRect: pill, xRadius: 6, yRadius: 6).fill()
-    s.draw(at: NSPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2))
+    let grip = NSRect(x: x - 8, y: container.midY - 22, width: 16, height: 44)
+    NSColor.white.setFill()
+    NSBezierPath(roundedRect: grip, xRadius: 8, yRadius: 8).fill()
+    blue.setStroke()
+    let gp = NSBezierPath(roundedRect: grip.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+    gp.lineWidth = 1.5; gp.stroke()
+    blue.withAlphaComponent(0.8).setFill()
+    for k in -1...1 {
+        NSBezierPath(ovalIn: NSRect(x: grip.midX - 1.6, y: grip.midY + CGFloat(k) * 8 - 1.6, width: 3.2, height: 3.2)).fill()
+    }
 }
 let split0x = container.minX + container.width * d0frac
-let px = Int((d0frac * CGFloat(pxWide)).rounded())
-drawDivider(x: split0x, text: "\(px) px")
+drawDivider(x: split0x)
 let rightWhole = NSRect(x: split0x, y: container.minY, width: container.maxX - split0x, height: container.height)
-drawDivider(x: rightWhole.minX + rightWhole.width * 0.5, text: "50%")
+drawDivider(x: rightWhole.minX + rightWhole.width * 0.5)
 
-// Hover controls on the active zone — two split buttons (side-by-side / stacked) + merge,
-// rendered as the editor draws them (white rounded chips, blue SF-style glyphs).
+// Hover controls on the active zone — ONE dark HUD bar: Split | Stack | Merge, white glyphs
+// that show the result, matching the overlay's other chrome.
 let az = zones.first { $0.n == activeN }!.rect
-let chip: CGFloat = 64, gap: CGFloat = 18
-let cx = az.midX, cy = az.midY
-func chipRect(_ x: CGFloat) -> NSRect { NSRect(x: x, y: cy - chip / 2, width: chip, height: chip) }
-let leftChip = chipRect(cx - chip - gap / 2)
-let rightChip = chipRect(cx + gap / 2)
-
-func drawChip(_ r: NSRect, _ draw: (NSRect) -> Void) {
-    NSColor.white.withAlphaComponent(0.94).setFill()
-    NSBezierPath(roundedRect: r, xRadius: 12, yRadius: 12).fill()
-    draw(r.insetBy(dx: 16, dy: 16))
+let segW: CGFloat = 86, segH: CGFloat = 58, barPad: CGFloat = 6
+let barW = 3 * segW + 2 * barPad, barH = segH + 2 * barPad
+let bar = NSRect(x: az.midX - barW / 2, y: az.midY - barH / 2, width: barW, height: barH)
+NSColor.black.withAlphaComponent(0.72).setFill()
+NSBezierPath(roundedRect: bar, xRadius: 14, yRadius: 14).fill()
+func segment(_ i: Int, _ title: String, hovered: Bool = false, draw: (NSRect, NSBezierPath) -> Void) {
+    let seg = NSRect(x: bar.minX + barPad + CGFloat(i) * segW, y: bar.minY + barPad, width: segW, height: segH)
+    if hovered {
+        blue.setFill()
+        NSBezierPath(roundedRect: seg.insetBy(dx: 2, dy: 2), xRadius: 10, yRadius: 10).fill()
+    }
+    let g = NSRect(x: seg.midX - 15, y: seg.midY - 4, width: 30, height: 22)
+    NSColor.white.setStroke()
+    let outline = NSBezierPath(roundedRect: g, xRadius: 4, yRadius: 4); outline.lineWidth = 2; outline.stroke()
+    let line = NSBezierPath(); draw(g, line); line.lineWidth = 2; line.stroke()
+    let s = NSAttributedString(string: title, attributes: [
+        .font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor.white])
+    let sz = s.size()
+    s.draw(at: NSPoint(x: seg.midX - sz.width / 2, y: seg.minY + 6))
 }
-// "Split side by side": a rounded rect divided by a vertical line.
-drawChip(leftChip) { g in
-    blue.setStroke()
-    let p = NSBezierPath(roundedRect: g, xRadius: 4, yRadius: 4); p.lineWidth = 3; p.stroke()
-    let v = NSBezierPath(); v.move(to: NSPoint(x: g.midX, y: g.minY)); v.line(to: NSPoint(x: g.midX, y: g.maxY))
-    v.lineWidth = 3; v.stroke()
+segment(0, "Split", hovered: true) { g, l in
+    l.move(to: NSPoint(x: g.midX, y: g.minY + 2)); l.line(to: NSPoint(x: g.midX, y: g.maxY - 2))
 }
-// "Split stacked": a rounded rect divided by a horizontal line.
-drawChip(rightChip) { g in
-    blue.setStroke()
-    let p = NSBezierPath(roundedRect: g, xRadius: 4, yRadius: 4); p.lineWidth = 3; p.stroke()
-    let h = NSBezierPath(); h.move(to: NSPoint(x: g.minX, y: g.midY)); h.line(to: NSPoint(x: g.maxX, y: g.midY))
-    h.lineWidth = 3; h.stroke()
+segment(1, "Stack") { g, l in
+    l.move(to: NSPoint(x: g.minX + 2, y: g.midY)); l.line(to: NSPoint(x: g.maxX - 2, y: g.midY))
 }
-// Merge chip below (active zone is nested, so merge is available).
-let mergeChip = NSRect(x: cx - 26, y: cy - chip / 2 - 50, width: 52, height: 36)
-drawChip(mergeChip) { g in
-    blue.setStroke()
-    let a = NSBezierPath()
-    a.move(to: NSPoint(x: g.minX, y: g.minY)); a.line(to: NSPoint(x: g.midX, y: g.midY)); a.line(to: NSPoint(x: g.minX, y: g.maxY))
-    a.move(to: NSPoint(x: g.maxX, y: g.minY)); a.line(to: NSPoint(x: g.midX, y: g.midY)); a.line(to: NSPoint(x: g.maxX, y: g.maxY))
-    a.lineWidth = 3; a.stroke()
+segment(2, "Merge") { g, l in
+    l.move(to: NSPoint(x: g.midX, y: g.minY + 3)); l.line(to: NSPoint(x: g.midX, y: g.maxY - 3))
+    l.setLineDash([2, 3], count: 2, phase: 0)
 }
 
 // Chrome panels — dark rounded panels matching `panel(_:)`.
@@ -136,24 +149,8 @@ func label(_ text: String, _ at: NSPoint, size: CGFloat, weight: NSFont.Weight, 
         .draw(at: at)
 }
 
-// Top-left: "Editing layout" + display picker.
-let topPanel = NSRect(x: 28, y: H - menuBar - 70, width: 540, height: 56)
-panel(topPanel)
-label("Editing layout", NSPoint(x: topPanel.minX + 20, y: topPanel.midY - 9), size: 16, weight: .semibold)
-let pick = NSRect(x: topPanel.minX + 170, y: topPanel.midY - 16, width: 350, height: 32)
-NSColor.white.withAlphaComponent(0.14).setFill()
-NSBezierPath(roundedRect: pick, xRadius: 7, yRadius: 7).fill()
-label("Main Display", NSPoint(x: pick.minX + 12, y: pick.midY - 8), size: 14, weight: .regular)
-// chevrons
-blue.setStroke()
-let ch = NSBezierPath()
-let chx = pick.maxX - 20
-ch.move(to: NSPoint(x: chx - 5, y: pick.midY + 2)); ch.line(to: NSPoint(x: chx, y: pick.midY + 7)); ch.line(to: NSPoint(x: chx + 5, y: pick.midY + 2))
-ch.move(to: NSPoint(x: chx - 5, y: pick.midY - 2)); ch.line(to: NSPoint(x: chx, y: pick.midY - 7)); ch.line(to: NSPoint(x: chx + 5, y: pick.midY - 2))
-ch.lineWidth = 2; ch.stroke()
-
-// Top-center hint.
-let hintText = "Hover a zone, then split it ▮▮ / ▬▬ or merge.  Drag a divider to resize."
+// Top-center hint (the editor opens on every display showing its own layout; no picker).
+let hintText = "Hover a zone to split or merge it.  Drag a handle to resize."
 let hintAttr = NSAttributedString(string: hintText, attributes: [
     .font: NSFont.systemFont(ofSize: 15, weight: .regular), .foregroundColor: NSColor.white])
 let hintW = hintAttr.size().width
@@ -161,8 +158,8 @@ let hintPanel = NSRect(x: W / 2 - hintW / 2 - 22, y: H - menuBar - 64, width: hi
 panel(hintPanel)
 hintAttr.draw(at: NSPoint(x: hintPanel.midX - hintW / 2, y: hintPanel.midY - hintAttr.size().height / 2))
 
-// Bottom-right: Cancel + Done.
-let bottom = NSRect(x: W - 360, y: 32, width: 332, height: 62)
+// Bottom-CENTER: Cancel + Save.
+let bottom = NSRect(x: W / 2 - 150, y: 32, width: 300, height: 60)
 panel(bottom)
 func button(_ r: NSRect, _ title: String, primary: Bool) {
     (primary ? blue : NSColor.white.withAlphaComponent(0.16)).setFill()
@@ -171,8 +168,8 @@ func button(_ r: NSRect, _ title: String, primary: Bool) {
         .font: NSFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: NSColor.white])
     let s = a.size(); a.draw(at: NSPoint(x: r.midX - s.width / 2, y: r.midY - s.height / 2))
 }
-button(NSRect(x: bottom.minX + 18, y: bottom.midY - 16, width: 130, height: 32), "Cancel", primary: false)
-button(NSRect(x: bottom.minX + 166, y: bottom.midY - 16, width: 130, height: 32), "Done", primary: true)
+button(NSRect(x: bottom.minX + 18, y: bottom.midY - 14, width: 120, height: 28), "Cancel", primary: false)
+button(NSRect(x: bottom.minX + 162, y: bottom.midY - 14, width: 120, height: 28), "Save", primary: true)
 
 NSGraphicsContext.restoreGraphicsState()
 
