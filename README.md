@@ -21,7 +21,8 @@ window into one with a quick drag or a keyboard shortcut. Every monitor remember
 
 ## Install
 
-1. Download **Lineup.dmg** from the [Releases page](https://github.com/hcaiano/lineup/releases/latest).
+1. Download the **Lineup DMG** (a file like `Lineup-1.0.0.dmg`) from the
+   [Releases page](https://github.com/hcaiano/lineup/releases/latest).
 2. Open it and drag **Lineup** into your **Applications** folder.
 3. The first time you open Lineup, macOS stops it because it doesn't recognize the developer yet.
    To let it through (you only do this once):
@@ -29,6 +30,7 @@ window into one with a quick drag or a keyboard shortcut. Every monitor remember
    - Open **System Settings**, go to **Privacy & Security**, and scroll down to **Security**.
    - Click **Open Anyway** next to the message about Lineup, then confirm with your fingerprint or
      password.
+   - The warning appears one more time. Click **Open**, and Lineup starts.
 4. Lineup needs your permission to move windows. When it asks, open **System Settings → Privacy &
    Security → Accessibility** and switch **Lineup** on. If you already use Magnet or Rectangle, turn
    it off so the shortcuts don't fight each other.
