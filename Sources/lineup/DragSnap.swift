@@ -152,6 +152,9 @@ final class DragSnapController {
         lastTargetRect = target
         if highlight == nil { highlight = HighlightWindow() }
         highlight?.show(at: target, hint: hintShown && target == zone ? HighlightWindow.halfHint : nil)
+        // A tactile tick each time the target changes (zone to zone, zone to half, half to
+        // quarter) — trackpads only, free elsewhere. You feel the snap before you drop it.
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .drawCompleted)
     }
 
     /// Arm/refresh the linger timer per zone; once it fires, the hint rides along with the

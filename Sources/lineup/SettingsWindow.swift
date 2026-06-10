@@ -279,9 +279,15 @@ private final class ShortcutsView: NSView {
     }
 
     private func confirmConflict(_ conflicts: [String]) -> Bool {
+        // Show the labels users see in the list, never raw action ids like "leftHalf".
+        let names = conflicts.map { id in
+            ShortcutKit.quickActions.first(where: { $0.id == id })?.label
+                ?? ZoneAction.zeroBasedIndex(from: id).map { "Zone \($0 + 1)" }
+                ?? id
+        }
         let alert = NSAlert()
         alert.messageText = "Shortcut already in use"
-        alert.informativeText = "This combo is assigned to: \(conflicts.joined(separator: ", ")). Reassign it here? The other action becomes unassigned."
+        alert.informativeText = "This combo is assigned to: \(names.joined(separator: ", ")). Reassign it here? The other action becomes unassigned."
         alert.addButton(withTitle: "Reassign")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
