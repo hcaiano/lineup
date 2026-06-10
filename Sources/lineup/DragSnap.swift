@@ -28,6 +28,16 @@ final class DragSnapController {
     private var lingerTimer: Timer?
     private var hintShown = false
 
+    // Unsnap restore: dragging a snapped window away brings its pre-snap size back under
+    // the cursor. Two phases — match the window early in the drag (while it's still
+    // near its snapped frame), restore only after real movement WITH an unchanged size
+    // (a changing size means the user is resizing, never an unsnap). Both phases run at
+    // most once per drag and only while there are snaps to restore, so an ordinary drag
+    // costs nothing extra.
+    private var dragStart: CGPoint?
+    private var restoreChecked = false
+    private var restoreCandidate: (window: AXUIElement, preFrame: CGRect, sizeAtMatch: CGSize)?
+
     init(configProvider: @escaping () -> LineupConfig) {
         self.configProvider = configProvider
     }
@@ -54,7 +64,9 @@ final class DragSnapController {
         switch event.type {
         case .leftMouseDown:
             reset() // clear stale state; capture happens on the first SHIFT-drag
+            dragStart = NSEvent.mouseLocation
         case .leftMouseDragged:
+            maybeRestoreUnsnappedSize()
             if event.modifierFlags.contains(.shift) {
                 if captured == nil { captured = WindowMover.window(atCocoaPoint: NSEvent.mouseLocation) }
                 if captured != nil {
@@ -74,6 +86,39 @@ final class DragSnapController {
         default:
             break
         }
+    }
+
+    // MARK: - Unsnap restore
+
+    /// If the dragged window is one we snapped, give it back its pre-snap size under the
+    /// cursor once the drag is real. Works for plain drags and shift-drags alike —
+    /// dragging away IS the undo.
+    private func maybeRestoreUnsnappedSize() {
+        guard !restoreChecked, !SnapMemory.shared.isEmpty, let start = dragStart else { return }
+        let p = NSEvent.mouseLocation
+
+        // Phase 1, first drag event: is this a window we snapped, still (almost) where we
+        // put it? The window may have moved a few points before the event reached us.
+        if restoreCandidate == nil {
+            guard let window = captured ?? WindowMover.window(atCocoaPoint: p),
+                  let frame = WindowMover.frame(of: window),
+                  let pre = SnapMemory.shared.preFrame(of: window, draggedFrame: frame, originTol: 24)
+            else { restoreChecked = true; return } // not a snapped window — done for this drag
+            restoreCandidate = (window, pre, frame.size)
+            return
+        }
+
+        // Phase 2, real movement: still the snapped SIZE means the user is moving the
+        // window (an edge-resize would have changed it). Restore under the cursor.
+        guard hypot(p.x - start.x, p.y - start.y) > 10 else { return }
+        restoreChecked = true
+        guard let c = restoreCandidate,
+              let current = WindowMover.frame(of: c.window),
+              abs(current.width - c.sizeAtMatch.width) <= 4,
+              abs(current.height - c.sizeAtMatch.height) <= 4
+        else { return }
+        let restored = UnsnapRestore.frame(preSize: c.preFrame.size, current: current, cursor: p)
+        WindowMover.restoreDuringDrag(c.window, toCocoaRect: restored)
     }
 
     // MARK: - Highlight
@@ -137,6 +182,9 @@ final class DragSnapController {
         highlight = nil
         lastTargetRect = nil
         clearLinger()
+        dragStart = nil
+        restoreChecked = false
+        restoreCandidate = nil
     }
 
     private func screenContaining(_ p: CGPoint) -> NSScreen? {

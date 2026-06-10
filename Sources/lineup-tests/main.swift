@@ -86,6 +86,28 @@ do {
     check(huge.width == 2400 && huge.height == 400, "fixed: size passes through untouched")
 }
 
+// ---- Unsnap restore (drag a snapped window away -> pre-snap size under the cursor) ----
+do {
+    let snapped = CGRect(x: 0, y: 0, width: 2000, height: 1000)
+    let pre = CGSize(width: 800, height: 600)
+    // Cursor in the middle of the title bar: restored frame centers under it, top edge kept.
+    let mid = UnsnapRestore.frame(preSize: pre, current: snapped, cursor: CGPoint(x: 1000, y: 980))
+    eq(mid.midX, 1000, "unsnap: centered grab stays centered")
+    eq(mid.maxY, 1000, "unsnap: top edge stays put")
+    check(mid.size == pre, "unsnap: pre-snap size returns exactly")
+    // Grab near the left edge: the cursor keeps its proportional spot (10% across).
+    let left = UnsnapRestore.frame(preSize: pre, current: snapped, cursor: CGPoint(x: 200, y: 980))
+    eq(left.minX, 120, "unsnap: proportional grab (10% across -> 10% of new width)")
+    check(left.contains(CGPoint(x: 200, y: 980)), "unsnap: cursor stays inside the window")
+    // Grab at the far right edge: cursor lands on the restored frame's right edge.
+    let right = UnsnapRestore.frame(preSize: pre, current: snapped, cursor: CGPoint(x: 2000, y: 980))
+    eq(right.maxX, 2000, "unsnap: edge grab keeps cursor on the edge")
+    // Degenerate zero-width current frame: falls back to centering, no NaN.
+    let degen = UnsnapRestore.frame(preSize: pre, current: CGRect(x: 50, y: 0, width: 0, height: 100),
+                                    cursor: CGPoint(x: 50, y: 90))
+    eq(degen.midX, 50, "unsnap: zero-width current centers on cursor")
+}
+
 // ---- Columns (divider model) ----
 let frame = CGRect(x: 0, y: 0, width: 5120, height: 1440)
 let visible = CGRect(x: 0, y: 0, width: 5120, height: 1392)
