@@ -10,6 +10,11 @@ import CoreGraphics
 public enum DragTarget {
     public static let defaultEdgeBand: CGFloat = 0.05
 
+    /// On a small zone, 5% is a sliver (a 200pt half-zone would get a 10pt band — about
+    /// one mouse event at drag speed). Bands never shrink below this many points, and
+    /// never grow past half the zone, so they stay hittable AND the middle stays open.
+    public static let minBandPoints: CGFloat = 24
+
     /// `zone` and `cursor` are Cocoa coordinates (+y up). A cursor OUTSIDE the zone (the
     /// caller's nearest-zone fallback: menu bar, Dock gap, past the screen edge) always
     /// targets the whole zone — bands only mean something while you're actually inside.
@@ -17,8 +22,11 @@ public enum DragTarget {
                             edgeBand: CGFloat = DragTarget.defaultEdgeBand) -> CGRect {
         guard zone.contains(cursor) else { return zone }
         let band = max(0, min(edgeBand, 0.5))
-        let vBand = zone.height * band
-        let hBand = zone.width * band
+        func points(_ dim: CGFloat) -> CGFloat {
+            band > 0 ? min(max(dim * band, minBandPoints), dim / 2) : 0
+        }
+        let vBand = points(zone.height)
+        let hBand = points(zone.width)
         let top = cursor.y >= zone.maxY - vBand
         let bottom = !top && cursor.y <= zone.minY + vBand
         let left = cursor.x <= zone.minX + hBand

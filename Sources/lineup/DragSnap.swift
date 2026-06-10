@@ -147,7 +147,7 @@ final class DragSnapController {
 /// Translucent, click-through block highlight. The window frame IS the highlighted target;
 /// an optional one-line hint teaches the half-snap when the user lingers.
 private final class HighlightWindow: NSWindow {
-    static let halfHint = "Drag near an edge to fill half, near a corner for a quarter"
+    static let halfHint = "Edges fill half, corners a quarter"
 
     private let hintLabel = NSTextField(labelWithString: HighlightWindow.halfHint)
 

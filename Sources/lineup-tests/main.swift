@@ -641,14 +641,31 @@ do {
     check(topRight == CGRect(x: 600, y: 500, width: 500, height: 500), "drag target: top-right corner -> top-right quarter")
     let bottomLeft = t(125, 25)
     check(bottomLeft == CGRect(x: 100, y: 0, width: 500, height: 500), "drag target: bottom-left corner -> bottom-left quarter")
-    // Band clamps: an absurd band fraction can never exceed half the zone; at the clamp the
-    // top/left band wins the tie at the exact midline so the result is still a single half.
+    // Left/right band boundaries are inclusive too.
+    eq(t(150, 500).minX, 100, "drag target: band boundary inclusive (left)")
+    eq(t(1050, 500).minX, 600, "drag target: band boundary inclusive (right)")
+    // Band clamps: an absurd band fraction can never exceed half the zone. At the clamp
+    // every interior point sits in one band per axis (top/left win the midline ties), so
+    // the cursor just right of center lands in the top-LEFT quarter.
     let clamped = DragTarget.rect(zone: zone, cursor: CGPoint(x: 600, y: 501), edgeBand: 5)
-    eq(clamped.minY, 500, "drag target: band clamped to 0.5 -> upper half at midline")
-    // A short zone (already a half) still gets proportional bands.
+    check(clamped == CGRect(x: 100, y: 500, width: 500, height: 500),
+          "drag target: band clamped to 0.5 -> top-left quarter at midline (top/left win ties)")
+    // A zero band disables the feature entirely — every inside point is the whole zone.
+    check(DragTarget.rect(zone: zone, cursor: CGPoint(x: 600, y: 999), edgeBand: 0) == zone,
+          "drag target: zero band -> whole zone everywhere")
+    // Small zones: the band floors at 24pt so it stays hittable. A 200pt-tall half-zone
+    // would get a 10pt band at 5%; the floor lifts it to 24pt (still capped at half).
     let short = CGRect(x: 0, y: 0, width: 1000, height: 200)
-    let topOfShort = DragTarget.rect(zone: short, cursor: CGPoint(x: 500, y: 195))
-    eq(topOfShort.minY, 100, "drag target: short zone top band -> its top half")
+    let topOfShort = DragTarget.rect(zone: short, cursor: CGPoint(x: 500, y: 180))
+    eq(topOfShort.minY, 100, "drag target: short zone floored band (24pt) -> its top half")
+    check(DragTarget.rect(zone: short, cursor: CGPoint(x: 500, y: 170)) == short,
+          "drag target: short zone below floored band -> whole zone")
+    let tiny = CGRect(x: 0, y: 0, width: 1000, height: 30) // floor capped at half the zone
+    eq(DragTarget.rect(zone: tiny, cursor: CGPoint(x: 500, y: 20)).minY, 15,
+       "drag target: tiny zone band capped at half -> top half")
+    // Degenerate zero-size zones: contains() is false on empty rects -> whole zone, no NaN.
+    let empty = CGRect(x: 0, y: 0, width: 0, height: 0)
+    check(DragTarget.rect(zone: empty, cursor: .zero) == empty, "drag target: empty zone -> itself")
     // Cursor OUTSIDE the zone (nearest-zone fallback: menu bar above, past an edge) must
     // target the WHOLE zone — never a half via the band math on out-of-zone coordinates.
     check(t(600, 1050) == zone, "drag target: cursor above zone (menu bar) -> whole zone")
