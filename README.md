@@ -21,7 +21,7 @@ window into one with a quick drag or a keyboard shortcut. Every monitor remember
 
 ## Install
 
-1. Download the **Lineup DMG** (a file like `Lineup-1.2.0.dmg`) from the
+1. Download the **Lineup DMG** (a file like `Lineup-1.3.0.dmg`) from the
    [Releases page](https://github.com/hcaiano/lineup/releases/latest).
 2. Open it and drag **Lineup** into your **Applications** folder.
 3. The first time you open Lineup, macOS stops it because it doesn't recognize the developer yet.
@@ -59,6 +59,10 @@ There are two ways to drop a window into a zone.
 
 **Drag and drop.** Hold **Shift** while you drag a window. The zone under your cursor lights up. Let
 go to drop the window in. You can turn this off in Settings.
+
+Want two apps stacked in one zone? While shift-dragging, aim near the zone's **top or bottom
+edge** and the highlight switches to that half. Drop, then place the second app in the other half
+the same way. The highlight always shows exactly where the window will land.
 
 **Keyboard shortcuts.** Lineup comes with a few ready to go. They use a "Hyper" key, which is
 Control, Option, Shift and Command pressed together. Pressing four keys at once is a stretch, so
