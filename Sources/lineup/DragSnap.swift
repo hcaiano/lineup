@@ -183,8 +183,15 @@ private final class HighlightWindow: NSWindow {
             hintLabel.stringValue = hint
             hintLabel.sizeToFit()
             let w = hintLabel.frame.width + 20, h = hintLabel.frame.height + 8
-            hintLabel.frame = NSRect(x: (rect.width - w) / 2, y: 18, width: w, height: h)
-            hintLabel.isHidden = false
+            // The pill must sit fully INSIDE the highlight; in a zone too small or narrow
+            // to host it cleanly, show nothing rather than something clipped.
+            if rect.width < w + 16 || rect.height < h + 26 {
+                hintLabel.isHidden = true
+            } else {
+                let y = min(18, max(6, rect.height - h - 6))
+                hintLabel.frame = NSRect(x: (rect.width - w) / 2, y: y, width: w, height: h)
+                hintLabel.isHidden = false
+            }
         } else {
             hintLabel.isHidden = true
         }
