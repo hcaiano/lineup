@@ -51,10 +51,18 @@ enum WindowMover {
         let window = tame(win as! AXUIElement)
         // The focused "window" can be a sheet or system overlay (role != AXWindow);
         // snapping one of those away from its parent looks broken. Leave them alone.
-        var roleRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef) == .success,
-              (roleRef as? String) == (kAXWindowRole as String) else { return nil }
+        // Fail OPEN: a flaky role read must not refuse a real window.
+        if isConfirmedNonWindow(window) { return nil }
         return window
+    }
+
+    /// True only when the role read SUCCEEDS and says "not a window". Errors and
+    /// timeouts return false, so flaky-but-real windows still snap.
+    private static func isConfirmedNonWindow(_ el: AXUIElement) -> Bool {
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef) == .success,
+              let role = roleRef as? String else { return false }
+        return role != (kAXWindowRole as String)
     }
 
     /// Hit-test the window under a global Cocoa point (bottom-left origin). Returns the
@@ -62,11 +70,11 @@ enum WindowMover {
     static func window(atCocoaPoint p: CGPoint) -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
         let axY = primaryMaxY() - p.y // CG hit-test uses top-left origin from primary
-        let sys = AXUIElementCreateSystemWide()
+        let sys = tame(AXUIElementCreateSystemWide())
         var hitRef: AXUIElement?
         guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(axY), &hitRef) == .success,
               let hit = hitRef else { return nil }
-        return enclosingWindow(of: hit)
+        return enclosingWindow(of: tame(hit))
     }
 
     /// Walk up the AX hierarchy to the element's window (via kAXWindow shortcut, then by
@@ -83,12 +91,15 @@ enum WindowMover {
             var winRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(e, kAXWindowAttribute as CFString, &winRef) == .success,
                let w = winRef {
-                return (w as! AXUIElement)
+                // The kAXWindow shortcut can hand back a sheet/overlay (e.g. from inside
+                // a Save sheet). Confirmed non-windows are not drag targets.
+                let candidate = tame(w as! AXUIElement)
+                return isConfirmedNonWindow(candidate) ? nil : candidate
             }
             var parentRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(e, kAXParentAttribute as CFString, &parentRef) == .success,
                let parent = parentRef {
-                current = (parent as! AXUIElement)
+                current = tame(parent as! AXUIElement)
             } else {
                 current = nil
             }
@@ -173,15 +184,20 @@ enum WindowMover {
             return
         }
 
+        let before = axSize(window, kAXSizeAttribute)
         let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY())
         setSize(window, kAXSizeAttribute, ax.size)
         setPoint(window, kAXPositionAttribute, ax.origin)
         setSize(window, kAXSizeAttribute, ax.size)
 
         // Verify: apps with a minimum size accept the move but refuse the resize, leaving
-        // the window hanging out of the zone. Re-place what we actually got.
-        if let actual = axSize(window, kAXSizeAttribute),
-           abs(actual.width - cocoa.width) > 1 || abs(actual.height - cocoa.height) > 1 {
+        // the window hanging out of the zone. Re-place what we actually got — but ONLY on
+        // a genuine refusal (size unchanged from before). Apps that resize asynchronously
+        // (JetBrains' AX bridge) read back a stale in-between size; re-placing on that
+        // would mis-position the final frame, so those are left alone.
+        if let actual = axSize(window, kAXSizeAttribute), let before,
+           abs(actual.width - cocoa.width) > 1 || abs(actual.height - cocoa.height) > 1,
+           abs(actual.width - before.width) <= 1, abs(actual.height - before.height) <= 1 {
             place(size: actual, in: cocoa, of: window)
         }
     }
@@ -212,7 +228,7 @@ enum WindowMover {
     private static func suspendEnhancedUserInterface(of window: AXUIElement) -> AXUIElement? {
         var pid: pid_t = 0
         guard AXUIElementGetPid(window, &pid) == .success else { return nil }
-        let appEl = AXUIElementCreateApplication(pid)
+        let appEl = tame(AXUIElementCreateApplication(pid)) // fresh element: tame it too
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appEl, enhancedUserInterfaceAttribute as CFString, &ref) == .success,
               (ref as? Bool) == true else { return nil }
