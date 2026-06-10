@@ -36,7 +36,7 @@ final class DragSnapController {
     // costs nothing extra.
     private var dragStart: CGPoint?
     private var restoreChecked = false
-    private var restoreCandidate: (window: AXUIElement, preFrame: CGRect, sizeAtMatch: CGSize)?
+    private var restoreCandidate: (window: AXUIElement, preFrame: CGRect, frameAtMatch: CGRect)?
 
     init(configProvider: @escaping () -> LineupConfig) {
         self.configProvider = configProvider
@@ -104,18 +104,20 @@ final class DragSnapController {
                   let frame = WindowMover.frame(of: window),
                   let pre = SnapMemory.shared.preFrame(of: window, draggedFrame: frame, originTol: 24)
             else { restoreChecked = true; return } // not a snapped window — done for this drag
-            restoreCandidate = (window, pre, frame.size)
+            restoreCandidate = (window, pre, frame)
             return
         }
 
-        // Phase 2, real movement: still the snapped SIZE means the user is moving the
-        // window (an edge-resize would have changed it). Restore under the cursor.
+        // Phase 2, real movement. The WINDOW must be moving too, with its size unchanged:
+        // a drag inside the window (selecting text, dragging a file) moves only the
+        // cursor, and an edge-resize changes the size — neither is an unsnap.
         guard hypot(p.x - start.x, p.y - start.y) > 10 else { return }
         restoreChecked = true
         guard let c = restoreCandidate,
               let current = WindowMover.frame(of: c.window),
-              abs(current.width - c.sizeAtMatch.width) <= 4,
-              abs(current.height - c.sizeAtMatch.height) <= 4
+              abs(current.width - c.frameAtMatch.width) <= 4,
+              abs(current.height - c.frameAtMatch.height) <= 4,
+              hypot(current.minX - c.frameAtMatch.minX, current.minY - c.frameAtMatch.minY) > 5
         else { return }
         let restored = UnsnapRestore.frame(preSize: c.preFrame.size, current: current, cursor: p)
         WindowMover.restoreDuringDrag(c.window, toCocoaRect: restored)

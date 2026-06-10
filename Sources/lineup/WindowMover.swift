@@ -87,8 +87,11 @@ enum WindowMover {
             frame: screen.frame, visibleFrame: screen.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
 
-        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: target)
         setFrame(target, of: window)
+        // Record where the window actually LANDED (fixed-size windows get centered, not
+        // the zone rect) so the unsnap match works against reality.
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa,
+                                     to: currentCocoaFrame(of: window) ?? target)
         return true
     }
 
@@ -185,8 +188,9 @@ enum WindowMover {
             index: index, root: root,
             frame: screen.frame, visibleFrame: screen.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
-        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: target)
         setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa,
+                                     to: currentCocoaFrame(of: window) ?? target)
         return true
     }
 
@@ -211,8 +215,9 @@ enum WindowMover {
         let idx = Cycle.nextStep(action: actionId, now: now, screenKey: info.key,
                                  focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
         let target = steps[idx]
-        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: target)
         setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa,
+                                     to: currentCocoaFrame(of: window) ?? target)
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
@@ -220,10 +225,12 @@ enum WindowMover {
     /// where the dragged window isn't necessarily the focused one yet).
     static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
         guard AXIsProcessTrusted() else { return }
-        if let current = currentCocoaFrame(of: window) {
-            SnapMemory.shared.recordSnap(of: window, from: current, to: rect)
-        }
+        let before = currentCocoaFrame(of: window)
         setFrame(rect, of: window)
+        if let before {
+            SnapMemory.shared.recordSnap(of: window, from: before,
+                                         to: currentCocoaFrame(of: window) ?? rect)
+        }
     }
 
     /// The Restore shortcut: put the focused window back at its pre-snap frame. Only
