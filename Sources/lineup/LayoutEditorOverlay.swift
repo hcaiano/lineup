@@ -160,6 +160,7 @@ private final class EditorCanvas: NSView {
     private var activePath: [Int]?
     private var pinned = false
     private var dragging: Layout.DividerHandle?
+    private var snappedGuide: DividerSnap.Guide?   // non-nil while the drag is locked on a guide
     private var tracking: NSTrackingArea?
 
     private let controlBar = ZoneControlBar()
@@ -255,31 +256,55 @@ private final class EditorCanvas: NSView {
     }
 
     /// A divider: a soft line plus a clearly-grabbable grip pill with dots. (Sizes live in
-    /// the zones themselves — see drawSize — so the handle carries no readout.)
+    /// the zones themselves — see drawSize — so the handle carries no readout.) While a
+    /// drag is locked onto a guide, the dragged divider renders in the brand blue with a
+    /// fraction badge — the Photoshop-guide moment.
     private func drawHandle(_ h: Layout.DividerHandle) {
+        let snapped = snappedGuide != nil && dragging?.path == h.path && dragging?.index == h.index
+        let line = snapped ? Brand.blue : NSColor.white.withAlphaComponent(0.9)
         let r = viewRect(h.line)
         let vertical = h.axis == .vertical
         // The line.
-        NSColor.white.withAlphaComponent(0.9).setFill()
+        line.setFill()
         NSBezierPath(roundedRect: r.insetBy(dx: vertical ? 0 : 2, dy: vertical ? 2 : 0), xRadius: 2, yRadius: 2).fill()
         // The grip pill at the divider's middle.
         let gripL: CGFloat = 44, gripT: CGFloat = 16
         let grip = vertical
             ? NSRect(x: r.midX - gripT / 2, y: r.midY - gripL / 2, width: gripT, height: gripL)
             : NSRect(x: r.midX - gripL / 2, y: r.midY - gripT / 2, width: gripL, height: gripT)
-        NSColor.white.setFill()
+        (snapped ? Brand.blue : NSColor.white).setFill()
         NSBezierPath(roundedRect: grip, xRadius: gripT / 2, yRadius: gripT / 2).fill()
-        Brand.blue.setStroke()
+        (snapped ? NSColor.white : Brand.blue).setStroke()
         let gp = NSBezierPath(roundedRect: grip.insetBy(dx: 0.5, dy: 0.5), xRadius: gripT / 2, yRadius: gripT / 2)
         gp.lineWidth = 1.5; gp.stroke()
         // Three grip dots.
-        Brand.blue.withAlphaComponent(0.8).setFill()
+        (snapped ? NSColor.white : Brand.blue.withAlphaComponent(0.8)).setFill()
         for k in -1...1 {
             let d: CGFloat = 3.2
             let c = vertical ? CGPoint(x: grip.midX, y: grip.midY + CGFloat(k) * 8)
                              : CGPoint(x: grip.midX + CGFloat(k) * 8, y: grip.midY)
             NSBezierPath(ovalIn: CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)).fill()
         }
+        if snapped, let g = snappedGuide {
+            drawGuideBadge(g.label, near: grip, vertical: vertical)
+        }
+    }
+
+    /// The fraction badge ("½", "⅓", "=") shown beside the grip while locked on a guide.
+    private func drawGuideBadge(_ label: String, near grip: CGRect, vertical: Bool) {
+        let s = NSAttributedString(string: label, attributes: [
+            .font: NSFont.systemFont(ofSize: 15, weight: .bold),
+            .foregroundColor: NSColor.white])
+        let sz = s.size()
+        let pad: CGFloat = 7
+        let w = max(sz.width + pad * 2, 30), h = sz.height + pad
+        let center = vertical
+            ? CGPoint(x: grip.midX, y: grip.maxY + h / 2 + 8)
+            : CGPoint(x: grip.maxX + w / 2 + 8, y: grip.midY)
+        let pill = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
+        Brand.blue.setFill()
+        NSBezierPath(roundedRect: pill, xRadius: h / 2, yRadius: h / 2).fill()
+        s.draw(at: NSPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2))
     }
 
     private func drawNumber(_ n: Int, in r: CGRect) {
@@ -345,16 +370,36 @@ private final class EditorCanvas: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let h = dragging else { return }
         let gp = globalPoint(convert(event.locationInWindow, from: nil))
-        let frac: Double = h.axis == .vertical
+        let proposed: Double = h.axis == .vertical
             ? Double((gp.x - h.container.minX) / max(h.container.width, 1))
             : Double((h.container.maxY - gp.y) / max(h.container.height, 1))
         let containerLength = Double(h.axis == .vertical ? h.container.width : h.container.height)
-        let updated = LayoutEdit.setDivider(root, at: h.path, index: h.index, fraction: frac,
+
+        // Photoshop-style guides: near a common fraction (¼ ⅓ ½ ⅔ ¾) or the equal-zones
+        // midpoint, the divider locks on; drag past the magnetic radius and it lets go.
+        func fractionOf(_ s: Layout.DividerHandle) -> Double {
+            s.axis == .vertical
+                ? Double((s.line.midX - s.container.minX) / max(s.container.width, 1))
+                : Double((s.container.maxY - s.line.midY) / max(s.container.height, 1))
+        }
+        let siblings = handles().filter { $0.path == h.path }
+        let lower = siblings.first(where: { $0.index == h.index - 1 }).map(fractionOf) ?? 0
+        let upper = siblings.first(where: { $0.index == h.index + 1 }).map(fractionOf) ?? 1
+        let magneticRadius = 8.0 / max(containerLength, 1) // 8 pt of screen, in fraction units
+        let snap = DividerSnap.apply(proposed,
+                                     guides: DividerSnap.guides(neighborLower: lower, neighborUpper: upper),
+                                     threshold: magneticRadius)
+        if snap.guide != snappedGuide { snappedGuide = snap.guide; needsDisplay = true }
+
+        let updated = LayoutEdit.setDivider(root, at: h.path, index: h.index, fraction: snap.fraction,
                                             rootPixelsWide: info.pixelsWide, containerLength: containerLength)
         if updated != root { root = updated; onChange?(root) }
     }
 
-    override func mouseUp(with event: NSEvent) { dragging = nil }
+    override func mouseUp(with event: NSEvent) {
+        dragging = nil
+        if snappedGuide != nil { snappedGuide = nil; needsDisplay = true }
+    }
 
     override func cancelOperation(_ sender: Any?) { onCancel?() }
     override func keyDown(with event: NSEvent) {
