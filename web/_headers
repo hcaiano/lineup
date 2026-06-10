@@ -1,0 +1,8 @@
+# Cloudflare Pages headers (mirrors vercel.json for the Vercel path).
+# Assets keep stable filenames, so revalidate hourly rather than caching for a year.
+/assets/*
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
