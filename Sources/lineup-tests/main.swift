@@ -604,6 +604,34 @@ do { // shortcuts are optional + backward compatible in LineupConfig
     check((try JSONDecoder().decode(LineupConfig.self, from: d2)).shortcuts == nil, "config: missing shortcuts decodes to nil")
 }
 
+// ---- Drag target: zone vs half-zone (10% hot edge bands) ----
+do {
+    let zone = CGRect(x: 100, y: 0, width: 1000, height: 1000) // Cocoa: +y up
+    func t(_ y: CGFloat) -> CGRect {
+        DragTarget.rect(zone: zone, cursor: CGPoint(x: 500, y: y))
+    }
+    // Middle 80%: the whole zone, untouched (the common case).
+    check(t(500) == zone, "drag target: middle -> whole zone")
+    check(t(101) == zone, "drag target: just above bottom band -> whole zone")
+    check(t(899) == zone, "drag target: just below top band -> whole zone")
+    // Top/bottom 10% bands -> that half.
+    eq(t(950).minY, 500, "drag target: top band -> top half (minY = midY)")
+    eq(t(950).height, 500, "drag target: top half height")
+    eq(t(900).minY, 500, "drag target: band boundary inclusive (top)")
+    eq(t(50).minY, 0, "drag target: bottom band -> bottom half")
+    eq(t(50).maxY, 500, "drag target: bottom half ends at midY")
+    eq(t(100).maxY, 500, "drag target: band boundary inclusive (bottom)")
+    // Width/x never change — halves stay inside the zone.
+    check(t(950).minX == zone.minX && t(950).width == zone.width, "drag target: half keeps zone x/width")
+    // Band clamps: an absurd band fraction can never exceed half the zone.
+    let clamped = DragTarget.rect(zone: zone, cursor: CGPoint(x: 500, y: 501), edgeBand: 5)
+    eq(clamped.minY, 500, "drag target: band clamped to 0.5 -> upper half at midline")
+    // A short zone (already a half) still gets proportional bands.
+    let short = CGRect(x: 0, y: 0, width: 1000, height: 200)
+    let topOfShort = DragTarget.rect(zone: short, cursor: CGPoint(x: 500, y: 195))
+    eq(topOfShort.minY, 100, "drag target: short zone top band -> its top half")
+}
+
 // ---- P5: left/right cycling ----
 do { // step 0 honors the seam column; later steps are fractions; dedup
     let wideLayout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])
