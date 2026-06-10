@@ -251,8 +251,11 @@ private final class ShortcutsView: NSView {
         guard let action = recordingAction else { return false }
         guard ctx.canWrite() else { stopRecording(); return true }
         let keyCode = Int(event.keyCode)
-        if keyCode == 53 { stopRecording(); return true }            // Esc cancels
-        if keyCode == 51 {                                            // Delete clears
+        // Bare Esc cancels and bare Delete clears — but ONLY bare: with modifiers held
+        // they're recordable combos like any other (Hyper+Delete is the Restore default).
+        let bare = !ShortcutKit.hasModifier(event.modifierFlags)
+        if keyCode == 53, bare { stopRecording(); return true }       // Esc cancels
+        if keyCode == 51, bare {                                      // Delete clears
             ctx.setShortcuts(ctx.shortcuts().removing(action: action)); stopRecording(); return true
         }
         guard ShortcutKit.hasModifier(event.modifierFlags) else { NSSound.beep(); return true } // need a modifier

@@ -46,6 +46,22 @@ public enum FixedPlacement {
     }
 }
 
+/// Where a snapped window goes when the user drags it away and its pre-snap size comes
+/// back mid-drag (Rectangle's "unsnap restore", Loop's drag-restore). The window resizes
+/// under the cursor: the top edge stays put (the cursor is on the title bar) and the
+/// cursor keeps its proportional position along the width, so the grab never slips off
+/// the window. All rects are Cocoa-space.
+public enum UnsnapRestore {
+    public static func frame(preSize: CGSize, current: CGRect, cursor: CGPoint) -> CGRect {
+        let relX = current.width > 0
+            ? min(max((cursor.x - current.minX) / current.width, 0), 1)
+            : 0.5
+        return CGRect(x: cursor.x - relX * preSize.width,
+                      y: current.maxY - preSize.height,
+                      width: preSize.width, height: preSize.height)
+    }
+}
+
 /// Pick the display a window belongs to by maximum area of intersection, falling back
 /// to the display nearest the window's center (handles windows dragged into gaps /
 /// negative-origin secondary displays). All rects are Cocoa-space.

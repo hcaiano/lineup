@@ -2,6 +2,68 @@ import AppKit
 import ApplicationServices
 import LineupCore
 
+/// Remembers the frame a window had before WE snapped it, making every snap reversible:
+/// dragging a snapped window away brings its old size back, and the Restore shortcut puts
+/// it back where it was. Rectangle's WindowHistory semantics: the pre-snap frame is seeded
+/// once and only re-seeded after the window moves externally; re-snapping (cycling widths,
+/// hopping zones) just updates where we last put it. In-memory only, capped, no IDs — the
+/// AXUIElement itself is the key (CFEqual compares the underlying element).
+final class SnapMemory {
+    static let shared = SnapMemory()
+    private struct Entry {
+        let window: AXUIElement
+        var preFrame: CGRect   // where the USER last had it
+        var snappedTo: CGRect  // where WE last put it
+    }
+    private var entries: [Entry] = []
+    private let cap = 16
+
+    var isEmpty: Bool { entries.isEmpty }
+
+    /// Record a snap we performed; `from` is the window's frame just before it.
+    func recordSnap(of window: AXUIElement, from: CGRect, to: CGRect) {
+        if let i = entries.firstIndex(where: { CFEqual($0.window, window) }) {
+            var e = entries.remove(at: i)
+            // Still where we put it -> a cycle/zone hop; the original preFrame survives.
+            // Moved externally since -> the user re-placed it; THAT becomes the preFrame.
+            if !SnapMemory.approx(e.snappedTo, from) { e.preFrame = from }
+            e.snappedTo = to
+            entries.append(e)
+        } else {
+            entries.append(Entry(window: window, preFrame: from, snappedTo: to))
+            if entries.count > cap { entries.removeFirst() }
+        }
+    }
+
+    /// The pre-snap frame — only while `window` is still where we snapped it.
+    func preFrame(of window: AXUIElement, currentFrame: CGRect) -> CGRect? {
+        guard let e = entries.first(where: { CFEqual($0.window, window) }),
+              SnapMemory.approx(e.snappedTo, currentFrame) else { return nil }
+        return e.preFrame
+    }
+
+    /// Drag-away restore needs looser matching (the window has already moved a little by
+    /// the first drag event): origin within `originTol`, size within 4pt. A size mismatch
+    /// means the user is RESIZING the snapped window, which is never an unsnap.
+    func preFrame(of window: AXUIElement, draggedFrame: CGRect, originTol: CGFloat) -> CGRect? {
+        guard let e = entries.first(where: { CFEqual($0.window, window) }),
+              abs(e.snappedTo.width - draggedFrame.width) <= 4,
+              abs(e.snappedTo.height - draggedFrame.height) <= 4,
+              abs(e.snappedTo.minX - draggedFrame.minX) <= originTol,
+              abs(e.snappedTo.minY - draggedFrame.minY) <= originTol else { return nil }
+        return e.preFrame
+    }
+
+    func forget(_ window: AXUIElement) {
+        entries.removeAll { CFEqual($0.window, window) }
+    }
+
+    private static func approx(_ a: CGRect, _ b: CGRect, tol: CGFloat = 4) -> Bool {
+        abs(a.minX - b.minX) <= tol && abs(a.minY - b.minY) <= tol &&
+        abs(a.width - b.width) <= tol && abs(a.height - b.height) <= tol
+    }
+}
+
 /// Moves/resizes the frontmost window of the frontmost app via the Accessibility API.
 /// All public input is Cocoa-space; the single AX coordinate flip happens here.
 enum WindowMover {
@@ -25,7 +87,10 @@ enum WindowMover {
             frame: screen.frame, visibleFrame: screen.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
 
-        setFrame(target, of: window)
+        // Record where the window was steered (fixed-size windows get centered, not the
+        // zone rect) so the unsnap match works against where it really ends up.
+        let landed = setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
 
@@ -122,7 +187,8 @@ enum WindowMover {
             index: index, root: root,
             frame: screen.frame, visibleFrame: screen.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
-        setFrame(target, of: window)
+        let landed = setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
 
@@ -147,7 +213,8 @@ enum WindowMover {
         let idx = Cycle.nextStep(action: actionId, now: now, screenKey: info.key,
                                  focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
         let target = steps[idx]
-        setFrame(target, of: window)
+        let landed = setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
@@ -155,7 +222,43 @@ enum WindowMover {
     /// where the dragged window isn't necessarily the focused one yet).
     static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
         guard AXIsProcessTrusted() else { return }
-        setFrame(rect, of: window)
+        let before = currentCocoaFrame(of: window)
+        let landed = setFrame(rect, of: window)
+        if let before {
+            SnapMemory.shared.recordSnap(of: window, from: before, to: landed)
+        }
+    }
+
+    /// The Restore shortcut: put the focused window back at its pre-snap frame. Only
+    /// fires while the window is still where we snapped it; otherwise a no-op.
+    @discardableResult
+    static func restoreFocusedWindow() -> Bool {
+        guard AXIsProcessTrusted(), let window = focusedWindow(),
+              let current = currentCocoaFrame(of: window),
+              let pre = SnapMemory.shared.preFrame(of: window, currentFrame: current)
+        else { return false }
+        setFrame(pre, of: window)
+        // Forget AFTER the move: if a hung app made it fail, the next press can retry.
+        SnapMemory.shared.forget(window)
+        return true
+    }
+
+    /// Mid-drag size restore (drag-away unsnap). Position first, then size — the window
+    /// is under the user's hand, so the initial size-set of the normal dance would just
+    /// add a visible stutter (Rectangle's adjustSizeFirst:false).
+    static func restoreDuringDrag(_ window: AXUIElement, toCocoaRect rect: CGRect) {
+        guard AXIsProcessTrusted() else { return }
+        SnapMemory.shared.forget(window)
+        let restoreEnhanced = suspendEnhancedUserInterface(of: window)
+        defer { if let appEl = restoreEnhanced { setBool(appEl, enhancedUserInterfaceAttribute, true) } }
+        let ax = Coord.axRect(fromCocoa: rect, primaryMaxY: primaryMaxY())
+        setPoint(window, kAXPositionAttribute, ax.origin)
+        setSize(window, kAXSizeAttribute, ax.size)
+    }
+
+    /// The window's current Cocoa-space frame, if readable (drag-away restore needs it).
+    static func frame(of window: AXUIElement) -> CGRect? {
+        currentCocoaFrame(of: window)
     }
 
     /// Read the window's AX frame and convert to Cocoa space.
@@ -170,8 +273,11 @@ enum WindowMover {
     /// Apply a Cocoa-space rect to the window. Order size -> position -> size makes
     /// cross-display moves and apps that clamp size-before-position behave (Rectangle).
     /// Windows that can't (or won't) take the zone's size are centered in it instead of
-    /// being abandoned wherever the resize gave up.
-    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) {
+    /// being abandoned wherever the resize gave up. Returns the frame the window was
+    /// ultimately steered to — the INTENT, which callers record; reading the result back
+    /// instead would capture in-between junk from apps that resize asynchronously.
+    @discardableResult
+    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) -> CGRect {
         let restoreEnhanced = suspendEnhancedUserInterface(of: window)
         defer { if let appEl = restoreEnhanced { setBool(appEl, enhancedUserInterfaceAttribute, true) } }
 
@@ -179,9 +285,9 @@ enum WindowMover {
         // Center its current size in the zone — a move it can always honor.
         if !isResizable(window) {
             if let size = axSize(window, kAXSizeAttribute) {
-                place(size: size, in: cocoa, of: window)
+                return place(size: size, in: cocoa, of: window)
             }
-            return
+            return cocoa
         }
 
         let before = axSize(window, kAXSizeAttribute)
@@ -198,17 +304,20 @@ enum WindowMover {
         if let actual = axSize(window, kAXSizeAttribute), let before,
            abs(actual.width - cocoa.width) > 1 || abs(actual.height - cocoa.height) > 1,
            abs(actual.width - before.width) <= 1, abs(actual.height - before.height) <= 1 {
-            place(size: actual, in: cocoa, of: window)
+            return place(size: actual, in: cocoa, of: window)
         }
+        return cocoa
     }
 
     /// Position-only placement: center `size` in the target zone, clamped to the zone's
-    /// screen so the window stays fully on-screen.
-    private static func place(size: CGSize, in zone: CGRect, of window: AXUIElement) {
+    /// screen so the window stays fully on-screen. Returns the placed frame.
+    @discardableResult
+    private static func place(size: CGSize, in zone: CGRect, of window: AXUIElement) -> CGRect {
         let bounds = screen(for: zone)?.visibleFrame ?? zone
         let target = FixedPlacement.center(size: size, in: zone, boundedBy: bounds)
         let ax = Coord.axRect(fromCocoa: target, primaryMaxY: primaryMaxY())
         setPoint(window, kAXPositionAttribute, ax.origin)
+        return target
     }
 
     /// Resizable unless AX says otherwise; if the query itself fails, assume resizable

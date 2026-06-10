@@ -16,6 +16,7 @@ enum ShortcutKit {
         ("right", "Right"),
         ("leftHalf", "Left half"),
         ("rightHalf", "Right half"),
+        ("restore", "Restore previous size"),
     ]
     /// How many positional Zone-N rows to offer (out-of-range ones disable themselves).
     static let zoneRows = 9
@@ -31,6 +32,7 @@ enum ShortcutKit {
         s = s.setting(action: "right", keyCode: kVK_RightArrow, modifiers: hyper)
         s = s.setting(action: "leftHalf", keyCode: kVK_ANSI_LeftBracket, modifiers: hyper)
         s = s.setting(action: "rightHalf", keyCode: kVK_ANSI_RightBracket, modifiers: hyper)
+        s = s.setting(action: "restore", keyCode: kVK_Delete, modifiers: hyper) // "delete the snap"
         return s
     }
 

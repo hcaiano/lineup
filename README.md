@@ -67,6 +67,9 @@ highlight switches to that half: top or bottom edge for stacked, left or right e
 side. Aim near a **corner** and you get that quarter, so four apps fit in one zone. The highlight
 always shows exactly where the window will land.
 
+Changed your mind? Just drag the window out again. The moment it leaves the zone it returns to
+the size it had before, right under your cursor.
+
 **Keyboard shortcuts.** Lineup comes with a few ready to go. They use a "Hyper" key, which is
 Control, Option, Shift and Command pressed together. Pressing four keys at once is a stretch, so
 most people turn a single key (often Caps Lock) into Hyper. Free apps like
@@ -79,6 +82,7 @@ in a minute. If you'd rather not bother, the drag-and-drop above needs no setup 
 | Hyper + Up | Fill the screen |
 | Hyper + Down | Center the window. Press again to cycle the centered widths. |
 | Hyper + [ or ] | Snap to the left or right half |
+| Hyper + Delete | Put the window back where it was before you snapped it |
 
 The shortcuts that snap to a numbered zone start empty, so they won't clash with anything you
 already use. Add the ones you want in Settings.
