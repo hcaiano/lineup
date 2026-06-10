@@ -4,10 +4,11 @@ import LineupCore
 /// Shift-drag snapping: while the user drags a window with SHIFT held, highlight the
 /// zone under the cursor; on mouse-release, snap the dragged window into it.
 ///
-/// A zone's top/bottom 10% edge band targets that HALF of the zone instead, so a column
-/// can hold two apps stacked without editing the layout. The highlight always previews
-/// exactly what release will do; lingering in a zone fades in a one-line hint that
-/// teaches the half-snap.
+/// Every edge of a zone has a 5% hot band that targets that HALF of the zone instead, and
+/// a corner (two bands at once) targets that QUARTER — so a column can hold two apps
+/// stacked, or four apps in a grid, without editing the layout. The highlight always
+/// previews exactly what release will do; lingering in a zone fades in a one-line hint
+/// that teaches the edge snaps.
 ///
 /// Uses a global mouse monitor (mouse events need no extra permission beyond the
 /// Accessibility grant the app already requires to move windows). Reads SHIFT from the
@@ -146,7 +147,7 @@ final class DragSnapController {
 /// Translucent, click-through block highlight. The window frame IS the highlighted target;
 /// an optional one-line hint teaches the half-snap when the user lingers.
 private final class HighlightWindow: NSWindow {
-    static let halfHint = "Drag near the top or bottom edge to fill half"
+    static let halfHint = "Edges fill half, corners a quarter"
 
     private let hintLabel = NSTextField(labelWithString: HighlightWindow.halfHint)
 
