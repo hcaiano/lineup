@@ -291,6 +291,10 @@ private final class EditorCanvas: NSView {
     }
 
     /// The fraction badge ("½", "⅓", "=") shown beside the grip while locked on a guide.
+    /// Same containment rule as the drag hint: try the preferred side, then the opposite
+    /// side, clamped to the canvas; if neither fits, show nothing — the blue divider and
+    /// grip already signal the lock, and a clipped badge (or one sitting on a px readout
+    /// at the screen edge) is worse than none.
     private func drawGuideBadge(_ label: String, near grip: CGRect, vertical: Bool) {
         let s = NSAttributedString(string: label, attributes: [
             .font: NSFont.systemFont(ofSize: 15, weight: .bold),
@@ -298,9 +302,16 @@ private final class EditorCanvas: NSView {
         let sz = s.size()
         let pad: CGFloat = 7
         let w = max(sz.width + pad * 2, 30), h = sz.height + pad
-        let center = vertical
-            ? CGPoint(x: grip.midX, y: grip.maxY + h / 2 + 8)
-            : CGPoint(x: grip.maxX + w / 2 + 8, y: grip.midY)
+        let margin: CGFloat = 8
+        let candidates: [CGPoint] = vertical
+            ? [CGPoint(x: grip.midX, y: grip.maxY + h / 2 + margin),   // above the grip
+               CGPoint(x: grip.midX, y: grip.minY - h / 2 - margin)]   // below it
+            : [CGPoint(x: grip.maxX + w / 2 + margin, y: grip.midY),   // right of the grip
+               CGPoint(x: grip.minX - w / 2 - margin, y: grip.midY)]   // left of it
+        let room = bounds.insetBy(dx: 4, dy: 4)
+        guard let center = candidates.first(where: { c in
+            room.contains(CGRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h))
+        }) else { return }
         let pill = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
         Brand.blue.setFill()
         NSBezierPath(roundedRect: pill, xRadius: h / 2, yRadius: h / 2).fill()

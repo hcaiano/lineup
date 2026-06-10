@@ -21,7 +21,7 @@ window into one with a quick drag or a keyboard shortcut. Every monitor remember
 
 ## Install
 
-1. Download the **Lineup DMG** (a file like `Lineup-1.3.0.dmg`) from the
+1. Download the **Lineup DMG** (a file like `Lineup-1.4.0.dmg`) from the
    [Releases page](https://github.com/hcaiano/lineup/releases/latest).
 2. Open it and drag **Lineup** into your **Applications** folder.
 3. The first time you open Lineup, macOS stops it because it doesn't recognize the developer yet.
