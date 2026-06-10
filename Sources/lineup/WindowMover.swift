@@ -48,7 +48,13 @@ enum WindowMover {
         let err = AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &winRef)
         guard err == .success, let win = winRef else { return nil }
         // Force-cast: AX focused-window attribute is always an AXUIElement.
-        return tame(win as! AXUIElement)
+        let window = tame(win as! AXUIElement)
+        // The focused "window" can be a sheet or system overlay (role != AXWindow);
+        // snapping one of those away from its parent looks broken. Leave them alone.
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef) == .success,
+              (roleRef as? String) == (kAXWindowRole as String) else { return nil }
+        return window
     }
 
     /// Hit-test the window under a global Cocoa point (bottom-left origin). Returns the
