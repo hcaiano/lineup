@@ -87,11 +87,10 @@ enum WindowMover {
             frame: screen.frame, visibleFrame: screen.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
 
-        setFrame(target, of: window)
-        // Record where the window actually LANDED (fixed-size windows get centered, not
-        // the zone rect) so the unsnap match works against reality.
-        SnapMemory.shared.recordSnap(of: window, from: currentCocoa,
-                                     to: currentCocoaFrame(of: window) ?? target)
+        // Record where the window was steered (fixed-size windows get centered, not the
+        // zone rect) so the unsnap match works against where it really ends up.
+        let landed = setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
 
@@ -188,9 +187,8 @@ enum WindowMover {
             index: index, root: root,
             frame: screen.frame, visibleFrame: screen.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
-        setFrame(target, of: window)
-        SnapMemory.shared.recordSnap(of: window, from: currentCocoa,
-                                     to: currentCocoaFrame(of: window) ?? target)
+        let landed = setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
 
@@ -215,9 +213,8 @@ enum WindowMover {
         let idx = Cycle.nextStep(action: actionId, now: now, screenKey: info.key,
                                  focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
         let target = steps[idx]
-        setFrame(target, of: window)
-        SnapMemory.shared.recordSnap(of: window, from: currentCocoa,
-                                     to: currentCocoaFrame(of: window) ?? target)
+        let landed = setFrame(target, of: window)
+        SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
@@ -226,10 +223,9 @@ enum WindowMover {
     static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
         guard AXIsProcessTrusted() else { return }
         let before = currentCocoaFrame(of: window)
-        setFrame(rect, of: window)
+        let landed = setFrame(rect, of: window)
         if let before {
-            SnapMemory.shared.recordSnap(of: window, from: before,
-                                         to: currentCocoaFrame(of: window) ?? rect)
+            SnapMemory.shared.recordSnap(of: window, from: before, to: landed)
         }
     }
 
@@ -241,8 +237,9 @@ enum WindowMover {
               let current = currentCocoaFrame(of: window),
               let pre = SnapMemory.shared.preFrame(of: window, currentFrame: current)
         else { return false }
-        SnapMemory.shared.forget(window)
         setFrame(pre, of: window)
+        // Forget AFTER the move: if a hung app made it fail, the next press can retry.
+        SnapMemory.shared.forget(window)
         return true
     }
 
@@ -276,8 +273,11 @@ enum WindowMover {
     /// Apply a Cocoa-space rect to the window. Order size -> position -> size makes
     /// cross-display moves and apps that clamp size-before-position behave (Rectangle).
     /// Windows that can't (or won't) take the zone's size are centered in it instead of
-    /// being abandoned wherever the resize gave up.
-    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) {
+    /// being abandoned wherever the resize gave up. Returns the frame the window was
+    /// ultimately steered to — the INTENT, which callers record; reading the result back
+    /// instead would capture in-between junk from apps that resize asynchronously.
+    @discardableResult
+    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) -> CGRect {
         let restoreEnhanced = suspendEnhancedUserInterface(of: window)
         defer { if let appEl = restoreEnhanced { setBool(appEl, enhancedUserInterfaceAttribute, true) } }
 
@@ -285,9 +285,9 @@ enum WindowMover {
         // Center its current size in the zone — a move it can always honor.
         if !isResizable(window) {
             if let size = axSize(window, kAXSizeAttribute) {
-                place(size: size, in: cocoa, of: window)
+                return place(size: size, in: cocoa, of: window)
             }
-            return
+            return cocoa
         }
 
         let before = axSize(window, kAXSizeAttribute)
@@ -304,17 +304,20 @@ enum WindowMover {
         if let actual = axSize(window, kAXSizeAttribute), let before,
            abs(actual.width - cocoa.width) > 1 || abs(actual.height - cocoa.height) > 1,
            abs(actual.width - before.width) <= 1, abs(actual.height - before.height) <= 1 {
-            place(size: actual, in: cocoa, of: window)
+            return place(size: actual, in: cocoa, of: window)
         }
+        return cocoa
     }
 
     /// Position-only placement: center `size` in the target zone, clamped to the zone's
-    /// screen so the window stays fully on-screen.
-    private static func place(size: CGSize, in zone: CGRect, of window: AXUIElement) {
+    /// screen so the window stays fully on-screen. Returns the placed frame.
+    @discardableResult
+    private static func place(size: CGSize, in zone: CGRect, of window: AXUIElement) -> CGRect {
         let bounds = screen(for: zone)?.visibleFrame ?? zone
         let target = FixedPlacement.center(size: size, in: zone, boundedBy: bounds)
         let ax = Coord.axRect(fromCocoa: target, primaryMaxY: primaryMaxY())
         setPoint(window, kAXPositionAttribute, ax.origin)
+        return target
     }
 
     /// Resizable unless AX says otherwise; if the query itself fails, assume resizable
