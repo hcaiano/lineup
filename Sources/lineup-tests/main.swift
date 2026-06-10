@@ -638,6 +638,40 @@ do {
     check(outside == zone, "drag target: cursor beside zone -> whole zone (no top band)")
 }
 
+// ---- Divider snap guides (editor drag magnetism) ----
+do {
+    // Full-range divider (only one in its split): all common fractions + no "=" (mid = ½ dedupes).
+    let full = DividerSnap.guides()
+    check(full.count == 5, "guides: lone divider -> 5 common fractions, midpoint dedupes into ½")
+    check(full.contains(where: { $0.label == "½" }), "guides: includes ½")
+    check(!full.contains(where: { $0.label == "=" }), "guides: 0..1 midpoint folds into ½")
+
+    // 3-column case: dragging divider 0 with the other divider at exactly 2/3 — guides stay
+    // within reach, and the equal-zones midpoint (1/3) folds into the ⅓ guide.
+    let d0 = DividerSnap.guides(neighborLower: 0, neighborUpper: 2.0 / 3.0)
+    check(d0.contains(where: { $0.label == "⅓" }), "guides: ⅓ reachable below a 2/3 neighbor")
+    check(!d0.contains(where: { $0.label == "¾" }), "guides: ¾ dropped (beyond the neighbor)")
+    check(!d0.contains(where: { $0.label == "⅔" }), "guides: ⅔ dropped (== neighbor)")
+    check(!d0.contains(where: { $0.label == "=" }), "guides: equal-zones midpoint folds into ⅓")
+
+    // Asymmetric neighbors produce a real "=" guide at their midpoint.
+    let equalized = DividerSnap.guides(neighborLower: 0.2, neighborUpper: 0.9)
+    check(equalized.contains(where: { $0.label == "=" && abs($0.fraction - 0.55) < 0.0001 }),
+          "guides: '=' at the neighbor midpoint (0.55)")
+
+    // apply(): inside the threshold locks on; outside passes through untouched.
+    let g = DividerSnap.guides()
+    let locked = DividerSnap.apply(0.336, guides: g, threshold: 0.005)
+    check(locked.guide?.label == "⅓", "snap: 0.336 within 0.005 of ⅓ -> locks")
+    eq(CGFloat(locked.fraction), CGFloat(1.0 / 3.0), "snap: locked fraction is exactly ⅓")
+    let free = DividerSnap.apply(0.30, guides: g, threshold: 0.005)
+    check(free.guide == nil, "snap: 0.30 outside every threshold -> free")
+    eq(CGFloat(free.fraction), 0.30, "snap: free drag passes through untouched")
+    // Nearest guide wins between two close candidates.
+    let near = DividerSnap.apply(0.49, guides: g, threshold: 0.05)
+    check(near.guide?.label == "½", "snap: nearest guide wins (0.49 -> ½, not ⅓)")
+}
+
 // ---- P5: left/right cycling ----
 do { // step 0 honors the seam column; later steps are fractions; dedup
     let wideLayout = Node.columns([Boundary(1133, .pixels), Boundary(2865, .pixels)])

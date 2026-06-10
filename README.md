@@ -21,7 +21,7 @@ window into one with a quick drag or a keyboard shortcut. Every monitor remember
 
 ## Install
 
-1. Download the **Lineup DMG** (a file like `Lineup-1.3.0.dmg`) from the
+1. Download the **Lineup DMG** (a file like `Lineup-1.4.0.dmg`) from the
    [Releases page](https://github.com/hcaiano/lineup/releases/latest).
 2. Open it and drag **Lineup** into your **Applications** folder.
 3. The first time you open Lineup, macOS stops it because it doesn't recognize the developer yet.
@@ -47,7 +47,9 @@ appear right where they'll live.
 - **Hover over a zone** to see its buttons. Split it side by side, split it top and bottom, or merge
   it back together. The buttons show you the shape you'll get, so there's nothing to read.
 - **Drag a divider handle** to resize. Every zone shows its size in pixels and updates live while
-  you drag. Split as many times as you like.
+  you drag. Near a common spot — the middle, a third, a quarter, or where two zones become equal —
+  the divider gently locks on and shows a badge (½, ⅓, =). Keep dragging and it lets go, so any
+  custom size is still yours. Split as many times as you like.
 - Using more than one monitor? The editor appears on each screen with that screen's own layout.
 - Click **Save** when it looks right, or **Cancel** to throw the changes away.
 
