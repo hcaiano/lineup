@@ -62,9 +62,10 @@ There are two ways to drop a window into a zone.
 **Drag and drop.** Hold **Shift** while you drag a window. The zone under your cursor lights up. Let
 go to drop the window in. You can turn this off in Settings.
 
-Want two apps stacked in one zone? While shift-dragging, aim near the zone's **top or bottom
-edge** and the highlight switches to that half. Drop, then place the second app in the other half
-the same way. The highlight always shows exactly where the window will land.
+Want two apps sharing one zone? While shift-dragging, aim near any **edge** of the zone and the
+highlight switches to that half: top or bottom edge for stacked, left or right edge for side by
+side. Aim near a **corner** and you get that quarter, so four apps fit in one zone. The highlight
+always shows exactly where the window will land.
 
 **Keyboard shortcuts.** Lineup comes with a few ready to go. They use a "Hyper" key, which is
 Control, Option, Shift and Command pressed together. Pressing four keys at once is a stretch, so

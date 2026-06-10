@@ -1,12 +1,14 @@
 import CoreGraphics
 
-/// Resolves what a shift-drag should snap to, so one column can host two apps stacked
-/// without editing the layout: the cursor in a zone's top or bottom 10% edge band targets
-/// that HALF of the zone; the middle 80% targets the whole zone, keeping the common case
-/// untouched. The highlight previews the target live, so crossing a band is self-evident.
-/// Pure and tested; the AppKit drag controller just feeds it points.
+/// Resolves what a shift-drag should snap to, so complex arrangements come straight from
+/// the drag with no layout editing: every edge of a zone has a 5% hot band. The top or
+/// bottom band targets that vertical HALF, the left or right band targets that horizontal
+/// half, and two bands at once (a corner) target that QUARTER. The middle of the zone
+/// targets the whole zone, keeping the common case untouched. The highlight previews the
+/// target live, so crossing a band is self-evident. Pure and tested; the AppKit drag
+/// controller just feeds it points.
 public enum DragTarget {
-    public static let defaultEdgeBand: CGFloat = 0.10
+    public static let defaultEdgeBand: CGFloat = 0.05
 
     /// `zone` and `cursor` are Cocoa coordinates (+y up). A cursor OUTSIDE the zone (the
     /// caller's nearest-zone fallback: menu bar, Dock gap, past the screen edge) always
@@ -14,14 +16,19 @@ public enum DragTarget {
     public static func rect(zone: CGRect, cursor: CGPoint,
                             edgeBand: CGFloat = DragTarget.defaultEdgeBand) -> CGRect {
         guard zone.contains(cursor) else { return zone }
-        let half = zone.height / 2
-        let band = zone.height * max(0, min(edgeBand, 0.5))
-        if cursor.y >= zone.maxY - band {
-            return CGRect(x: zone.minX, y: zone.midY, width: zone.width, height: half)  // top half
-        }
-        if cursor.y <= zone.minY + band {
-            return CGRect(x: zone.minX, y: zone.minY, width: zone.width, height: half)  // bottom half
-        }
-        return zone
+        let band = max(0, min(edgeBand, 0.5))
+        let vBand = zone.height * band
+        let hBand = zone.width * band
+        let top = cursor.y >= zone.maxY - vBand
+        let bottom = !top && cursor.y <= zone.minY + vBand
+        let left = cursor.x <= zone.minX + hBand
+        let right = !left && cursor.x >= zone.maxX - hBand
+
+        var r = zone
+        if top { r.origin.y = zone.midY; r.size.height = zone.height / 2 }
+        if bottom { r.size.height = zone.height / 2 }
+        if left { r.size.width = zone.width / 2 }
+        if right { r.origin.x = zone.midX; r.size.width = zone.width / 2 }
+        return r
     }
 }
