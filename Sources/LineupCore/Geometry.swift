@@ -27,6 +27,25 @@ public enum Coord {
     }
 }
 
+/// Placement for windows that can't take the zone's size: non-resizable windows
+/// (Terminal's grid snap, fixed dialogs) and apps whose minimum size beats the zone.
+/// Instead of leaving them half-applied wherever the resize gave up, center what the
+/// window actually is inside the zone — then nudge it back inside `bounds` (the screen's
+/// visible frame) so a too-big window near a screen edge never hangs off-screen. A size
+/// larger than `bounds` itself centers its overflow.
+public enum FixedPlacement {
+    public static func center(size: CGSize, in zone: CGRect, boundedBy bounds: CGRect) -> CGRect {
+        func axis(_ zoneMid: CGFloat, _ length: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+            let centered = zoneMid - length / 2
+            guard length <= hi - lo else { return (lo + hi) / 2 - length / 2 }
+            return min(max(centered, lo), hi - length)
+        }
+        return CGRect(x: axis(zone.midX, size.width, bounds.minX, bounds.maxX),
+                      y: axis(zone.midY, size.height, bounds.minY, bounds.maxY),
+                      width: size.width, height: size.height)
+    }
+}
+
 /// Pick the display a window belongs to by maximum area of intersection, falling back
 /// to the display nearest the window's center (handles windows dragged into gaps /
 /// negative-origin secondary displays). All rects are Cocoa-space.
