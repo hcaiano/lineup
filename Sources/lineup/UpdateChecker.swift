@@ -33,6 +33,9 @@ enum UpdateChecker {
     }
 
     private static func present(_ result: Result<LatestRelease, Error>) {
+        // Accessory apps don't own key focus; without this the alert can open BEHIND
+        // whatever the user is working in and look like the check silently failed.
+        NSApp.activate(ignoringOtherApps: true)
         switch result {
         case .success(let release):
             let current = currentVersion()

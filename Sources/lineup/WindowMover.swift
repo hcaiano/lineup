@@ -31,16 +31,38 @@ enum WindowMover {
 
     // MARK: - AX element access
 
+    /// All AX calls run on the main thread, and a hung target app blocks each one for the
+    /// system default of 6 seconds. One second is generous for a healthy app; past that we
+    /// fail the snap fast instead of beachballing the menu bar (AeroSpace's lesson).
+    private static func tame(_ el: AXUIElement) -> AXUIElement {
+        AXUIElementSetMessagingTimeout(el, 1.0)
+        return el
+    }
+
     private static func focusedWindow() -> AXUIElement? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
         // Never target our own UI (e.g. the alignment overlay while it's frontmost).
         if app.bundleIdentifier == Bundle.main.bundleIdentifier { return nil }
-        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        let appEl = tame(AXUIElementCreateApplication(app.processIdentifier))
         var winRef: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &winRef)
         guard err == .success, let win = winRef else { return nil }
         // Force-cast: AX focused-window attribute is always an AXUIElement.
-        return (win as! AXUIElement)
+        let window = tame(win as! AXUIElement)
+        // The focused "window" can be a sheet or system overlay (role != AXWindow);
+        // snapping one of those away from its parent looks broken. Leave them alone.
+        // Fail OPEN: a flaky role read must not refuse a real window.
+        if isConfirmedNonWindow(window) { return nil }
+        return window
+    }
+
+    /// True only when the role read SUCCEEDS and says "not a window". Errors and
+    /// timeouts return false, so flaky-but-real windows still snap.
+    private static func isConfirmedNonWindow(_ el: AXUIElement) -> Bool {
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef) == .success,
+              let role = roleRef as? String else { return false }
+        return role != (kAXWindowRole as String)
     }
 
     /// Hit-test the window under a global Cocoa point (bottom-left origin). Returns the
@@ -48,11 +70,11 @@ enum WindowMover {
     static func window(atCocoaPoint p: CGPoint) -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
         let axY = primaryMaxY() - p.y // CG hit-test uses top-left origin from primary
-        let sys = AXUIElementCreateSystemWide()
+        let sys = tame(AXUIElementCreateSystemWide())
         var hitRef: AXUIElement?
         guard AXUIElementCopyElementAtPosition(sys, Float(p.x), Float(axY), &hitRef) == .success,
               let hit = hitRef else { return nil }
-        return enclosingWindow(of: hit)
+        return enclosingWindow(of: tame(hit))
     }
 
     /// Walk up the AX hierarchy to the element's window (via kAXWindow shortcut, then by
@@ -69,12 +91,15 @@ enum WindowMover {
             var winRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(e, kAXWindowAttribute as CFString, &winRef) == .success,
                let w = winRef {
-                return (w as! AXUIElement)
+                // The kAXWindow shortcut can hand back a sheet/overlay (e.g. from inside
+                // a Save sheet). Confirmed non-windows are not drag targets.
+                let candidate = tame(w as! AXUIElement)
+                return isConfirmedNonWindow(candidate) ? nil : candidate
             }
             var parentRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(e, kAXParentAttribute as CFString, &parentRef) == .success,
                let parent = parentRef {
-                current = (parent as! AXUIElement)
+                current = tame(parent as! AXUIElement)
             } else {
                 current = nil
             }
@@ -144,11 +169,71 @@ enum WindowMover {
 
     /// Apply a Cocoa-space rect to the window. Order size -> position -> size makes
     /// cross-display moves and apps that clamp size-before-position behave (Rectangle).
+    /// Windows that can't (or won't) take the zone's size are centered in it instead of
+    /// being abandoned wherever the resize gave up.
     private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) {
+        let restoreEnhanced = suspendEnhancedUserInterface(of: window)
+        defer { if let appEl = restoreEnhanced { setBool(appEl, enhancedUserInterfaceAttribute, true) } }
+
+        // Non-resizable window (Terminal's grid snap, fixed dialogs): don't fight it.
+        // Center its current size in the zone — a move it can always honor.
+        if !isResizable(window) {
+            if let size = axSize(window, kAXSizeAttribute) {
+                place(size: size, in: cocoa, of: window)
+            }
+            return
+        }
+
+        let before = axSize(window, kAXSizeAttribute)
         let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY())
         setSize(window, kAXSizeAttribute, ax.size)
         setPoint(window, kAXPositionAttribute, ax.origin)
         setSize(window, kAXSizeAttribute, ax.size)
+
+        // Verify: apps with a minimum size accept the move but refuse the resize, leaving
+        // the window hanging out of the zone. Re-place what we actually got — but ONLY on
+        // a genuine refusal (size unchanged from before). Apps that resize asynchronously
+        // (JetBrains' AX bridge) read back a stale in-between size; re-placing on that
+        // would mis-position the final frame, so those are left alone.
+        if let actual = axSize(window, kAXSizeAttribute), let before,
+           abs(actual.width - cocoa.width) > 1 || abs(actual.height - cocoa.height) > 1,
+           abs(actual.width - before.width) <= 1, abs(actual.height - before.height) <= 1 {
+            place(size: actual, in: cocoa, of: window)
+        }
+    }
+
+    /// Position-only placement: center `size` in the target zone, clamped to the zone's
+    /// screen so the window stays fully on-screen.
+    private static func place(size: CGSize, in zone: CGRect, of window: AXUIElement) {
+        let bounds = screen(for: zone)?.visibleFrame ?? zone
+        let target = FixedPlacement.center(size: size, in: zone, boundedBy: bounds)
+        let ax = Coord.axRect(fromCocoa: target, primaryMaxY: primaryMaxY())
+        setPoint(window, kAXPositionAttribute, ax.origin)
+    }
+
+    /// Resizable unless AX says otherwise; if the query itself fails, assume resizable
+    /// and let the verify step clean up (Rectangle's rule).
+    private static func isResizable(_ window: AXUIElement) -> Bool {
+        var settable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &settable) == .success
+        else { return true }
+        return settable.boolValue
+    }
+
+    /// "AXEnhancedUserInterface" on an app (set by VoiceOver and some Electron apps) makes
+    /// it animate and re-constrain AX moves, so frames land somewhere else or not at all.
+    /// Every serious mover (Rectangle, Loop, Hammerspoon) flips it off around the move and
+    /// restores it after. Returns the app element to restore on, or nil if it was off.
+    private static let enhancedUserInterfaceAttribute = "AXEnhancedUserInterface"
+    private static func suspendEnhancedUserInterface(of window: AXUIElement) -> AXUIElement? {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(window, &pid) == .success else { return nil }
+        let appEl = tame(AXUIElementCreateApplication(pid)) // fresh element: tame it too
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, enhancedUserInterfaceAttribute as CFString, &ref) == .success,
+              (ref as? Bool) == true else { return nil }
+        setBool(appEl, enhancedUserInterfaceAttribute, false)
+        return appEl
     }
 
     // MARK: - Screen helpers
@@ -208,5 +293,9 @@ enum WindowMover {
         var s = size
         guard let axv = AXValueCreate(.cgSize, &s) else { return }
         AXUIElementSetAttributeValue(el, attr as CFString, axv)
+    }
+
+    private static func setBool(_ el: AXUIElement, _ attr: String, _ value: Bool) {
+        AXUIElementSetAttributeValue(el, attr as CFString, value ? kCFBooleanTrue : kCFBooleanFalse)
     }
 }

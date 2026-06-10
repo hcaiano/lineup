@@ -46,6 +46,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()      // hotkey status (e.g. failures if Magnet owns the combos)
         requestAccessibility() // prompt up front; hotkeys can't move windows without it
         startAccessibilityWatch()
+        // A deferred legacy migration is waiting for its display. Watch for displays
+        // coming and going so plugging it in completes the migration NOW, not at the
+        // next launch (the menu warning clears itself the same moment).
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    @objc private func screensChanged() {
+        guard configState == .migrationDeferred else { return }
+        reloadConfig()
+        if configState != .migrationDeferred { buildStatusItem() }
     }
 
     /// macOS grants Accessibility while the app keeps running, but the menu was built once and

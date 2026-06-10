@@ -62,6 +62,30 @@ do {
           "picker: negative-origin no-overlap -> nearest")
 }
 
+// ---- Fixed placement (non-resizable / size-refusing windows) ----
+do {
+    let bounds = CGRect(x: 0, y: 0, width: 2000, height: 1000) // screen visible frame
+    // Window smaller than the zone: dead-centered in the zone.
+    let zone = CGRect(x: 100, y: 0, width: 800, height: 1000)
+    let small = FixedPlacement.center(size: CGSize(width: 400, height: 300), in: zone, boundedBy: bounds)
+    check(small == CGRect(x: 300, y: 350, width: 400, height: 300), "fixed: small window centers in zone")
+    // Window wider than an edge zone: centering would push it past the screen edge;
+    // it clamps back fully on-screen instead.
+    let leftEdge = CGRect(x: 0, y: 0, width: 300, height: 1000)
+    let wide = FixedPlacement.center(size: CGSize(width: 600, height: 400), in: leftEdge, boundedBy: bounds)
+    eq(wide.minX, 0, "fixed: too-wide window clamps to the screen edge")
+    check(wide.maxX <= bounds.maxX, "fixed: clamped window stays on-screen")
+    // Right edge clamps the other way.
+    let rightEdge = CGRect(x: 1700, y: 0, width: 300, height: 1000)
+    let wideR = FixedPlacement.center(size: CGSize(width: 600, height: 400), in: rightEdge, boundedBy: bounds)
+    eq(wideR.maxX, 2000, "fixed: right-edge zone clamps to the right screen edge")
+    // Window larger than the screen itself: overflow centers (symmetric spill).
+    let huge = FixedPlacement.center(size: CGSize(width: 2400, height: 400), in: zone, boundedBy: bounds)
+    eq(huge.midX, 1000, "fixed: larger-than-screen centers its overflow")
+    // Size is never altered — this is a position-only placement.
+    check(huge.width == 2400 && huge.height == 400, "fixed: size passes through untouched")
+}
+
 // ---- Columns (divider model) ----
 let frame = CGRect(x: 0, y: 0, width: 5120, height: 1440)
 let visible = CGRect(x: 0, y: 0, width: 5120, height: 1392)

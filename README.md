@@ -93,8 +93,8 @@ Open **Settings** from the menu bar.
 
 ## Good to know
 
-- Lineup moves and resizes windows the same way you would by hand. A few apps that insist on a fixed
-  size (like Terminal) might not land exactly on the line. Most apps fit perfectly.
+- Lineup moves and resizes windows the same way you would by hand. A few apps insist on a fixed or
+  minimum size (like Terminal); Lineup centers those neatly in the zone instead of forcing them.
 - Lineup only touches the monitors you have plugged in right now. Unplug one and its layout waits
   safely until you connect it again.
 
