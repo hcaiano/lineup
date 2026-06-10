@@ -8,9 +8,12 @@ import CoreGraphics
 public enum DragTarget {
     public static let defaultEdgeBand: CGFloat = 0.10
 
-    /// `zone` and `cursor` are Cocoa coordinates (+y up).
+    /// `zone` and `cursor` are Cocoa coordinates (+y up). A cursor OUTSIDE the zone (the
+    /// caller's nearest-zone fallback: menu bar, Dock gap, past the screen edge) always
+    /// targets the whole zone — bands only mean something while you're actually inside.
     public static func rect(zone: CGRect, cursor: CGPoint,
                             edgeBand: CGFloat = DragTarget.defaultEdgeBand) -> CGRect {
+        guard zone.contains(cursor) else { return zone }
         let half = zone.height / 2
         let band = zone.height * max(0, min(edgeBand, 0.5))
         if cursor.y >= zone.maxY - band {

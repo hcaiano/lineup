@@ -630,6 +630,12 @@ do {
     let short = CGRect(x: 0, y: 0, width: 1000, height: 200)
     let topOfShort = DragTarget.rect(zone: short, cursor: CGPoint(x: 500, y: 195))
     eq(topOfShort.minY, 100, "drag target: short zone top band -> its top half")
+    // Cursor OUTSIDE the zone (nearest-zone fallback: menu bar above, past an edge) must
+    // target the WHOLE zone — never a half via the band math on out-of-zone coordinates.
+    check(t(1050) == zone, "drag target: cursor above zone (menu bar) -> whole zone")
+    check(t(-50) == zone, "drag target: cursor below zone -> whole zone")
+    let outside = DragTarget.rect(zone: zone, cursor: CGPoint(x: 5000, y: 950))
+    check(outside == zone, "drag target: cursor beside zone -> whole zone (no top band)")
 }
 
 // ---- P5: left/right cycling ----

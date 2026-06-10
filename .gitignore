@@ -15,3 +15,7 @@ progress.md
 .plan-attestation
 Icon/logo-preview.png
 Icon/icon-blue-*.png
+
+# wrangler local state (web deploys)
+.wrangler/
+web/.wrangler/
