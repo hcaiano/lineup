@@ -610,6 +610,71 @@ do { // setDivider: root vertical keeps pixels (seams); nested keeps fractions
     try clampedPts.validate()
 }
 
+// ---- setDivider keeps EVERY other line fixed (nested splits don't rescale) ----
+do {
+    // The editor's split nests, so "3 columns" is really [col1 | (col2 col3)]. Dragging the
+    // OUTER divider must keep col3 (and the col2|col3 line) exactly where they are — only the
+    // two zones the dragged line touches may resize.
+    let frame = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+    let visible = frame
+    func cols(_ n: Node) -> [CGRect] { Layout.zones(n, frame: frame, visibleFrame: visible, pixelsWide: 1000) }
+
+    // Build [col1 | (col2 col3)] by splitting the right column of a 2-col layout.
+    let twoCol = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf])
+    let nestedRight = LayoutEdit.split(twoCol, at: [1], axis: .vertical)
+    let before = cols(nestedRight)
+    eq(before[0].width, 500, "nested-right: col1 starts at 500")
+    eq(before[1].width, 250, "nested-right: col2 starts at 250")
+    eq(before[2].width, 250, "nested-right: col3 starts at 250")
+    eq(before[2].minX, 750, "nested-right: col2|col3 line starts at 750")
+
+    // Drag the OUTER (root) divider right: 0.5 -> 0.6.
+    let dragged = LayoutEdit.setDivider(nestedRight, at: [], index: 0, fraction: 0.6, rootPixelsWide: 1000)
+    let after = cols(dragged)
+    eq(after[0].width, 600, "nested-right: col1 grows to 600")
+    eq(after[2].width, 250, "nested-right: col3 stays 250 (untouched line fixed)")
+    eq(after[2].minX, 750, "nested-right: col2|col3 line stays at 750")
+    eq(after[1].width, 150, "nested-right: col2 absorbs the change -> 150")
+    try dragged.validate()
+
+    // Symmetric: [(col1 col2) | col3], drag the root divider LEFT -> col1 fixed.
+    let nestedLeft = LayoutEdit.split(twoCol, at: [0], axis: .vertical)
+    let bl = cols(nestedLeft)
+    eq(bl[0].width, 250, "nested-left: col1 starts at 250")
+    let draggedL = LayoutEdit.setDivider(nestedLeft, at: [], index: 0, fraction: 0.4, rootPixelsWide: 1000)
+    let al = cols(draggedL)
+    eq(al[0].width, 250, "nested-left: col1 stays 250 (untouched line fixed)")
+    eq(al[0].maxX, 250, "nested-left: col1|col2 line stays at 250")
+    eq(al[1].width, 150, "nested-left: col2 absorbs -> 150")
+    eq(al[2].width, 600, "nested-left: col3 grows to 600")
+    try draggedL.validate()
+
+    // The dragged divider can't be pushed past a nested line: dragging the root divider far
+    // right stops just left of the col2|col3 line (750), never crossing it.
+    let pushed = LayoutEdit.setDivider(nestedRight, at: [], index: 0, fraction: 0.95, rootPixelsWide: 1000)
+    let ap = cols(pushed)
+    eq(ap[2].minX, 750, "nested-right: outer divider clamps at the inner line, col3 still fixed")
+    eq(ap[2].width, 250, "nested-right: col3 still 250 after over-drag")
+    check(ap[1].width >= 1, "nested-right: col2 never collapses")
+    try pushed.validate()
+
+    // Symmetric for rows: [(row1 row2) / row3] stacked, drag the outer horizontal divider.
+    let twoRow = Node.split(axis: .horizontal, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf])
+    let nestedTop = LayoutEdit.split(twoRow, at: [0], axis: .horizontal)
+    let draggedRow = LayoutEdit.setDivider(nestedTop, at: [], index: 0, fraction: 0.4, rootPixelsWide: 1000)
+    let rr = cols(draggedRow) // semantic order top->bottom
+    eq(rr[0].height, 250, "nested rows: row1 height stays 250 (untouched line fixed)")
+    try draggedRow.validate()
+
+    // Regression: a FLAT 3-column split is unchanged by the new logic (no nested lines).
+    let flat = Node.columns([Boundary(1.0 / 3.0, .fraction), Boundary(2.0 / 3.0, .fraction)])
+    let flatDragged = LayoutEdit.setDivider(flat, at: [], index: 0, fraction: 0.5, rootPixelsWide: 1000)
+    let fa = cols(flatDragged)
+    eq(fa[2].minX, Layout.zones(flat, frame: frame, visibleFrame: visible, pixelsWide: 1000)[2].minX,
+       "flat 3-col: untouched divider stays put")
+    try flatDragged.validate()
+}
+
 // ---- P4: shortcuts model ----
 do {
     var sc = Shortcuts()

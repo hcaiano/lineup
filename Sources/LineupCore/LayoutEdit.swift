@@ -48,6 +48,13 @@ public enum LayoutEdit {
     /// between its neighbors, so dragging one divider past an adjacent one can never reorder
     /// the stored array relative to the sorted visual handles (which would make handles jump
     /// and resize the wrong boundary).
+    ///
+    /// Every OTHER line stays exactly where it is. Moving a divider only resizes the two
+    /// zones it touches; if an adjacent child is itself split, its inner lines are anchored
+    /// in place (their fractions are recomputed for the child's new size) so they don't slide.
+    /// The drag also stops at the nearest inner line, never crossing it — the same rule that
+    /// already keeps flat sibling dividers from reordering.
+    ///
     /// `containerLength` (points along the split axis) lets `.points`-unit neighbors — legal
     /// on a root vertical split per `Node.validate`, so a hand-authored config may carry them —
     /// be normalized for clamping too. The on-screen editor passes its handle's container size;
@@ -70,9 +77,22 @@ public enum LayoutEdit {
             }
         }
         let gap = 0.01
-        var lower = 0.01, upper = 0.99
-        if index > 0, let lf = siblingFraction(dividers[index - 1]) { lower = max(lower, lf + gap) }
-        if index < dividers.count - 1, let uf = siblingFraction(dividers[index + 1]) { upper = min(upper, uf - gap) }
+        let leftEdge = index > 0 ? (siblingFraction(dividers[index - 1]) ?? 0) : 0
+        let rightEdge = index < dividers.count - 1 ? (siblingFraction(dividers[index + 1]) ?? 1) : 1
+        let oldX = siblingFraction(dividers[index])
+        var lower = max(0.01, leftEdge + gap)
+        var upper = min(0.99, rightEdge - gap)
+        // Also stop at the nearest inner line of either adjacent child, so the drag can't push
+        // a nested line out of its container (which would otherwise drag that line along). Each
+        // child spans from the dragged line to its outer neighbour, so measure lines there.
+        if let oldX {
+            if let near = sameAxisLines(children[index], axis: axis, lo: leftEdge, hi: oldX).max() {
+                lower = max(lower, near + gap)
+            }
+            if let near = sameAxisLines(children[index + 1], axis: axis, lo: oldX, hi: rightEdge).min() {
+                upper = min(upper, near - gap)
+            }
+        }
         if lower > upper { let mid = (lower + upper) / 2; lower = mid; upper = mid } // neighbors too close
         let f = min(max(fraction, lower), upper)
         let newBoundary: Boundary = isRootVertical
@@ -80,6 +100,66 @@ public enum LayoutEdit {
             : Boundary(f, .fraction)
         var newDividers = dividers
         newDividers[index] = newBoundary
-        return root.replacingNode(at: path, with: .split(axis: axis, dividers: newDividers, children: children))
+
+        // Anchor the inner lines of the two touched children: as each child's extent along
+        // `axis` changes, recompute its same-axis dividers so their absolute positions hold.
+        var newChildren = children
+        if let oldX {
+            newChildren[index] = anchorLines(children[index], axis: axis,
+                                             from: (leftEdge, oldX), to: (leftEdge, f))
+            newChildren[index + 1] = anchorLines(children[index + 1], axis: axis,
+                                                 from: (oldX, rightEdge), to: (f, rightEdge))
+        }
+        return root.replacingNode(at: path, with: .split(axis: axis, dividers: newDividers, children: newChildren))
+    }
+
+    /// Absolute positions (in the same coords as `lo`/`hi`) of every divider line inside
+    /// `node` that runs along `axis`, at any nesting depth. A same-axis split contributes its
+    /// own lines; a cross-axis split passes the extent straight through (its dividers run the
+    /// other way, so a change along `axis` never moves them). Nested same-axis dividers are
+    /// always `.fraction` (only the root vertical split may carry pixels/points), so reading
+    /// `.value` as a fraction of the child's extent is exact here.
+    private static func sameAxisLines(_ node: Node, axis: Axis, lo: Double, hi: Double) -> [Double] {
+        guard case let .split(splitAxis, dividers, children) = node else { return [] }
+        let len = hi - lo
+        guard len > 0 else { return [] }
+        if splitAxis != axis {
+            return children.flatMap { sameAxisLines($0, axis: axis, lo: lo, hi: hi) }
+        }
+        let lines = dividers.map { lo + $0.value * len }
+        let edges = [lo] + lines + [hi]
+        var out = lines
+        for i in children.indices {
+            out += sameAxisLines(children[i], axis: axis, lo: edges[i], hi: edges[i + 1])
+        }
+        return out
+    }
+
+    /// Rescale `node` so that, as its extent along `axis` moves from `old` to `new` (one end
+    /// fixed), every same-axis line inside it keeps its absolute position. Same-axis splits get
+    /// their fraction dividers recomputed against the new extent and recurse per child sub-range;
+    /// cross-axis splits hand the whole extent change to every child (their own dividers, running
+    /// the other way, don't move). Leaves are returned unchanged.
+    private static func anchorLines(_ node: Node, axis: Axis,
+                                    from old: (lo: Double, hi: Double),
+                                    to new: (lo: Double, hi: Double)) -> Node {
+        guard case let .split(splitAxis, dividers, children) = node else { return node }
+        if splitAxis != axis {
+            let kids = children.map { anchorLines($0, axis: axis, from: old, to: new) }
+            return .split(axis: splitAxis, dividers: dividers, children: kids)
+        }
+        let oldLen = old.hi - old.lo, newLen = new.hi - new.lo
+        guard oldLen > 0, newLen > 0 else { return node }
+        let absLines = dividers.map { old.lo + $0.value * oldLen }     // nested same-axis -> .fraction
+        let newDividers = absLines.map { Boundary(($0 - new.lo) / newLen, .fraction) }
+        let oldEdges = [old.lo] + absLines + [old.hi]
+        let newEdges = [new.lo] + absLines + [new.hi]                  // interior lines preserved
+        var kids: [Node] = []
+        for i in children.indices {
+            kids.append(anchorLines(children[i], axis: axis,
+                                    from: (oldEdges[i], oldEdges[i + 1]),
+                                    to: (newEdges[i], newEdges[i + 1])))
+        }
+        return .split(axis: splitAxis, dividers: newDividers, children: kids)
     }
 }
