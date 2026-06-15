@@ -43,7 +43,18 @@ identity_signs_with_stable_requirement() {
 }
 
 if security find-certificate -c "$IDENTITY" >/dev/null 2>&1 && identity_signs_with_stable_requirement; then
-  echo "Signing identity '$IDENTITY' already works (stable, cert-based signature). Nothing to do."
+  echo "Signing identity '$IDENTITY' already works (stable, cert-based signature)."
+  # The backup can only be regenerated from fresh key material, which a re-run doesn't have.
+  # If a portable copy is wanted but missing, say so honestly instead of implying a re-run
+  # would produce it — exporting the existing cert is the way to keep the SAME signature.
+  if [ "${BACKUP_IDENTITY:-0}" = "1" ] && [ ! -f "$BACKUP_P12" ]; then
+    echo "Note: a re-run can't recreate the backup .p12 (the private key only existed during"
+    echo "      first setup). To get a portable copy WITHOUT changing the certificate (which"
+    echo "      would cost users one more re-grant), export '$IDENTITY' from Keychain Access"
+    echo "      (File > Export Items) as a .p12. Only delete + re-run if a new cert is acceptable."
+  else
+    echo "Nothing to do."
+  fi
   exit 0
 fi
 
