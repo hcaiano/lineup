@@ -61,13 +61,19 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -addext "keyUsage=critical,digitalSignature" \
   -addext "basicConstraints=critical,CA:FALSE" >/dev/null 2>&1
 
-# CRITICAL: -legacy. OpenSSL 3.x defaults to a PKCS#12 MAC/cipher that the macOS Security
-# framework cannot read, so `security import` fails ("MAC verification failed") and the key
-# never lands — codesign then silently falls back to ad-hoc. -legacy emits a PKCS#12 macOS
-# can import. (This is why the previous version of this script never actually worked on
-# modern macOS + OpenSSL 3.)
+# PKCS#12 must be in a format the macOS Security framework can import, across both OpenSSL
+# flavors a maintainer might have:
+#   - OpenSSL 3.x defaults to a MAC/cipher macOS can't read; it needs `-legacy`. Without it,
+#     `security import` fails ("MAC verification failed"), the key never lands, and codesign
+#     silently falls back to ad-hoc. (That's why the old script never worked on OpenSSL 3.)
+#   - LibreSSL (stock macOS /usr/bin/openssl) and OpenSSL 1.x have no `-legacy` flag and don't
+#     need it — their default output already imports.
+# So: try `-legacy`, fall back to plain `-export`. Whichever produces a usable identity is
+# confirmed by the sign-probe verification later.
 make_p12() { # $1 = output path
   openssl pkcs12 -export -legacy -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+    -name "$IDENTITY" -out "$1" -passout "pass:$P12_PASS" >/dev/null 2>&1 && return 0
+  openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
     -name "$IDENTITY" -out "$1" -passout "pass:$P12_PASS" >/dev/null 2>&1
 }
 
@@ -88,7 +94,9 @@ LOGIN_PW=""
 read -r -s -p "    Login password (optional): " LOGIN_PW || true
 echo
 if [ -n "$LOGIN_PW" ]; then
-  if security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$LOGIN_PW" "$KEYCHAIN" >/dev/null 2>&1; then
+  # Scope the partition-list change to OUR key (-l "$IDENTITY") so other keys in the login
+  # keychain are left untouched.
+  if security set-key-partition-list -S apple-tool:,apple:,codesign: -s -l "$IDENTITY" -k "$LOGIN_PW" "$KEYCHAIN" >/dev/null 2>&1; then
     echo "    authorized."
   else
     echo "    (couldn't set partition list — wrong password? You'll get one 'Always Allow' prompt on first build.)"

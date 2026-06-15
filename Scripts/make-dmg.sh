@@ -23,6 +23,9 @@ if ! codesign -d -r- "$APP" 2>&1 | grep -q 'certificate leaf'; then
     exit 1
   fi
 fi
+# `-d -r-` shows the embedded requirement but doesn't prove the bundle still verifies; since
+# this script gates prebuilt bundles too, confirm the signature is actually intact.
+codesign --verify --strict "$APP" || { echo "error: $APP failed signature verification; not packaging." >&2; exit 1; }
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null || echo 1.0.0)"
 DMG="$OUT/Lineup-$VERSION.dmg"
