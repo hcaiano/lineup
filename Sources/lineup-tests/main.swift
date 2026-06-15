@@ -676,6 +676,13 @@ do {
     eq(asp[2].width, 250, "subpixel: col3 stays 250 exactly")
     try subpixel.validate()
 
+    // Malformed (arity-broken) split: more dividers than children-1. setDivider must be a
+    // no-op, not trap on the children[index+1] access.
+    let malformed = Node.split(axis: .vertical, dividers: [Boundary(0.3, .fraction), Boundary(0.6, .fraction)],
+                               children: [.leaf, .leaf]) // 2 dividers, only 2 children (needs 3)
+    check(LayoutEdit.setDivider(malformed, at: [], index: 1, fraction: 0.5, rootPixelsWide: 1000) == malformed,
+          "malformed split: setDivider is a no-op, no trap")
+
     // Regression: a FLAT 3-column split is unchanged by the new logic (no nested lines).
     let flat = Node.columns([Boundary(1.0 / 3.0, .fraction), Boundary(2.0 / 3.0, .fraction)])
     let flatDragged = LayoutEdit.setDivider(flat, at: [], index: 0, fraction: 0.5, rootPixelsWide: 1000)

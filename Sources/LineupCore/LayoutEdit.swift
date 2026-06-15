@@ -61,8 +61,11 @@ public enum LayoutEdit {
     /// callers without geometry omit it (those flows never store points).
     public static func setDivider(_ root: Node, at path: [Int], index: Int, fraction: Double,
                                   rootPixelsWide: Int, containerLength: Double? = nil) -> Node {
+        // Require the divider AND both children it borders. A valid split has
+        // `children.count == dividers.count + 1`, but this stays a no-op on a malformed
+        // (arity-broken) tree rather than trapping on the children[index + 1] access below.
         guard case let .split(axis, dividers, children) = root.node(at: path),
-              dividers.indices.contains(index) else { return root }
+              dividers.indices.contains(index), children.count > index + 1 else { return root }
         let isRootVertical = path.isEmpty && axis == .vertical
         // Express a sibling boundary as a fraction-of-container so neighbor clamping works
         // regardless of unit (root vertical stores pixels; nested/horizontal store fractions;
