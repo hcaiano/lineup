@@ -102,6 +102,11 @@ Open **Settings** from the menu bar.
 - Lineup only touches the monitors you have plugged in right now. Unplug one and its layout waits
   safely until you connect it again.
 
+## Support
+
+Lineup is free, and it stays free. If it earns a spot in your daily setup and you'd like to
+chip in, you can [buy me a coffee](https://buymeacoffee.com/caiano). It keeps the updates coming.
+
 ## License
 
 Lineup is free and open source under the [MIT license](LICENSE).
