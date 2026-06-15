@@ -18,8 +18,12 @@ swift run lineup-tests              # dependency-free test suite (no Xcode/XCTes
 open ~/Applications/Lineup.app
 ```
 
-A locally built app is ad-hoc signed. `setup-signing.sh` gives it a stable signature so you grant
-Accessibility once instead of after every rebuild.
+A locally built app is ad-hoc signed, whose signature changes every build, so macOS keeps asking
+you to re-grant Accessibility. `setup-signing.sh` creates a reused self-signed identity once, so
+every build shares one stable signature and you grant Accessibility a single time. The same applies
+to releases: build the release DMG on a machine where this has been run, so users authorize once
+and updates keep working. Pass `REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist` to make a
+release build fail loudly rather than ship an ad-hoc signature by accident.
 
 ## Package the installer
 
