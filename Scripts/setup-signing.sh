@@ -73,7 +73,10 @@ make_p12() { # $1 = output path
 
 make_p12 "$TMP/id.p12"
 echo "==> importing into the login keychain"
-security import "$TMP/id.p12" -k "$KEYCHAIN" -P "$P12_PASS" -T /usr/bin/codesign -A >/dev/null
+# -T grants ONLY codesign access to the key. We deliberately omit -A (which would let any
+# app use the key without a prompt) and instead authorize codesign precisely via
+# set-key-partition-list below — least privilege for a signing key.
+security import "$TMP/id.p12" -k "$KEYCHAIN" -P "$P12_PASS" -T /usr/bin/codesign >/dev/null
 
 # Let codesign use the key without a GUI prompt on every build. This needs the login
 # keychain password; if you skip it, macOS asks "codesign wants to use a key — Always
@@ -95,10 +98,17 @@ else
   echo "    skipped; expect one 'Always Allow' prompt on the first build."
 fi
 
-# Keep a durable, reusable copy of the identity (same cert => same signature => grant sticks).
-mkdir -p "$BACKUP_DIR"
-make_p12 "$BACKUP_P12"
-chmod 600 "$BACKUP_P12"
+# Optionally keep a durable, reusable copy of the identity (same cert => same signature =>
+# grant sticks across machines). Opt-in with BACKUP_IDENTITY=1, because the file is a usable
+# signing key protected only by a fixed password — anyone who gets it can sign as Lineup and
+# satisfy the TCC-granted requirement. Default off: the keychain copy is enough for one build
+# machine, and losing it only costs users one extra re-grant.
+if [ "${BACKUP_IDENTITY:-0}" = "1" ]; then
+  mkdir -p "$BACKUP_DIR"
+  make_p12 "$BACKUP_P12"
+  chmod 600 "$BACKUP_P12"
+  echo "==> backed up the signing identity to $BACKUP_P12 (SENSITIVE — keep it out of cloud sync/backups)"
+fi
 
 echo "==> verifying the identity produces a stable, cert-based signature"
 if identity_signs_with_stable_requirement; then
@@ -111,7 +121,12 @@ fi
 
 echo
 echo "Done."
-echo "  Backup identity:  $BACKUP_P12  (password: $P12_PASS) — keep it safe; reuse it on any"
-echo "                    build machine so every release shares one signature."
+if [ "${BACKUP_IDENTITY:-0}" = "1" ]; then
+  echo "  Backup identity:  $BACKUP_P12 (SENSITIVE) — reuse it on another build machine so"
+  echo "                    every release shares one signature; never commit or sync it."
+else
+  echo "  Backup:           skipped. Re-run with BACKUP_IDENTITY=1 to export a reusable .p12"
+  echo "                    (sensitive) if you'll build releases on more than one machine."
+fi
 echo "  Next:             ./Scripts/build-app.sh ~/Applications, then grant Accessibility one"
 echo "                    last time. Future updates keep the grant."

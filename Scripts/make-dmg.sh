@@ -8,6 +8,22 @@ OUT="${1:-dist}"
 APP="$OUT/Lineup.app"
 [ -d "$APP" ] || { echo "no $APP — run ./Scripts/build-app.sh \"$OUT\" first" >&2; exit 1; }
 
+# A release DMG must not contain an ad-hoc app: its signature changes every build, so users
+# would have to re-grant Accessibility on every update. The bundle's designated requirement
+# is cert-based only when signed with the stable identity (see Scripts/setup-signing.sh).
+# This guards even a stale/prebuilt ad-hoc bundle, regardless of how it was built. Override
+# with ALLOW_ADHOC_DMG=1 for a throwaway local/test DMG.
+if ! codesign -d -r- "$APP" 2>&1 | grep -q 'certificate leaf'; then
+  if [ "${ALLOW_ADHOC_DMG:-0}" = "1" ]; then
+    echo "WARNING: packaging an AD-HOC app (ALLOW_ADHOC_DMG=1); users will re-grant Accessibility per update." >&2
+  else
+    echo "error: $APP is ad-hoc signed; a release DMG would force users to re-grant Accessibility on" >&2
+    echo "       every update. Run ./Scripts/setup-signing.sh, rebuild, then retry — or set" >&2
+    echo "       ALLOW_ADHOC_DMG=1 for a throwaway test DMG." >&2
+    exit 1
+  fi
+fi
+
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null || echo 1.0.0)"
 DMG="$OUT/Lineup-$VERSION.dmg"
 RW="$OUT/.lineup-rw.dmg"

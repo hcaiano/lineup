@@ -28,9 +28,13 @@ release build fail loudly rather than ship an ad-hoc signature by accident.
 ## Package the installer
 
 ```sh
-./Scripts/build-app.sh dist
-./Scripts/make-dmg.sh dist          # -> dist/Lineup-<version>.dmg (drag-to-Applications)
+REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist   # refuses to build an ad-hoc release
+./Scripts/make-dmg.sh dist          # -> dist/Lineup-<version>.dmg; also rejects an ad-hoc app
 ```
+
+Both steps refuse an ad-hoc signature so a release can't accidentally ship one (which would
+make every update drop the user's Accessibility grant). Run `setup-signing.sh` first. For a
+throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh dist`.
 
 ## Project layout
 
