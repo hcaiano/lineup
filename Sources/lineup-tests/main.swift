@@ -666,6 +666,16 @@ do {
     eq(rr[0].height, 250, "nested rows: row1 height stays 250 (untouched line fixed)")
     try draggedRow.validate()
 
+    // The inner line is anchored against the REALIZED (rounded-to-pixel) outer position, not
+    // the requested fraction. Drag the root divider to 0.6004 (rounds to 600px @1000px wide):
+    // the resolver places the outer line at 600 and the inner line must still resolve to 750.
+    let subpixel = LayoutEdit.setDivider(nestedRight, at: [], index: 0, fraction: 0.6004, rootPixelsWide: 1000)
+    let asp = cols(subpixel)
+    eq(asp[0].maxX, 600, "subpixel: outer line lands on the rounded pixel (600)")
+    eq(asp[2].minX, 750, "subpixel: inner line stays EXACT against the rounded outer (no drift)")
+    eq(asp[2].width, 250, "subpixel: col3 stays 250 exactly")
+    try subpixel.validate()
+
     // Regression: a FLAT 3-column split is unchanged by the new logic (no nested lines).
     let flat = Node.columns([Boundary(1.0 / 3.0, .fraction), Boundary(2.0 / 3.0, .fraction)])
     let flatDragged = LayoutEdit.setDivider(flat, at: [], index: 0, fraction: 0.5, rootPixelsWide: 1000)

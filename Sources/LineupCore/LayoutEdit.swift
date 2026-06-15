@@ -103,12 +103,17 @@ public enum LayoutEdit {
 
         // Anchor the inner lines of the two touched children: as each child's extent along
         // `axis` changes, recompute its same-axis dividers so their absolute positions hold.
+        // Anchor against the REALIZED boundary, not the requested `f`: the root vertical split
+        // rounds `f` to whole pixels, and the resolver later uses that rounded position, so an
+        // inner line anchored to `f` would drift by the rounding delta. `siblingFraction` reads
+        // the stored boundary back to the fraction the resolver will actually produce.
+        let realizedF = siblingFraction(newBoundary) ?? f
         var newChildren = children
         if let oldX {
             newChildren[index] = anchorLines(children[index], axis: axis,
-                                             from: (leftEdge, oldX), to: (leftEdge, f))
+                                             from: (leftEdge, oldX), to: (leftEdge, realizedF))
             newChildren[index + 1] = anchorLines(children[index + 1], axis: axis,
-                                                 from: (oldX, rightEdge), to: (f, rightEdge))
+                                                 from: (oldX, rightEdge), to: (realizedF, rightEdge))
         }
         return root.replacingNode(at: path, with: .split(axis: axis, dividers: newDividers, children: newChildren))
     }
