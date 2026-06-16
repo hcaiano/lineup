@@ -27,6 +27,8 @@ final class DragSnapController {
     private var lingerZone: CGRect?
     private var lingerTimer: Timer?
     private var hintShown = false
+    private var teachHint = false   // first shift-drag ever: surface the edge hint right away
+    private static let seenEdgeHintKey = "lineup.seenEdgeHint"
 
     // Unsnap restore: dragging a snapped window away brings its pre-snap size back under
     // the cursor. Two phases — match the window early in the drag (while it's still
@@ -69,7 +71,10 @@ final class DragSnapController {
         case .leftMouseDragged:
             if event.modifierFlags.contains(.shift) {
                 if captured == nil { captured = WindowMover.window(atCocoaPoint: NSEvent.mouseLocation) }
-                if captured != nil { armed = true }
+                if captured != nil {
+                    if !armed { armEdgeHintIfFirstEver() } // on the disarmed -> armed transition
+                    armed = true
+                }
             } else {
                 // SHIFT released mid-drag: disarm and hide (re-arms if SHIFT returns).
                 armed = false
@@ -163,6 +168,13 @@ final class DragSnapController {
         if targetingHalf { clearLinger(); return }
         if zone != lingerZone {
             lingerZone = zone
+            // First-ever shift-drag: show the hint right away (updateHighlight draws it on this
+            // same pass) instead of waiting out the linger, so everyone meets the edge snap once.
+            if teachHint {
+                hintShown = true
+                lingerTimer?.invalidate(); lingerTimer = nil
+                return
+            }
             hintShown = false
             lingerTimer?.invalidate()
             lingerTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
@@ -173,6 +185,15 @@ final class DragSnapController {
                 }
             }
         }
+    }
+
+    /// The half/quarter edge snap is delightful but hidden: today you only meet it by lingering.
+    /// Teach it ONCE. On the user's first-ever shift-drag, surface the hint immediately; after
+    /// that the linger behavior still teaches anyone who hesitates, and we never force it again.
+    private func armEdgeHintIfFirstEver() {
+        guard !UserDefaults.standard.bool(forKey: Self.seenEdgeHintKey) else { return }
+        teachHint = true
+        UserDefaults.standard.set(true, forKey: Self.seenEdgeHintKey)
     }
 
     private func clearLinger() {
@@ -191,6 +212,7 @@ final class DragSnapController {
     private func reset() {
         captured = nil
         armed = false
+        teachHint = false
         highlight?.orderOut(nil)
         highlight = nil
         lastTargetRect = nil
