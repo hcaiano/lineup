@@ -47,13 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotkeys()      // must precede buildStatusItem so the menu shows real
         if config.dragSnapEnabled ?? true { dragSnap.start() } // shift-drag-to-snap (default on); respect a saved opt-out
         buildStatusItem()      // hotkey status (e.g. failures if Magnet owns the combos)
-        // First launch: explain who we are and why we need Accessibility BEFORE the cold OS
+        // First launch only: explain who we are and why we need Accessibility BEFORE any OS
         // prompt (a menu-bar agent has no window, so an unexplained permission sheet is jarring
-        // and easy to decline). Returning launches skip it: the system won't re-prompt once a
-        // decision exists, and the menu's Grant item handles any later recovery.
-        if UserDefaults.standard.bool(forKey: Self.didOnboardKey) {
-            requestAccessibility() // no-op once decided; keeps Lineup in the Accessibility list
-        } else {
+        // and easy to decline); its Grant button fires the system prompt. Returning launches do
+        // NOT proactively prompt: the system won't re-show a decided prompt anyway, and a first-run
+        // "Not now" user should not be cold-prompted later. The menu's Grant item (which opens the
+        // Accessibility pane, see openAccessibilitySettings) is the recovery path from here on.
+        if !UserDefaults.standard.bool(forKey: Self.didOnboardKey) {
             showWelcome()
         }
         startAccessibilityWatch()
