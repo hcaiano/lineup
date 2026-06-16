@@ -4,53 +4,66 @@
 
 # Lineup
 
-**Snap your windows into place on any Mac.**
+**Draw your own window zones on macOS.**
+
+Free, menu-bar window management for the custom layouts that built-in tiling, Rectangle, and Magnet don't cover.
+
+[![Latest release](https://img.shields.io/github/v/release/hcaiano/lineup?label=download&color=2F6BFF)](https://github.com/hcaiano/lineup/releases/latest)
+&nbsp;[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-2F6BFF)](https://github.com/hcaiano/lineup/releases/latest)
+&nbsp;[![MIT license](https://img.shields.io/github/license/hcaiano/lineup?color=2F6BFF)](LICENSE)
 
 </div>
 
 ---
 
-Lineup keeps your windows where you want them. You draw a few zones on your screen, then drop any
-window into one with a quick drag or a keyboard shortcut. Every monitor remembers its own setup.
+Built-in tiling gives you fixed halves and quarters. Lineup lets you draw the zones you actually
+use: a wide main column with a stack beside it, three uneven columns, a grid, whatever fits your
+work. Then you drop any window into one with a quick drag or a keyboard shortcut, and every monitor
+remembers its own setup.
 
-- **Design your own zones.** Two columns, three columns, a big main area with a stack beside it.
-  Set it up to match the way you work.
-- **Every screen remembers its layout.** Your laptop and your desk monitor can be arranged
-  differently, and Lineup switches between them on its own.
-- **It stays out of the way.** Lineup sits in your menu bar and barely uses any power while you work.
+<div align="center">
+<img src="docs/editor.png" width="900" alt="The Lineup layout editor: numbered zones drawn over a screen, with controls on a zone to split it side by side, split it top and bottom, or merge it.">
+</div>
+
+- **Design your own zones.** Split a screen into columns, rows, or nested areas and size each one
+  exactly. Not just halves and thirds.
+- **Every screen remembers its layout.** Your laptop and your desk monitor each stay arranged the
+  way they should be, and Lineup switches between them on its own.
+- **It stays out of the way.** Lineup lives in your menu bar and barely uses any power.
+
+If Rectangle is for standard halves and thirds, Lineup is for the layouts you sketch yourself.
+
+### A few setups it's good for
+
+- **Ultrawide:** a wide main column for your editor, a column of notes, and chat tucked on the side.
+- **Laptop plus monitor:** a different layout on each, switched automatically as you dock and undock.
+- **Research or writing:** repeatable zones you drop the same windows into every day.
 
 ## Install
 
-1. Download the **Lineup DMG** (a file like `Lineup-1.4.0.dmg`) from the
-   [Releases page](https://github.com/hcaiano/lineup/releases/latest).
+1. Download the `.dmg` from the [Releases page](https://github.com/hcaiano/lineup/releases/latest).
 2. Open it and drag **Lineup** into your **Applications** folder.
-3. The first time you open Lineup, macOS stops it because it doesn't recognize the developer yet.
-   To let it through (you only do this once):
-   - Double-click **Lineup**. You'll see a warning. Click **Done**.
-   - Open **System Settings**, go to **Privacy & Security**, and scroll down to **Security**.
-   - Click **Open Anyway** next to the message about Lineup, then confirm with your fingerprint or
-     password.
-   - The warning appears one more time. Click **Open**, and Lineup starts.
-4. Lineup needs your permission to move windows. When it asks, open **System Settings → Privacy &
-   Security → Accessibility** and switch **Lineup** on. If you already use Magnet or Rectangle, turn
-   it off so the shortcuts don't fight each other.
+3. The first time you open it, macOS checks the app before letting it run. If it asks:
+   - Double-click **Lineup**, and if you see a warning, click **Done**.
+   - Open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway**
+     next to the Lineup message, and confirm with your fingerprint or password.
+   - The prompt appears once more. Click **Open**, and Lineup starts.
+4. Lineup needs permission to move windows. When it asks, open **System Settings → Privacy &
+   Security → Accessibility** and switch **Lineup** on. If you already run Magnet or Rectangle, turn
+   it off so the shortcuts don't fight.
 
 ## Design your layout
 
 Click the Lineup icon in your menu bar and choose **Edit Layout**. Your screen dims and your zones
 appear right where they'll live.
 
-<div align="center">
-<img src="docs/editor.png" width="900" alt="The Lineup layout editor: three numbered zones over a screen, with buttons on the hovered zone to split it side by side, split it top and bottom, or merge it.">
-</div>
-
 - **Hover over a zone** to see its buttons. Split it side by side, split it top and bottom, or merge
-  it back together. The buttons show you the shape you'll get, so there's nothing to read.
-- **Drag a divider handle** to resize. Every zone shows its size in pixels and updates live while
-  you drag. Near a common spot — the middle, a third, a quarter, or where two zones become equal —
-  the divider gently locks on and shows a badge (½, ⅓, =). Keep dragging and it lets go, so any
-  custom size is still yours. Split as many times as you like.
-- Using more than one monitor? The editor appears on each screen with that screen's own layout.
+  it back together. The buttons show the shape you'll get, so there's nothing to read.
+- **Drag a divider handle** to resize. Every zone shows its size in pixels, live, as you drag. Near a
+  common spot (the middle, a third, a quarter, or where two zones become equal) the divider gently
+  locks on and shows a badge (½, ⅓, =). Keep dragging and it lets go, so any custom size is still
+  yours. Split as many times as you like.
+- Using more than one monitor? The editor opens on each screen with that screen's own layout.
 - Click **Save** when it looks right, or **Cancel** to throw the changes away.
 
 Each zone has a number. Those numbers are how the keyboard shortcuts find them.
@@ -67,14 +80,14 @@ highlight switches to that half: top or bottom edge for stacked, left or right e
 side. Aim near a **corner** and you get that quarter, so four apps fit in one zone. The highlight
 always shows exactly where the window will land.
 
-Changed your mind? Just drag the window out again. The moment it leaves the zone it returns to
-the size it had before, right under your cursor.
+Changed your mind? Just drag the window out again. The moment it leaves the zone it returns to the
+size it had before, right under your cursor.
 
 **Keyboard shortcuts.** Lineup comes with a few ready to go. They use a "Hyper" key, which is
-Control, Option, Shift and Command pressed together. Pressing four keys at once is a stretch, so
-most people turn a single key (often Caps Lock) into Hyper. Free apps like
-[Raycast](https://www.raycast.com) or [Karabiner](https://karabiner-elements.pqrs.org) set this up
-in a minute. If you'd rather not bother, the drag-and-drop above needs no setup at all.
+Control, Option, Shift and Command pressed together. Pressing four keys at once is a stretch, so most
+people turn a single key (often Caps Lock) into Hyper. Free apps like
+[Raycast](https://www.raycast.com) or [Karabiner](https://karabiner-elements.pqrs.org) set this up in
+a minute. If you'd rather not bother, the drag-and-drop above needs no setup at all.
 
 | Press | What happens |
 | --- | --- |
@@ -84,28 +97,29 @@ in a minute. If you'd rather not bother, the drag-and-drop above needs no setup 
 | Hyper + [ or ] | Snap to the left or right half |
 | Hyper + Delete | Put the window back where it was before you snapped it |
 
-The shortcuts that snap to a numbered zone start empty, so they won't clash with anything you
-already use. Add the ones you want in Settings.
+The shortcuts that snap to a numbered zone start empty, so they won't clash with anything you already
+use. Add the ones you want in Settings.
 
 ## Settings
 
 Open **Settings** from the menu bar.
 
 - **Shortcuts** lets you set or change any shortcut. Click **Record** and press the keys you want.
-- **General** has the drag-and-drop switch, an option to start Lineup when your Mac turns on, and
-  your permission status.
+- **General** has the drag-and-drop switch, an option to start Lineup when your Mac turns on, and your
+  permission status.
 
 ## Good to know
 
-- Lineup moves and resizes windows the same way you would by hand. A few apps insist on a fixed or
+- Lineup needs Accessibility permission to move windows. You grant it once, in System Settings.
+- It moves and resizes windows the same way you would by hand. A few apps insist on a fixed or
   minimum size (like Terminal); Lineup centers those neatly in the zone instead of forcing them.
-- Lineup only touches the monitors you have plugged in right now. Unplug one and its layout waits
-  safely until you connect it again.
+- It only touches the monitors you have plugged in right now. Unplug one and its layout waits safely
+  until you connect it again.
 
 ## Support
 
-Lineup is free, and it stays free. If it earns a spot in your daily setup and you'd like to
-chip in, you can [buy me a coffee](https://buymeacoffee.com/caiano). It keeps the updates coming.
+Lineup is free, and it stays free. If it earns a spot in your daily setup and you'd like to chip in,
+you can [buy me a coffee](https://buymeacoffee.com/caiano). It keeps the updates coming.
 
 ## License
 
