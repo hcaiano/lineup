@@ -22,7 +22,11 @@ PROFILE="${2:-${NOTARY_PROFILE:-lineup-notary}}"
 # leaf" requirement (it's stable for Accessibility), but Apple only notarizes Developer ID
 # software, so checking the leaf is not enough — require the Developer ID authority itself, or
 # the submission fails slowly inside notarytool.
-if ! codesign -dvvv "$TARGET" 2>&1 | grep -q 'Authority=Developer ID Application'; then
+# Capture first, then grep: piping codesign straight into `grep -q` makes grep exit on the first
+# match while codesign is still writing, so codesign dies with SIGPIPE (141) and `set -o pipefail`
+# turns that into a false "not Developer ID" negative. Grep the captured string instead.
+sig_info="$(codesign -dvvv "$TARGET" 2>&1 || true)"
+if ! grep -q 'Authority=Developer ID Application' <<<"$sig_info"; then
   echo "error: $TARGET is not signed by a Developer ID Application identity; Apple won't" >&2
   echo "       notarize it. Build with a Developer ID cert (REQUIRE_DEVELOPER_ID_SIGNATURE=1)." >&2
   exit 1

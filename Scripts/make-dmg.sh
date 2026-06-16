@@ -13,7 +13,11 @@ APP="$OUT/Lineup.app"
 # is cert-based only when signed with the stable identity (see Scripts/setup-signing.sh).
 # This guards even a stale/prebuilt ad-hoc bundle, regardless of how it was built. Override
 # with ALLOW_ADHOC_DMG=1 for a throwaway local/test DMG.
-if ! codesign -d -r- "$APP" 2>&1 | grep -q 'certificate leaf'; then
+# Capture first, then grep: piping codesign into `grep -q` lets grep exit on match while codesign
+# is still writing, so codesign dies with SIGPIPE (141) and `set -o pipefail` turns that into a
+# false "ad-hoc" rejection of a perfectly good Developer ID bundle.
+app_req="$(codesign -d -r- "$APP" 2>&1 || true)"
+if ! grep -q 'certificate leaf' <<<"$app_req"; then
   if [ "${ALLOW_ADHOC_DMG:-0}" = "1" ]; then
     echo "WARNING: packaging an AD-HOC app (ALLOW_ADHOC_DMG=1); users will re-grant Accessibility per update." >&2
   else
