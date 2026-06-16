@@ -71,13 +71,16 @@ xcrun notarytool store-credentials "lineup-notary" \
   --apple-id <your-apple-id> --team-id <TEAMID> --password <app-specific-password>
 ```
 
-Release flow:
+Release flow (the `REQUIRE_DEVELOPER_ID_SIGNATURE=1` gate fails fast if no Developer ID
+identity is found, so a notarized release can't silently fall back to the self-signed cert):
 
 ```sh
-REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist   # signs with Developer ID
-./Scripts/notarize.sh dist/Lineup.app                    # notarize + staple the app
-./Scripts/make-dmg.sh dist                               # package the stapled app
-./Scripts/notarize.sh dist/Lineup-<version>.dmg          # notarize + staple the DMG
+REQUIRE_DEVELOPER_ID_SIGNATURE=1 ./Scripts/build-app.sh dist   # sign the app w/ Developer ID
+./Scripts/notarize.sh dist/Lineup.app                          # notarize + staple the app
+./Scripts/make-dmg.sh dist                                     # package it; signs the DMG too
+./Scripts/notarize.sh dist/Lineup-<version>.dmg                # notarize + staple the DMG
 ```
 
-`notarytool` and `stapler` ship with the Command Line Tools, so no full Xcode is needed.
+Stapling the app makes the dragged-out copy pass Gatekeeper offline; notarizing the DMG makes
+the download itself open cleanly. `notarytool` and `stapler` ship with the Command Line Tools,
+so no full Xcode is needed.

@@ -54,5 +54,18 @@ echo "==> compressing -> $DMG"
 rm -f "$DMG"
 hdiutil convert "$RW" -format UDZO -imagekey zlib-level=9 -ov -o "$DMG" >/dev/null
 
+# Sign the DMG itself with the Developer ID identity when one is present, so it can be
+# notarized and Gatekeeper reports "Notarized Developer ID" for the disk image. Without a
+# Developer ID cert (self-signed/ad-hoc builds), the DMG stays unsigned as before — those
+# releases aren't notarized anyway.
+DEVID="${DEVELOPER_ID_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
+if [ -n "${DEVID}" ]; then
+  echo "==> signing the DMG with Developer ID: ${DEVID}"
+  codesign --force --timestamp --sign "${DEVID}" "$DMG"
+fi
+
 echo "==> done: $DMG"
 echo "    Drag-install: open the DMG, drag Lineup into Applications."
+if [ -n "${DEVID}" ]; then
+  echo "    Next: ./Scripts/notarize.sh \"$DMG\"   (notarize + staple)"
+fi
