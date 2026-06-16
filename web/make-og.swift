@@ -15,31 +15,49 @@ NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 let ctx = NSGraphicsContext.current!.cgContext
 let rgb = CGColorSpaceCreateDeviceRGB()
 
-// Diagonal brand-blue gradient (matches the app icon).
+// Diagonal brand-blue gradient (matches the app icon's vivid azure).
 let bg = CGGradient(colorsSpace: rgb, colors: [
-    NSColor(srgbRed: 0.25, green: 0.53, blue: 0.99, alpha: 1).cgColor, // #408AFC
-    NSColor(srgbRed: 0.09, green: 0.29, blue: 0.84, alpha: 1).cgColor, // #174AD6
+    NSColor(srgbRed: 0.157, green: 0.604, blue: 0.988, alpha: 1).cgColor, // #289AFC
+    NSColor(srgbRed: 0.004, green: 0.447, blue: 0.988, alpha: 1).cgColor, // #0172FC
 ] as CFArray, locations: [0, 1])!
-ctx.drawLinearGradient(bg, start: CGPoint(x: 0, y: H), end: CGPoint(x: W, y: 0), options: [])
+func paintBG() { ctx.drawLinearGradient(bg, start: CGPoint(x: 0, y: H), end: CGPoint(x: W, y: 0), options: []) }
+paintBG()
 
-// The mark: a rounded white "screen" split into three columns, center gently highlighted.
+// The mark (matches the app icon): a white rounded "screen" framing a tall left pane and a
+// right column split into two stacked cells, the top-right one highlighted lighter azure.
 let mark = NSRect(x: 96, y: H/2 - 150, width: 360, height: 300)
-let stroke: CGFloat = mark.height * 0.075
-let white = NSColor.white.withAlphaComponent(0.96)
-let radius = mark.height * 0.16
-let d0 = mark.minX + mark.width * 0.30
-let d1 = mark.minX + mark.width * 0.70
+let gutter = mark.width * 0.058           // white frame border == gutter between cells
+let radius = mark.height * 0.135
+let cellRadius = gutter * 0.95
+func rr(_ r: CGRect, _ rad: CGFloat) -> CGPath {
+    CGPath(roundedRect: r, cornerWidth: rad, cornerHeight: rad, transform: nil)
+}
+// White panel.
+ctx.setFillColor(NSColor.white.cgColor)
+ctx.addPath(rr(mark, radius)); ctx.fillPath()
+// Cells, inset one gutter on every side and split by gutters.
+let content = mark.insetBy(dx: gutter, dy: gutter)
+let colW = (content.width - gutter) / 2
+let rowH = (content.height - gutter) / 2
+let leftCell = CGRect(x: content.minX, y: content.minY, width: colW, height: content.height)
+let rightX = content.minX + colW + gutter
+let bottomRight = CGRect(x: rightX, y: content.minY, width: colW, height: rowH)
+let topRight = CGRect(x: rightX, y: content.minY + rowH + gutter, width: colW, height: rowH)
+// Left + bottom-right: the card's gradient showing through.
 ctx.saveGState()
-ctx.addPath(CGPath(roundedRect: mark, cornerWidth: radius, cornerHeight: radius, transform: nil))
-ctx.clip()
-ctx.setFillColor(NSColor.white.withAlphaComponent(0.20).cgColor)
-ctx.fill(CGRect(x: d0, y: mark.minY, width: d1 - d0, height: mark.height))
-ctx.setFillColor(white.cgColor)
-for x in [d0, d1] { ctx.fill(CGRect(x: x - stroke/2, y: mark.minY, width: stroke, height: mark.height)) }
+ctx.addPath(rr(leftCell, cellRadius)); ctx.addPath(rr(bottomRight, cellRadius)); ctx.clip()
+paintBG()
 ctx.restoreGState()
-ctx.addPath(CGPath(roundedRect: mark.insetBy(dx: stroke/2, dy: stroke/2),
-                   cornerWidth: radius, cornerHeight: radius, transform: nil))
-ctx.setStrokeColor(white.cgColor); ctx.setLineWidth(stroke); ctx.strokePath()
+// Top-right highlight.
+let hi = CGGradient(colorsSpace: rgb, colors: [
+    NSColor(srgbRed: 0.690, green: 0.831, blue: 0.992, alpha: 1).cgColor, // #B0D4FD
+    NSColor(srgbRed: 0.596, green: 0.769, blue: 0.988, alpha: 1).cgColor, // #98C4FC
+] as CFArray, locations: [0, 1])!
+ctx.saveGState()
+ctx.addPath(rr(topRight, cellRadius)); ctx.clip()
+ctx.drawLinearGradient(hi, start: CGPoint(x: topRight.midX, y: topRight.maxY),
+                       end: CGPoint(x: topRight.midX, y: topRight.minY), options: [])
+ctx.restoreGState()
 
 // Wordmark + tagline to the right of the mark.
 let textX = mark.maxX + 80

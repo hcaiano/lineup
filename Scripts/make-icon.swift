@@ -37,14 +37,19 @@ ctx.saveGState()
 ctx.addPath(squircle)
 ctx.clip()
 
-// Diagonal blue gradient (brand blue).
+// Vertical brand-blue gradient (bright azure at top, deep blue at the base) — the concept-1
+// look. Kept in the brand-blue family so the icon reads as the same product as the menu bar
+// and website accent.
 let bg = CGGradient(colorsSpace: rgb, colors: [
-    NSColor(srgbRed: 0.25, green: 0.53, blue: 0.99, alpha: 1).cgColor, // bright blue  #408AFC
-    NSColor(srgbRed: 0.09, green: 0.29, blue: 0.84, alpha: 1).cgColor, // deep blue    #174AD6
+    NSColor(srgbRed: 0.157, green: 0.604, blue: 0.988, alpha: 1).cgColor, // bright azure #289AFC
+    NSColor(srgbRed: 0.004, green: 0.447, blue: 0.988, alpha: 1).cgColor, // deep blue    #0172FC
 ] as CFArray, locations: [0, 1])!
-ctx.drawLinearGradient(bg,
-    start: CGPoint(x: body.minX, y: body.maxY),
-    end: CGPoint(x: body.maxX, y: body.minY), options: [])
+func paintBody() {
+    ctx.drawLinearGradient(bg,
+        start: CGPoint(x: body.midX, y: body.maxY),
+        end: CGPoint(x: body.midX, y: body.minY), options: [])
+}
+paintBody()
 
 // Subtle top sheen (flat, not glossy — kept light per the concept board).
 let sheen = CGGradient(colorsSpace: rgb, colors: [
@@ -55,35 +60,56 @@ ctx.drawLinearGradient(sheen,
     start: CGPoint(x: body.midX, y: body.maxY),
     end: CGPoint(x: body.midX, y: body.midY), options: [])
 
-// The mark (concept D): a thick near-white rounded SCREEN OUTLINE split into three columns
-// by two dividers; the (wider) center column is softly highlighted. Filled bars + thick
-// strokes (no thin lines) so it survives at 16 px.
-let padX = body.width * 0.135
-let padY = body.height * 0.235
-let screen = body.insetBy(dx: padX, dy: padY)
-let stroke = screen.height * 0.085
-let white = NSColor.white.withAlphaComponent(0.96)
-let screenRadius = screen.height * 0.18
+// The mark (concept-1): a white rounded "screen" framing three rounded zones — one tall pane
+// on the left, and a right column split into two stacked cells. The top-right cell is softly
+// highlighted (lighter azure) to read as the "active" zone. The left and bottom-right cells
+// are the body gradient showing through, so they sit on the same blue surface as the icon.
+// All-rounded filled cells (no thin lines) so the motif survives at 16 px.
+let screen = CGRect(x: body.minX + body.width * 0.129,
+                    y: body.minY + body.height * 0.181,
+                    width: body.width * 0.742,
+                    height: body.height * 0.638)
+let gutter = body.width * 0.043           // white gap: frame border == gutter between cells
+let screenRadius = screen.height * 0.135
+let cellRadius = gutter * 0.95
+func rrect(_ r: CGRect, _ rad: CGFloat) -> CGPath {
+    CGPath(roundedRect: r, cornerWidth: rad, cornerHeight: rad, transform: nil)
+}
 
-// Center column highlight (drawn first, behind the strokes).
-let d0 = screen.minX + screen.width * 0.30
-let d1 = screen.minX + screen.width * 0.70
+// White screen panel.
+ctx.setFillColor(NSColor.white.cgColor)
+ctx.addPath(rrect(screen, screenRadius))
+ctx.fillPath()
+
+// Cell rects, inset from the panel by one gutter on every side and split by gutters.
+let content = screen.insetBy(dx: gutter, dy: gutter)
+let colW = (content.width - gutter) / 2     // equal left pane / right column
+let rowH = (content.height - gutter) / 2     // equal top / bottom right cells
+let leftCell = CGRect(x: content.minX, y: content.minY, width: colW, height: content.height)
+let rightX = content.minX + colW + gutter
+let bottomRight = CGRect(x: rightX, y: content.minY, width: colW, height: rowH)
+let topRight = CGRect(x: rightX, y: content.minY + rowH + gutter, width: colW, height: rowH)
+
+// Left pane + bottom-right cell: the body gradient showing through (clip, then repaint it).
 ctx.saveGState()
-ctx.addPath(CGPath(roundedRect: screen, cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil))
+ctx.addPath(rrect(leftCell, cellRadius))
+ctx.addPath(rrect(bottomRight, cellRadius))
 ctx.clip()
-ctx.setFillColor(NSColor.white.withAlphaComponent(0.22).cgColor)
-ctx.fill(CGRect(x: d0, y: screen.minY, width: d1 - d0, height: screen.height))
-// Two dividers (thick) inside the clip.
-ctx.setFillColor(white.cgColor)
-for x in [d0, d1] { ctx.fill(CGRect(x: x - stroke / 2, y: screen.minY, width: stroke, height: screen.height)) }
+paintBody()
 ctx.restoreGState()
 
-// Thick rounded screen outline.
-ctx.addPath(CGPath(roundedRect: screen.insetBy(dx: stroke / 2, dy: stroke / 2),
-                   cornerWidth: screenRadius, cornerHeight: screenRadius, transform: nil))
-ctx.setStrokeColor(white.cgColor)
-ctx.setLineWidth(stroke)
-ctx.strokePath()
+// Top-right highlight cell: a lighter azure, with a faint top-down sheen of its own.
+let hi = CGGradient(colorsSpace: rgb, colors: [
+    NSColor(srgbRed: 0.690, green: 0.831, blue: 0.992, alpha: 1).cgColor, // #B0D4FD
+    NSColor(srgbRed: 0.596, green: 0.769, blue: 0.988, alpha: 1).cgColor, // #98C4FC
+] as CFArray, locations: [0, 1])!
+ctx.saveGState()
+ctx.addPath(rrect(topRight, cellRadius))
+ctx.clip()
+ctx.drawLinearGradient(hi,
+    start: CGPoint(x: topRight.midX, y: topRight.maxY),
+    end: CGPoint(x: topRight.midX, y: topRight.minY), options: [])
+ctx.restoreGState()
 
 // Subtle inner edge for crispness.
 ctx.addPath(squircle)
