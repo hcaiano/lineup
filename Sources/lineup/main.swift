@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cycleState: CycleState?   // carries left/right cycle progress between presses
     private var editorOverlay: LayoutEditorOverlayController?
     private var settings: SettingsWindowController?
+    private var welcome: WelcomeWindowController?
+    private static let didOnboardKey = "lineup.didOnboard"
     private var lastTrusted = AXIsProcessTrusted()
     private var trustTimer: Timer?
     private var trustPollTicks = 0
@@ -45,7 +47,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotkeys()      // must precede buildStatusItem so the menu shows real
         if config.dragSnapEnabled ?? true { dragSnap.start() } // shift-drag-to-snap (default on); respect a saved opt-out
         buildStatusItem()      // hotkey status (e.g. failures if Magnet owns the combos)
-        requestAccessibility() // prompt up front; hotkeys can't move windows without it
+        // First launch only: explain who we are and why we need Accessibility BEFORE any OS
+        // prompt (a menu-bar agent has no window, so an unexplained permission sheet is jarring
+        // and easy to decline); its Grant button fires the system prompt. Returning launches do
+        // NOT proactively prompt: the system won't re-show a decided prompt anyway, and a first-run
+        // "Not now" user should not be cold-prompted later. The menu's Grant item (which opens the
+        // Accessibility pane, see openAccessibilitySettings) is the recovery path from here on.
+        if !UserDefaults.standard.bool(forKey: Self.didOnboardKey) {
+            showWelcome()
+        }
         startAccessibilityWatch()
         // A deferred legacy migration is waiting for its display. Watch for displays
         // coming and going so plugging it in completes the migration NOW, not at the
@@ -390,6 +400,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             FileHandle.standardError.write(Data("launch-at-login toggle failed: \(error)\n".utf8))
         }
         buildStatusItem()
+    }
+
+    /// First-run welcome: introduce Lineup and the Accessibility need, then trigger the prompt
+    /// from its Grant button. Recorded as onboarded on dismissal (any path), so it shows once.
+    private func showWelcome() {
+        let controller = WelcomeWindowController(
+            onGrant: { [weak self] in self?.requestAccessibility() },
+            onClose: { [weak self] in
+                UserDefaults.standard.set(true, forKey: AppDelegate.didOnboardKey)
+                self?.welcome = nil
+            })
+        welcome = controller
+        controller.show()
     }
 
     /// Launch-time, up-front ask: macOS shows the Accessibility prompt and adds Lineup to the
