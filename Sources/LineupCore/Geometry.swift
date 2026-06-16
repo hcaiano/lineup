@@ -1,4 +1,5 @@
 import CoreGraphics
+import ApplicationServices
 
 /// Coordinate-system conversions between Cocoa/AppKit space and Accessibility/CG space.
 ///
@@ -24,6 +25,34 @@ public enum Coord {
     public static func cocoaRect(fromAX rect: CGRect, primaryMaxY: CGFloat) -> CGRect {
         let cocoaY = primaryMaxY - rect.maxY
         return CGRect(x: rect.origin.x, y: cocoaY, width: rect.width, height: rect.height)
+    }
+}
+
+/// Safe extraction for AXValue payloads returned by Accessibility APIs.
+///
+/// AX can occasionally hand back missing, stale, or wrong-typed values for unusual windows
+/// or hung apps. Treat those as unreadable instead of force-casting and crashing the
+/// menu-bar process.
+public enum AXExtract {
+    public static func point(_ ref: CFTypeRef?) -> CGPoint? {
+        guard let ref, CFGetTypeID(ref) == AXValueGetTypeID() else { return nil }
+        let value = unsafeBitCast(ref, to: AXValue.self)
+        var point = CGPoint.zero
+        guard AXValueGetValue(value, .cgPoint, &point) else { return nil }
+        return point
+    }
+
+    public static func size(_ ref: CFTypeRef?) -> CGSize? {
+        guard let ref, CFGetTypeID(ref) == AXValueGetTypeID() else { return nil }
+        let value = unsafeBitCast(ref, to: AXValue.self)
+        var size = CGSize.zero
+        guard AXValueGetValue(value, .cgSize, &size) else { return nil }
+        return size
+    }
+
+    public static func element(_ ref: CFTypeRef?) -> AXUIElement? {
+        guard let ref, CFGetTypeID(ref) == AXUIElementGetTypeID() else { return nil }
+        return unsafeBitCast(ref, to: AXUIElement.self)
     }
 }
 

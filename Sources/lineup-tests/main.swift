@@ -1,4 +1,5 @@
 import CoreGraphics
+import ApplicationServices
 import Foundation
 import LineupCore
 
@@ -44,6 +45,19 @@ do {
     let cocoa = CGRect(x: 0, y: 0, width: 100, height: 1440)
     let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY)
     eq(ax.origin.y, 0, "full-height window AX y is 0")
+}
+do {
+    var p = CGPoint(x: 12, y: 34)
+    let pointValue = AXValueCreate(.cgPoint, &p)!
+    check(AXExtract.point(pointValue) == p, "AXExtract.point reads cgPoint")
+    check(AXExtract.size(pointValue) == nil, "AXExtract.size rejects cgPoint")
+
+    var s = CGSize(width: 56, height: 78)
+    let sizeValue = AXValueCreate(.cgSize, &s)!
+    check(AXExtract.size(sizeValue) == s, "AXExtract.size reads cgSize")
+    check(AXExtract.point(sizeValue) == nil, "AXExtract.point rejects cgSize")
+    check(AXExtract.point("not an AXValue" as CFString) == nil, "AXExtract.point rejects non-AXValue")
+    check(AXExtract.size(nil) == nil, "AXExtract.size rejects nil")
 }
 
 // ---- Screen picker ----
