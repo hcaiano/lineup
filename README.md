@@ -101,7 +101,7 @@ use. Add the ones you want in Settings.
 
 Open **Settings** from the menu bar.
 
-- **Shortcuts** lets you set or change any shortcut. Click **Record** and press the keys you want.
+- **Shortcuts** lets you set or change any shortcut. Click a shortcut field and press the keys you want.
 - **General** has the drag-and-drop switch, an option to start Lineup when your Mac turns on, and your
   permission status.
 
