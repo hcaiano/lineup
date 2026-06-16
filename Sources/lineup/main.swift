@@ -208,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
             toggleLaunchAtLogin: { [weak self] in self?.toggleLaunchAtLogin() },
             isTrusted: { AXIsProcessTrusted() },
-            requestAccessibility: { [weak self] in self?.requestAccessibility() })
+            requestAccessibility: { [weak self] in self?.openAccessibilitySettings() })
         let controller = SettingsWindowController(context: ctx)
         controller.onClose = { [weak self] in self?.settings = nil }
         settings = controller
@@ -329,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var hasWarning = false
         if !AXIsProcessTrusted() {
             addInfo(menu, "⚠︎ Accessibility not granted")
-            menu.addItem(NSMenuItem(title: "Grant Accessibility…", action: #selector(requestAccessibility), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Grant Accessibility…", action: #selector(openAccessibilitySettings), keyEquivalent: ""))
             hasWarning = true
         }
         if failedHotkeys > 0 {
@@ -392,9 +392,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
     }
 
+    /// Launch-time, up-front ask: macOS shows the Accessibility prompt and adds Lineup to the
+    /// list. This is a no-op once the user has made a decision (the system won't re-prompt).
     @objc private func requestAccessibility() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+    }
+
+    /// User-initiated recovery (menu "Grant Accessibility…" / Settings "Open Accessibility
+    /// settings…"). Because the system prompt no longer appears once a decision is recorded, a
+    /// user who declined would be stuck clicking a button that does nothing. Fire the prompt
+    /// (harmless; ensures Lineup is listed) AND open the Accessibility pane directly so the toggle
+    /// is right in front of them.
+    @objc private func openAccessibilitySettings() {
+        requestAccessibility()
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
