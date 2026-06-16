@@ -999,6 +999,25 @@ do {
     check(!SemVer.isNewer("1.0.1", than: "not-a-version"), "semver: malformed current -> false")
 }
 
+do { // Pin the Info.plist invariants that anchor permission persistence + agent behavior. The TCC
+     // (Accessibility) grant keys on the code-signing designated requirement, which embeds the
+     // bundle id — change CFBundleIdentifier and every user must re-grant on the next update (the
+     // exact pain stable signing prevents). LSUIElement keeps Lineup a menu-bar agent (no Dock
+     // icon). Min-OS must match Package.swift's .macOS(.v13). Version strings are intentionally NOT
+     // pinned here (they change every release). #filePath -> repo root -> Resources/Info.plist.
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let plistURL = root.appendingPathComponent("Resources/Info.plist")
+    let data = try Data(contentsOf: plistURL)
+    guard let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
+        check(false, "Info.plist parses as a dictionary"); fatalError("unreachable")
+    }
+    check(plist["CFBundleIdentifier"] as? String == "com.caiano.lineup", "Info.plist: bundle id stable (TCC/Accessibility designated-requirement anchor)")
+    check(plist["LSUIElement"] as? Bool == true, "Info.plist: LSUIElement true (menu-bar agent, no Dock icon)")
+    check(plist["CFBundleExecutable"] as? String == "lineup", "Info.plist: executable name matches the SPM product 'lineup'")
+    check(plist["LSMinimumSystemVersion"] as? String == "13.0", "Info.plist: min macOS 13.0 (matches Package.swift .macOS(.v13))")
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")
