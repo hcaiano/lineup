@@ -172,6 +172,7 @@ final class DragSnapController {
             // same pass) instead of waiting out the linger, so everyone meets the edge snap once.
             if teachHint {
                 hintShown = true
+                UserDefaults.standard.set(true, forKey: Self.seenEdgeHintKey) // it's actually on screen now
                 lingerTimer?.invalidate(); lingerTimer = nil
                 return
             }
@@ -191,9 +192,10 @@ final class DragSnapController {
     /// Teach it ONCE. On the user's first-ever shift-drag, surface the hint immediately; after
     /// that the linger behavior still teaches anyone who hesitates, and we never force it again.
     private func armEdgeHintIfFirstEver() {
-        guard !UserDefaults.standard.bool(forKey: Self.seenEdgeHintKey) else { return }
-        teachHint = true
-        UserDefaults.standard.set(true, forKey: Self.seenEdgeHintKey)
+        // Arm the one-time teach, but DON'T burn the flag yet: if this first drag goes straight to
+        // a half/quarter the hint never renders, so we persist "seen" only when it actually shows
+        // (in trackLinger). teachHint clears on drag end; the next drag re-arms until it's seen.
+        if !UserDefaults.standard.bool(forKey: Self.seenEdgeHintKey) { teachHint = true }
     }
 
     private func clearLinger() {
