@@ -46,7 +46,7 @@ let textX = mark.maxX + 80
 NSAttributedString(string: "Lineup", attributes: [
     .font: NSFont.systemFont(ofSize: 116, weight: .bold),
     .foregroundColor: NSColor.white]).draw(at: NSPoint(x: textX, y: H/2 + 6))
-NSAttributedString(string: "Snap your windows into place on any Mac.", attributes: [
+NSAttributedString(string: "Draw your own window zones on macOS.", attributes: [
     .font: NSFont.systemFont(ofSize: 34, weight: .medium),
     .foregroundColor: NSColor.white.withAlphaComponent(0.92)]).draw(at: NSPoint(x: textX + 4, y: H/2 - 70))
 
