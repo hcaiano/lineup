@@ -45,22 +45,29 @@ cp "${BUILD_DIR}/${EXEC_NAME}" "${APP}/Contents/MacOS/${EXEC_NAME}"
 cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
 cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
-# Prefer the stable self-signed identity; fall back to ad-hoc. We TRY to sign with the
-# identity rather than gating on `find-certificate` — a cert can be present with no usable
-# private key (e.g. a half-finished import), and `find-identity -v` reports zero for an
-# untrusted self-signed cert even when codesign can use it. So: attempt the real sign,
-# then inspect the result.
-signed_stable=0
-if codesign --force --options runtime --sign "${SIGN_IDENTITY}" --identifier "${BUNDLE_ID}" "${APP}" 2>/dev/null; then
-  signed_stable=1
-  echo "==> codesigned with stable identity '${SIGN_IDENTITY}'"
+# Sign with the best identity available, in order:
+#   1. Developer ID Application — Apple-issued. Enables notarization (removes the Gatekeeper
+#      "unidentified developer" warning) and gives a Team-ID-stable requirement, so the build
+#      machine no longer has to be the one that holds a local cert. Needs --timestamp.
+#   2. The local self-signed identity (Scripts/setup-signing.sh) — stable across rebuilds so
+#      Accessibility persists, but NOT notarizable; users still see the Gatekeeper warning.
+#   3. Ad-hoc — last resort; signature changes every build.
+# We attempt the real sign rather than gating on `find-certificate` (a cert can exist with no
+# usable key), then inspect the result.
+DEVID="$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+if [ -n "${DEVID}" ] && codesign --force --options runtime --timestamp \
+      --sign "${DEVID}" --identifier "${BUNDLE_ID}" "${APP}" 2>/dev/null; then
+  echo "==> codesigned with Developer ID (notarizable): ${DEVID}"
+elif codesign --force --options runtime --sign "${SIGN_IDENTITY}" --identifier "${BUNDLE_ID}" "${APP}" 2>/dev/null; then
+  echo "==> codesigned with the local stable identity '${SIGN_IDENTITY}' (not notarizable)"
 else
-  echo "==> '${SIGN_IDENTITY}' unavailable; ad-hoc codesign (identifier: ${BUNDLE_ID})"
+  echo "==> no stable identity available; ad-hoc codesign (identifier: ${BUNDLE_ID})"
   codesign --force --sign - --identifier "${BUNDLE_ID}" "${APP}"
 fi
 
-# The signature TCC keys on is the designated requirement. Cert-based => stable across
-# rebuilds (Accessibility sticks); a bare cdhash => ad-hoc (re-grant on every update).
+# The signature TCC keys on is the designated requirement. Cert-based (Developer ID or the
+# self-signed cert) => stable across rebuilds, so Accessibility sticks; a bare cdhash => ad-hoc
+# (re-grant on every update).
 designated="$(codesign -d -r- "${APP}" 2>&1 | grep designated || true)"
 if echo "${designated}" | grep -q 'certificate leaf'; then
   echo "    signature: STABLE (cert-based) — Accessibility persists across updates."
