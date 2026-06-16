@@ -1018,6 +1018,29 @@ do { // Pin the Info.plist invariants that anchor permission persistence + agent
     check(plist["LSMinimumSystemVersion"] as? String == "13.0", "Info.plist: min macOS 13.0 (matches Package.swift .macOS(.v13))")
 }
 
+do { // The bundle id is the TCC / designated-requirement anchor and lives in THREE places: the
+     // plist (above) plus the codesign --identifier in BOTH signing scripts. If they drift, a
+     // signed build's identifier won't match the plist -> DR mismatch -> Accessibility re-grant on
+     // update (the exact pain stable signing prevents). Pin 3-way consistency, anchored on the
+     // plist. Read-only file parse: touches no signing identity or keychain.
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let plistData = try Data(contentsOf: root.appendingPathComponent("Resources/Info.plist"))
+    let plistID = (try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])?["CFBundleIdentifier"] as? String
+    func bundleIDInScript(_ rel: String) -> String? {
+        guard let s = try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8) else { return nil }
+        for raw in s.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard line.hasPrefix("BUNDLE_ID=") else { continue } // a fixed `BUNDLE_ID="..."` assignment
+            return String(line.dropFirst("BUNDLE_ID=".count)).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        }
+        return nil
+    }
+    check(plistID == "com.caiano.lineup", "bundle-id consistency: plist anchor resolved")
+    check(bundleIDInScript("Scripts/build-app.sh") == plistID, "bundle-id consistency: build-app.sh codesign --identifier matches the plist")
+    check(bundleIDInScript("Scripts/setup-signing.sh") == plistID, "bundle-id consistency: setup-signing.sh matches the plist (stable designated requirement)")
+}
+
 // ---- Report ----
 if failures == 0 {
     print("ok — \(checks) checks passed")
