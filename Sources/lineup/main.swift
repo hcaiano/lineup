@@ -80,9 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Bound the net: ~120s covers the active-granting window (prompt -> System Settings ->
             // toggle). After that, stop polling and rely on the notification, so an installed-but-
             // never-granted app doesn't poll AXIsProcessTrusted() every 1.5s forever (same App-Nap
-            // concern as the already-granted case). A late grant whose notification is also missed
-            // only leaves a stale menu label that self-heals on the next interaction — hotkeys gate
-            // on AXIsProcessTrusted() at action time regardless.
+            // concern as the already-granted case). A late grant (>120s) whose notification is also
+            // coalesced/missed only leaves a stale menu warning until the next menu rebuild (e.g.
+            // toggling a setting from the menu, a display change); hotkeys still gate on
+            // AXIsProcessTrusted() at action time, so nothing functional is affected.
             self.trustPollTicks += 1
             if self.trustTimer != nil, self.trustPollTicks >= 80 {
                 self.trustTimer?.invalidate(); self.trustTimer = nil
