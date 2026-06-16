@@ -77,8 +77,23 @@ private final class RecorderField: NSView {
     var isRecording = false { didSet { needsDisplay = true } }
     var text = "" { didSet { needsDisplay = true } }      // the combo, or "" when unassigned
     var enabled = true { didSet { needsDisplay = true } }
+    var actionLabel = ""                                  // human action name, for VoiceOver
 
     override var isFlipped: Bool { true }
+
+    // VoiceOver: a custom-drawn NSView is invisible to assistive tech by default. Expose this
+    // record field as a button with a live label so it can be reached and operated without sight.
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func isAccessibilityEnabled() -> Bool { enabled }
+    override func accessibilityLabel() -> String? {
+        if isRecording { return "\(actionLabel) shortcut, recording, press a key combination" }
+        return "\(actionLabel) shortcut, \(text.isEmpty ? "not set" : text)"
+    }
+    override func accessibilityPerformPress() -> Bool {
+        guard enabled else { return false }
+        onClick(); return true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let r = bounds.insetBy(dx: 1, dy: 1)
@@ -172,12 +187,14 @@ private final class ShortcutsView: NSView {
 
             let field = RecorderField(frame: NSRect(x: 160, y: y, width: 322, height: 30))
             let action = a.id
+            field.actionLabel = a.label                      // VoiceOver reads "<label> shortcut, …"
             field.onClick = { [weak self] in self?.fieldClicked(action) }
             doc.addSubview(field)
 
             let clear = NSButton(title: "✕", target: self, action: #selector(clearTapped(_:)))
             clear.bezelStyle = .circular; clear.frame = NSRect(x: 496, y: y + 1, width: 28, height: 28)
             clear.tag = i; clear.toolTip = "Clear this shortcut"
+            clear.setAccessibilityLabel("Clear shortcut for \(a.label)") // was read aloud as just "✕"
             doc.addSubview(clear)
 
             rows.append((a.id, field, clear))
