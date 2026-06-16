@@ -166,6 +166,17 @@ do { // seams in physical pixels (the real use case)
     eq(r.minX, 3413, "pixels: right starts at seam 3413 (glued)")
 }
 
+do { // .pixels resolution guards a degenerate display reporting 0 pixels wide: pixelsTotal<=0
+     // falls back to scale 1 (no divide-by-zero / inf) instead of breaking the resolver.
+     // Reachable: ScreenIdentity reads CGDisplayPixelsWide without a >0 floor.
+    let b = Boundary(1133, .pixels)
+    let f = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    eq(b.distance(alongLength: f.width, pixelsTotal: 0), 1133, "Boundary .pixels: pixelsTotal=0 -> scale 1 (no divide-by-zero)")
+    check(b.x(in: f, pixelsWide: 0).isFinite, "Boundary .pixels: x with pixelsWide=0 is finite")
+    eq(b.x(in: f, pixelsWide: 0), 1133, "Boundary .pixels: x with pixelsWide=0 anchors the value at frame.minX")
+    eq(b.distance(alongLength: 1440, pixelsTotal: 2880), 566.5, "Boundary .pixels: normal scale still applies (1133px @2880 -> 566.5pt @1440)")
+}
+
 do { // halves + full
     let cfg = ColumnConfig.default
     let lh = col(cfg, "leftHalf"), rh = col(cfg, "rightHalf"), full = col(cfg, "full")
@@ -865,6 +876,11 @@ do {
     // Nearest guide wins between two close candidates.
     let near = DividerSnap.apply(0.49, guides: g, threshold: 0.05)
     check(near.guide?.label == "½", "snap: nearest guide wins (0.49 -> ½, not ⅓)")
+    // No guides (reachable when neighbours sit so close every common fraction + midpoint is
+    // excluded): the proposal passes straight through, no lock.
+    let noGuides = DividerSnap.apply(0.42, guides: [], threshold: 0.05)
+    eq(CGFloat(noGuides.fraction), 0.42, "snap: no guides -> proposal unchanged")
+    check(noGuides.guide == nil, "snap: no guides -> no lock")
 }
 
 // ---- P5: left/right cycling ----
