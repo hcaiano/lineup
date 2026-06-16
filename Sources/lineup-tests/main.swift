@@ -426,6 +426,25 @@ do { // present-but-corrupt config throws (no clobber); absent stays fresh
     try? FileManager.default.removeItem(at: tmp)
 }
 
+do { // a pathologically DEEP config (valid JSON, absurd nesting) is rejected as unreadable, not
+     // crashed-on or clobbered. The decode/validate/resolve path recurses on the tree; Foundation's
+     // JSONDecoder caps nesting depth and throws a DecodingError far below any stack-overflow depth,
+     // so loadOrMigrate surfaces it like any unreadable file and the saved file is preserved. Guards
+     // the loader's no-crash/no-clobber contract for this adversarial input class (distinct from the
+     // syntactically-invalid case above).
+    var deep = "{\"type\":\"leaf\"}"
+    for _ in 0..<1000 { // 1000 >> Foundation's ~512 nesting cap, << any overflow depth
+        deep = "{\"type\":\"split\",\"axis\":\"vertical\",\"dividers\":[{\"value\":0.5,\"unit\":\"fraction\"}],\"children\":[\(deep),{\"type\":\"leaf\"}]}"
+    }
+    let json = "{\"schemaVersion\":3,\"screens\":{},\"defaultLayout\":\(deep)}"
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lineup-deep-\(checks).json")
+    try json.write(to: tmp, atomically: true, encoding: .utf8)
+    expectThrow("pathologically deep config is rejected (no crash, no clobber)") {
+        _ = try LineupConfig.loadOrMigrate(from: tmp, now: "T", backup: { _ in }, resolveLegacyTarget: { _ in wide })
+    }
+    try? FileManager.default.removeItem(at: tmp)
+}
+
 do { // write() validates: invalid layout throws and never creates/overwrites the file
     var bad = LineupConfig()
     bad.defaultLayout = .split(axis: .vertical, dividers: [], children: [.leaf]) // single-child = invalid
