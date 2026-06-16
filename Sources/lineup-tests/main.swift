@@ -46,6 +46,18 @@ do {
     let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY)
     eq(ax.origin.y, 0, "full-height window AX y is 0")
 }
+do { // multi-monitor: a window on a display stacked ABOVE the primary has its top above the
+     // primary's top, so AX y goes NEGATIVE. Round-trip + positive-only absolute tests can't catch
+     // a sign/anchor bug here; assert the absolute values in BOTH directions for the negative case.
+     // A 900-tall secondary above the 1440-tall primary -> that display's Cocoa y is in [1440, 2340].
+    let cocoa = CGRect(x: 100, y: 1500, width: 800, height: 600) // top edge (maxY) = 2100
+    let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY)
+    eq(ax.origin.y, -660, "AX flip: above-primary window -> negative AX y (1440 - 2100)")
+    eq(ax.origin.x, 100, "AX flip: x unchanged across displays")
+    // cocoaRect with an INDEPENDENT negative-AX input (not just the round-trip of the above).
+    let backY = Coord.cocoaRect(fromAX: CGRect(x: 50, y: -660, width: 800, height: 600), primaryMaxY: primaryMaxY).origin.y
+    eq(backY, 1500, "AX->Cocoa: negative AX y maps back above the primary (Cocoa y 1500)")
+}
 do {
     var p = CGPoint(x: 12, y: 34)
     let pointValue = AXValueCreate(.cgPoint, &p)!
