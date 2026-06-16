@@ -43,7 +43,10 @@ case "$TARGET" in
     CLEANUP_ZIP="$SUBMIT"
     ;;
 esac
-cleanup() { [ -n "$CLEANUP_ZIP" ] && rm -f "$CLEANUP_ZIP"; }
+# `return 0` so the trap never propagates a non-zero exit: on the .dmg path CLEANUP_ZIP is
+# empty, so `[ -n "" ]` is false (status 1) and, as the trap's last command at script exit,
+# that 1 would become the script's exit code — a false failure after a successful notarization.
+cleanup() { [ -n "$CLEANUP_ZIP" ] && rm -f "$CLEANUP_ZIP"; return 0; }
 trap cleanup EXIT
 
 echo "==> submitting to Apple's notary service (typically 1-5 min)"
