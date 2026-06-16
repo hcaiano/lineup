@@ -48,11 +48,16 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/">
-      <img src="/assets/icon.png" alt="" width="28" height="28">
-      <span>Lineup</span>
-    </a>
-    <a class="ghlink" href="https://github.com/hcaiano/lineup" rel="noopener">GitHub</a>
+    <div class="inner">
+      <a class="brand" href="/">
+        <img src="/assets/icon.png" alt="" width="28" height="28">
+        <span>Lineup</span>
+      </a>
+      <div class="header-actions">
+        <a class="ghlink" href="https://github.com/hcaiano/lineup" rel="noopener">GitHub</a>
+        <a class="btn btn-primary btn-sm" href="https://github.com/hcaiano/lineup/releases/latest" rel="noopener">Download</a>
+      </div>
+    </div>
   </header>
 
   <main>
@@ -60,8 +65,7 @@
       <img class="hero-icon" src="/assets/icon.png" alt="Lineup app icon" width="104" height="104">
       <h1>Draw your own window zones on macOS.</h1>
       <p class="lede">
-        Lineup lets you draw the zones you actually use, then drop any window into one with a drag or a
-        keyboard shortcut. It lives in your menu bar and remembers a layout for every screen.
+        Draw the exact zones you work in, then drop any window into one with a drag or a keyboard shortcut.
       </p>
       <div class="cta">
         <a class="btn btn-primary" href="https://github.com/hcaiano/lineup/releases/latest" rel="noopener">
@@ -69,25 +73,49 @@
         </a>
         <a class="btn btn-ghost" href="https://github.com/hcaiano/lineup" rel="noopener">View on GitHub</a>
       </div>
-      <p class="fineprint">Free and open source. macOS 13 and later.</p>
+      <ul class="trust">
+        <li>Free, forever</li>
+        <li>Open source (MIT)</li>
+        <li>No tracking, no account</li>
+        <li>Native and lightweight</li>
+        <li>macOS 13+</li>
+      </ul>
     </section>
 
     <section class="shot">
-      <img src="/assets/editor.png" alt="The Lineup layout editor: three numbered zones, with buttons to split a zone side by side, split it top and bottom, or merge it." loading="lazy">
+      <figure>
+        <img src="/assets/editor.png" width="1200" height="750" fetchpriority="high" decoding="async"
+             alt="The Lineup layout editor: a custom asymmetric layout drawn over the screen, with numbered zones and on-zone buttons to split a zone side by side, split it top and bottom, or merge it.">
+        <figcaption>The editor, drawn over your real screen. Split a zone, drag a divider, save.</figcaption>
+      </figure>
     </section>
 
     <section class="features">
       <article>
+        <svg class="glyph" viewBox="0 0 40 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <rect x="1" y="1" width="38" height="28" rx="4"/>
+          <line x1="24" y1="1" x2="24" y2="29"/>
+          <line x1="24" y1="15" x2="39" y2="15"/>
+        </svg>
         <h2>Design your own zones</h2>
         <p>Two columns, three columns, a big main area with a stack beside it. Split a zone as many
           times as you like until it fits the way you work.</p>
       </article>
       <article>
+        <svg class="glyph" viewBox="0 0 40 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <rect x="1" y="3" width="24" height="18" rx="3"/>
+          <line x1="13" y1="3" x2="13" y2="21"/>
+          <rect x="29" y="9" width="10" height="13" rx="2"/>
+        </svg>
         <h2>Every screen remembers</h2>
         <p>Your laptop and your desk monitor can be set up differently. Lineup switches between them
           on its own as you move windows around.</p>
       </article>
       <article>
+        <svg class="glyph" viewBox="0 0 40 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="1" y="1" width="38" height="28" rx="4"/>
+          <path d="M20 8 v9 m-4 -4 l4 4 l4 -4"/>
+        </svg>
         <h2>Quick to place</h2>
         <p>Hold Shift and drag a window onto a zone, or use a keyboard shortcut. Windows land where
           you want them, every time.</p>
