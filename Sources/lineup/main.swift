@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: SettingsWindowController?
     private var lastTrusted = AXIsProcessTrusted()
     private var trustTimer: Timer?
+    private var trustPollTicks = 0
 
     private var configBlockedMessage: String? {
         switch configState {
@@ -74,7 +75,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // every 1.5s forever and defeating App Nap. Revocation still arrives via the notification.
         guard !lastTrusted else { return }
         trustTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            self?.accessibilityMaybeChanged()
+            guard let self else { return }
+            self.accessibilityMaybeChanged() // invalidates + nils trustTimer on the grant transition
+            // Bound the net: ~120s covers the active-granting window (prompt -> System Settings ->
+            // toggle). After that, stop polling and rely on the notification, so an installed-but-
+            // never-granted app doesn't poll AXIsProcessTrusted() every 1.5s forever (same App-Nap
+            // concern as the already-granted case). A late grant (>120s) whose notification is also
+            // coalesced/missed only leaves a stale menu warning until the next menu rebuild (e.g.
+            // toggling a setting from the menu, a display change); hotkeys still gate on
+            // AXIsProcessTrusted() at action time, so nothing functional is affected.
+            self.trustPollTicks += 1
+            if self.trustTimer != nil, self.trustPollTicks >= 80 {
+                self.trustTimer?.invalidate(); self.trustTimer = nil
+            }
         }
     }
 
