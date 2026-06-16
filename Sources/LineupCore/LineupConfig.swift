@@ -82,15 +82,22 @@ public struct LineupConfig: Codable, Equatable {
     /// Global shortcuts (optional; nil means "use the app's defaults"). Backward-compatible:
     /// a schema-3 file written before shortcuts existed decodes with this absent.
     public var shortcuts: Shortcuts?
+    /// Whether shift-drag-to-snap is enabled. Optional/backward-compatible like `shortcuts`:
+    /// a config written before this existed decodes as nil, which the app treats as the
+    /// default (on). When the user turns it off, persisting `false` keeps the global mouse
+    /// monitor uninstalled at the next launch.
+    public var dragSnapEnabled: Bool?
 
     public init(schemaVersion: Int = LineupConfig.currentSchema,
                 screens: [String: ScreenLayout] = [:],
                 defaultLayout: Node = .halves,
-                shortcuts: Shortcuts? = nil) {
+                shortcuts: Shortcuts? = nil,
+                dragSnapEnabled: Bool? = nil) {
         self.schemaVersion = schemaVersion
         self.screens = screens
         self.defaultLayout = defaultLayout
         self.shortcuts = shortcuts
+        self.dragSnapEnabled = dragSnapEnabled
     }
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.

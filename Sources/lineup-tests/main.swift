@@ -746,6 +746,23 @@ do { // shortcuts are optional + backward compatible in LineupConfig
     check((try JSONDecoder().decode(LineupConfig.self, from: d2)).shortcuts == nil, "config: missing shortcuts decodes to nil")
 }
 
+do { // dragSnapEnabled is optional + backward compatible (same pattern as shortcuts)
+    var cfg = LineupConfig()
+    check(cfg.dragSnapEnabled == nil, "config: dragSnapEnabled absent by default (nil = on)")
+    // setting() preserves the flag while updating a screen's layout
+    cfg.dragSnapEnabled = false
+    let carried = cfg.setting(layout: .thirds, for: wide, now: nil)
+    check(carried.dragSnapEnabled == false, "config: setting(layout:) preserves dragSnapEnabled")
+    // false round-trips intact (an explicit opt-out must survive a write/read cycle)
+    let back = try JSONDecoder().decode(LineupConfig.self, from: try JSONEncoder().encode(carried))
+    check(back.dragSnapEnabled == false, "config: dragSnapEnabled=false round-trips")
+    // a schema-3 doc without the key decodes to nil, which the app reads as the default (on)
+    let d2 = try JSONEncoder().encode(LineupConfig())
+    let decoded = try JSONDecoder().decode(LineupConfig.self, from: d2)
+    check(decoded.dragSnapEnabled == nil, "config: missing dragSnapEnabled decodes to nil")
+    check((decoded.dragSnapEnabled ?? true) == true, "config: nil dragSnapEnabled defaults to on")
+}
+
 // ---- Drag target: whole zone vs half vs quarter (5% hot bands on every edge) ----
 do {
     let zone = CGRect(x: 100, y: 0, width: 1000, height: 1000) // Cocoa: +y up

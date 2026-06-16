@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory) // agent: no Dock icon (also LSUIElement)
         reloadConfig()
         registerHotkeys()      // must precede buildStatusItem so the menu shows real
-        dragSnap.start()       // shift-drag-to-snap (default on)
+        if config.dragSnapEnabled ?? true { dragSnap.start() } // shift-drag-to-snap (default on); respect a saved opt-out
         buildStatusItem()      // hotkey status (e.g. failures if Magnet owns the combos)
         requestAccessibility() // prompt up front; hotkeys can't move windows without it
         startAccessibilityWatch()
@@ -102,7 +102,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleDragSnap() {
         if dragSnap.isEnabled { dragSnap.stop() } else { dragSnap.start() }
+        persistDragSnapEnabled(dragSnap.isEnabled)
         buildStatusItem()
+    }
+
+    /// Persist the shift-drag toggle so it survives relaunch (and a disabled state keeps the
+    /// global mouse monitor uninstalled at next launch — see applicationDidFinishLaunching).
+    /// Best-effort, mirroring applyShortcuts: write-then-assign, and if config writes are
+    /// blocked or fail, the in-session toggle still holds; we just don't persist.
+    private func persistDragSnapEnabled(_ enabled: Bool) {
+        guard configCanWrite else { return }
+        var updated = config
+        updated.dragSnapEnabled = enabled
+        do {
+            try updated.write(to: AppDelegate.configURL)
+            config = updated
+        } catch {
+            FileHandle.standardError.write(Data("drag-snap setting save failed (kept in session): \(error)\n".utf8))
+        }
     }
 
     // MARK: - Config
