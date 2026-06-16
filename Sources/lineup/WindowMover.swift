@@ -112,8 +112,12 @@ enum WindowMover {
         var winRef: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &winRef)
         guard err == .success, let win = winRef else { return nil }
-        // Force-cast: AX focused-window attribute is always an AXUIElement.
-        let window = tame(win as! AXUIElement)
+        // tame() BEFORE the role read below: the messaging timeout is per-element, and the
+        // freshly-returned window element starts at the system default 6s. isConfirmedNonWindow
+        // sends an AX message, so a hung frontmost app would beachball the menu bar for 6s
+        // unless we bound it to 1s first (matches enclosingWindow's order).
+        guard let raw = AXExtract.element(win) else { return nil }
+        let window = tame(raw)
         // The focused "window" can be a sheet or system overlay (role != AXWindow);
         // snapping one of those away from its parent looks broken. Leave them alone.
         // Fail OPEN: a flaky role read must not refuse a real window.
@@ -155,16 +159,16 @@ enum WindowMover {
             }
             var winRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(e, kAXWindowAttribute as CFString, &winRef) == .success,
-               let w = winRef {
+               let candidate = AXExtract.element(winRef) {
                 // The kAXWindow shortcut can hand back a sheet/overlay (e.g. from inside
                 // a Save sheet). Confirmed non-windows are not drag targets.
-                let candidate = tame(w as! AXUIElement)
-                return isConfirmedNonWindow(candidate) ? nil : candidate
+                let tamed = tame(candidate)
+                return isConfirmedNonWindow(tamed) ? nil : tamed
             }
             var parentRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(e, kAXParentAttribute as CFString, &parentRef) == .success,
-               let parent = parentRef {
-                current = tame(parent as! AXUIElement)
+               let parent = AXExtract.element(parentRef) {
+                current = tame(parent)
             } else {
                 current = nil
             }
@@ -376,20 +380,14 @@ enum WindowMover {
 
     private static func axPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
         var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success,
-              let value = ref else { return nil }
-        var point = CGPoint.zero
-        guard AXValueGetValue(value as! AXValue, .cgPoint, &point) else { return nil }
-        return point
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success else { return nil }
+        return AXExtract.point(ref)
     }
 
     private static func axSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
         var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success,
-              let value = ref else { return nil }
-        var size = CGSize.zero
-        guard AXValueGetValue(value as! AXValue, .cgSize, &size) else { return nil }
-        return size
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success else { return nil }
+        return AXExtract.size(ref)
     }
 
     private static func setPoint(_ el: AXUIElement, _ attr: String, _ point: CGPoint) {
