@@ -67,7 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(accessibilityMaybeChanged),
             name: NSNotification.Name("com.apple.accessibility.api"), object: nil)
-        // Distributed notifications can be coalesced or missed; poll as a safety net until granted.
+        // Distributed notifications can be coalesced or missed; poll as a safety net until
+        // granted. Only when we launch UNTRUSTED — an already-trusted launch (every returning
+        // user) has nothing to wait for, and the early-return in accessibilityMaybeChanged
+        // would never reach the invalidate, leaving the timer polling AXIsProcessTrusted()
+        // every 1.5s forever and defeating App Nap. Revocation still arrives via the notification.
+        guard !lastTrusted else { return }
         trustTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.accessibilityMaybeChanged()
         }
