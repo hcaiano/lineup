@@ -58,3 +58,29 @@ Scripts/                    build-app, setup-signing, make-dmg, make-icon, make-
 
 Config lives at `~/.config/lineup/zones.json` (one layout per display, keyed to the monitor). The
 editor writes it for you.
+
+## Notarized release (Developer ID)
+
+With an Apple Developer account, a **Developer ID Application** certificate in the keychain
+makes `build-app.sh` sign with it automatically (hardened runtime + secure timestamp), which
+`notarize.sh` can then submit to Apple. Notarization removes the "unidentified developer"
+prompt on first open. One-time credential setup (keeps secrets out of scripts):
+
+```sh
+xcrun notarytool store-credentials "lineup-notary" \
+  --apple-id <your-apple-id> --team-id <TEAMID> --password <app-specific-password>
+```
+
+Release flow (the `REQUIRE_DEVELOPER_ID_SIGNATURE=1` gate fails fast if no Developer ID
+identity is found, so a notarized release can't silently fall back to the self-signed cert):
+
+```sh
+REQUIRE_DEVELOPER_ID_SIGNATURE=1 ./Scripts/build-app.sh dist   # sign the app w/ Developer ID
+./Scripts/notarize.sh dist/Lineup.app                          # notarize + staple the app
+./Scripts/make-dmg.sh dist                                     # package it; signs the DMG too
+./Scripts/notarize.sh dist/Lineup-<version>.dmg                # notarize + staple the DMG
+```
+
+Stapling the app makes the dragged-out copy pass Gatekeeper offline; notarizing the DMG makes
+the download itself open cleanly. `notarytool` and `stapler` ship with the Command Line Tools,
+so no full Xcode is needed.
