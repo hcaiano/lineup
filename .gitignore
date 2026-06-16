@@ -19,3 +19,4 @@ Icon/icon-blue-*.png
 # wrangler local state (web deploys)
 .wrangler/
 web/.wrangler/
+LAUNCH.md

@@ -6,7 +6,7 @@
 
 **Draw your own window zones on macOS.**
 
-Free, menu-bar window management for the custom layouts that built-in tiling, Rectangle, and Magnet don't cover.
+Free, menu-bar window management built around the custom layouts you design yourself.
 
 [![Latest release](https://img.shields.io/github/v/release/hcaiano/lineup?label=download&color=2F6BFF)](https://github.com/hcaiano/lineup/releases/latest)
 &nbsp;[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-2F6BFF)](https://github.com/hcaiano/lineup/releases/latest)
@@ -16,10 +16,9 @@ Free, menu-bar window management for the custom layouts that built-in tiling, Re
 
 ---
 
-Built-in tiling gives you fixed halves and quarters. Lineup lets you draw the zones you actually
-use: a wide main column with a stack beside it, three uneven columns, a grid, whatever fits your
-work. Then you drop any window into one with a quick drag or a keyboard shortcut, and every monitor
-remembers its own setup.
+Lineup lets you draw the zones you actually use: a wide main column with a stack beside it, three
+uneven columns, a grid, whatever fits your work. Drop any window into one with a quick drag or a
+keyboard shortcut, and every monitor remembers its own setup.
 
 <div align="center">
 <img src="docs/editor.png" width="900" alt="The Lineup layout editor: numbered zones drawn over a screen, with controls on a zone to split it side by side, split it top and bottom, or merge it.">
@@ -30,8 +29,6 @@ remembers its own setup.
 - **Every screen remembers its layout.** Your laptop and your desk monitor each stay arranged the
   way they should be, and Lineup switches between them on its own.
 - **It stays out of the way.** Lineup lives in your menu bar and barely uses any power.
-
-If Rectangle is for standard halves and thirds, Lineup is for the layouts you sketch yourself.
 
 ### A few setups it's good for
 
@@ -49,8 +46,8 @@ If Rectangle is for standard halves and thirds, Lineup is for the layouts you sk
      next to the Lineup message, and confirm with your fingerprint or password.
    - The prompt appears once more. Click **Open**, and Lineup starts.
 4. Lineup needs permission to move windows. When it asks, open **System Settings → Privacy &
-   Security → Accessibility** and switch **Lineup** on. If you already run Magnet or Rectangle, turn
-   it off so the shortcuts don't fight.
+   Security → Accessibility** and switch **Lineup** on. If you already use another window manager,
+   turn its shortcuts off so they don't fight with Lineup's.
 
 ## Design your layout
 
