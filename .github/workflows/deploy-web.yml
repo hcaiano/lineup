@@ -1,0 +1,31 @@
+name: Deploy website
+
+# Auto-deploys the Cloudflare Worker (lineup, serving web/) whenever the site changes on
+# main. The account id lives in web/wrangler.toml; the only repo secret needed is
+# CLOUDFLARE_API_TOKEN (a token with "Workers Scripts:Edit" on the Caiano account). After
+# adding it, push a web/ change or run this workflow from the Actions tab to deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+# One deploy at a time; cancel an in-flight run when a newer commit lands.
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy with Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: web
+          command: deploy
