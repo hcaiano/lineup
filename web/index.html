@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lineup — Draw your own window zones on macOS</title>
-  <meta name="description" content="Lineup is a free macOS app built around custom window layouts you design yourself. Draw your own zones, drop windows in with a drag or a keyboard shortcut. Lives in your menu bar.">
+  <title>Lineup · Draw your own window zones on macOS</title>
+  <meta name="description" content="Lineup is a free, open-source macOS app built around custom window layouts you design yourself. Draw your own zones, then drop any window in with a drag or a keyboard shortcut. Lives in your menu bar.">
   <link rel="canonical" href="https://lineup.caiano.com/">
   <meta name="theme-color" content="#2F6BFF">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://lineup.caiano.com/">
-  <meta property="og:title" content="Lineup — Draw your own window zones on macOS">
-  <meta property="og:description" content="Free macOS window management built around custom layouts you design yourself. Draw your own zones; drop windows in with a drag.">
+  <meta property="og:title" content="Lineup · Draw your own window zones on macOS">
+  <meta property="og:description" content="Free, open-source macOS window management built around custom layouts you design yourself. Draw your own zones; drop windows in with a drag.">
   <meta property="og:image" content="https://lineup.caiano.com/assets/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -20,8 +20,8 @@
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Lineup — Draw your own window zones on macOS">
-  <meta name="twitter:description" content="Free macOS window management built around custom layouts you design yourself. Draw your own zones; drop windows in with a drag.">
+  <meta name="twitter:title" content="Lineup · Draw your own window zones on macOS">
+  <meta name="twitter:description" content="Free, open-source macOS window management built around custom layouts you design yourself. Draw your own zones; drop windows in with a drag.">
   <meta name="twitter:image" content="https://lineup.caiano.com/assets/og.png">
 
   <!-- Icons -->
@@ -62,10 +62,15 @@
 
   <main>
     <section class="hero">
-      <img class="hero-icon" src="/assets/icon.png" alt="Lineup app icon" width="104" height="104">
+      <a class="badge" href="https://github.com/hcaiano/lineup/releases/latest" rel="noopener">
+        <span class="badge-dot" aria-hidden="true"></span>
+        Notarized and Apple-signed
+      </a>
+      <img class="hero-icon" src="/assets/icon.png" alt="Lineup app icon" width="96" height="96">
       <h1>Draw your own window zones on macOS.</h1>
       <p class="lede">
-        Draw the exact zones you work in, then drop any window into one with a drag or a keyboard shortcut.
+        Lay out the exact zones you work in, then drop any window into one with a drag or a
+        keyboard shortcut. It lives in your menu bar and stays out of the way.
       </p>
       <div class="cta">
         <a class="btn btn-primary" href="https://github.com/hcaiano/lineup/releases/latest" rel="noopener">
@@ -80,55 +85,81 @@
         <li>Native and lightweight</li>
         <li>macOS 13+</li>
       </ul>
-    </section>
 
-    <section class="shot">
-      <figure>
-        <img src="/assets/editor.png" width="1200" height="750" fetchpriority="high" decoding="async"
-             alt="The Lineup layout editor: a custom asymmetric layout drawn over the screen, with numbered zones and on-zone buttons to split a zone side by side, split it top and bottom, or merge it.">
-        <figcaption>The editor, drawn over your real screen. Split a zone, drag a divider, save.</figcaption>
+      <figure class="hero-shot">
+        <div class="window">
+          <div class="window-bar" aria-hidden="true">
+            <span class="traffic"><i></i><i></i><i></i></span>
+            <span class="window-title">Edit Layout</span>
+          </div>
+          <img src="/assets/editor.png" width="1200" height="750" fetchpriority="high" decoding="async"
+               alt="The Lineup layout editor drawn over a real screen: three numbered zones split by draggable dividers, each labelled with its exact pixel size, and on-zone controls to split a zone side by side, split it top and bottom, or merge it.">
+        </div>
+        <figcaption>The editor draws on your real screen. Split a zone, drag a divider, hit Save.</figcaption>
       </figure>
     </section>
 
-    <section class="features">
-      <article>
-        <svg class="glyph" viewBox="0 0 40 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-          <rect x="1" y="1" width="38" height="28" rx="4"/>
-          <line x1="24" y1="1" x2="24" y2="29"/>
-          <line x1="24" y1="15" x2="39" y2="15"/>
-        </svg>
-        <h2>Design your own zones</h2>
-        <p>Two columns, three columns, a big main area with a stack beside it. Split a zone as many
-          times as you like until it fits the way you work.</p>
-      </article>
-      <article>
-        <svg class="glyph" viewBox="0 0 40 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-          <rect x="1" y="3" width="24" height="18" rx="3"/>
-          <line x1="13" y1="3" x2="13" y2="21"/>
-          <rect x="29" y="9" width="10" height="13" rx="2"/>
-        </svg>
-        <h2>Every screen remembers</h2>
-        <p>Your laptop and your desk monitor can be set up differently. Lineup switches between them
-          on its own as you move windows around.</p>
-      </article>
-      <article>
-        <svg class="glyph" viewBox="0 0 40 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="1" y="1" width="38" height="28" rx="4"/>
-          <path d="M20 8 v9 m-4 -4 l4 4 l4 -4"/>
-        </svg>
-        <h2>Quick to place</h2>
-        <p>Hold Shift and drag a window onto a zone, or use a keyboard shortcut. Windows land where
-          you want them, every time.</p>
-      </article>
+    <section class="features" aria-label="What Lineup does">
+      <div class="feature">
+        <div class="feature-copy">
+          <h2>Design the zones, don't pick from a list</h2>
+          <p>Two columns, three columns, a wide main area with a stack beside it. Split any zone as
+            many times as you like until the layout matches the way you actually work.</p>
+        </div>
+        <div class="feature-art">
+          <div class="screen">
+            <span class="zone z-tall"></span>
+            <span class="zone z-tr is-active"></span>
+            <span class="zone z-br"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature-copy">
+          <h2>Every screen keeps its own layout</h2>
+          <p>Your laptop and your desk monitor can be set up completely differently. Lineup
+            recognises each display and switches between their layouts on its own as you move
+            windows around.</p>
+        </div>
+        <div class="feature-art">
+          <div class="screens-pair">
+            <div class="screen screen-laptop">
+              <span class="zone z-half-l"></span>
+              <span class="zone z-half-r"></span>
+            </div>
+            <div class="screen screen-wide">
+              <span class="zone z-third"></span>
+              <span class="zone z-third is-active"></span>
+              <span class="zone z-third"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature-copy">
+          <h2>Place windows without aiming</h2>
+          <p>Hold Shift and drag a window onto a zone, or press a keyboard shortcut. Windows land
+            exactly where you meant, the same way every time.</p>
+        </div>
+        <div class="feature-art">
+          <div class="screen">
+            <span class="zone z-target is-active"></span>
+            <span class="snap-window"></span>
+            <span class="snap-hint" aria-hidden="true">⌃⌥⇧⌘&nbsp;→</span>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="steps">
       <h2>Up and running in a minute</h2>
       <ol>
         <li><strong>Download</strong> the app and drag it into your Applications folder.</li>
-        <li><strong>Allow it once</strong> in System Settings, then turn on Accessibility so Lineup
-          can move your windows.</li>
-        <li><strong>Edit your layout</strong> from the menu bar and start snapping.</li>
+        <li><strong>Allow it once</strong> in System Settings under Accessibility, so Lineup can
+          move your windows.</li>
+        <li><strong>Edit your layout</strong> from the menu bar, then start snapping.</li>
       </ol>
       <a class="btn btn-primary" href="https://github.com/hcaiano/lineup/releases/latest" rel="noopener">
         Download Lineup
