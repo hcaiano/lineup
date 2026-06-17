@@ -42,6 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        // Offscreen UI preview: `LINEUP_RENDER_PREVIEW=<dir> swift run lineup` writes PNGs of the
+        // Welcome + About content from the real view code, then exits. Debug-only; never ships.
+        if let dir = ProcessInfo.processInfo.environment["LINEUP_RENDER_PREVIEW"] {
+            Self.renderPreviews(to: dir)
+            NSApp.terminate(nil)
+            return
+        }
+        #endif
         NSApp.setActivationPolicy(.accessory) // agent: no Dock icon (also LSUIElement)
         reloadConfig()
         registerHotkeys()      // must precede buildStatusItem so the menu shows real
@@ -339,45 +348,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var hasWarning = false
         if !AXIsProcessTrusted() {
             addInfo(menu, "⚠︎ Accessibility not granted")
-            menu.addItem(NSMenuItem(title: "Grant Accessibility…", action: #selector(openAccessibilitySettings), keyEquivalent: ""))
+            menu.addItem(menuItem("Grant Accessibility…", #selector(openAccessibilitySettings), symbol: "lock.shield"))
             hasWarning = true
         }
         if failedHotkeys > 0 {
             addInfo(menu, "⚠︎ \(failedHotkeys) shortcut\(failedHotkeys == 1 ? "" : "s") blocked by another app")
-            menu.addItem(NSMenuItem(title: "Retry shortcuts", action: #selector(retryHotkeys), keyEquivalent: ""))
+            menu.addItem(menuItem("Retry shortcuts", #selector(retryHotkeys), symbol: "arrow.clockwise"))
             hasWarning = true
         }
         if configState != .ok {
             addInfo(menu, configState == .migrationDeferred
                 ? "⚠︎ Saved layout waiting for its display"
                 : "⚠︎ Config couldn't be loaded")
-            menu.addItem(NSMenuItem(
-                title: configState == .migrationDeferred ? "Discard & reset…" : "Reset configuration…",
-                action: #selector(resetConfig), keyEquivalent: ""))
+            menu.addItem(menuItem(
+                configState == .migrationDeferred ? "Discard & reset…" : "Reset configuration…",
+                #selector(resetConfig), symbol: "arrow.counterclockwise"))
             hasWarning = true
         }
         if hasWarning { menu.addItem(.separator()) }
 
-        let editItem = NSMenuItem(title: "Edit Layout…", action: #selector(openEditor), keyEquivalent: "")
+        let editItem = menuItem("Edit Layout…", #selector(openEditor), symbol: "square.grid.2x2")
         editItem.isEnabled = configCanWrite // blocked config routes to Reset instead
         menu.addItem(editItem)
-        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(menuItem("Settings…", #selector(openSettings), key: ",", symbol: "gearshape"))
 
         menu.addItem(.separator())
-        let dragItem = NSMenuItem(title: "Shift-drag to snap", action: #selector(toggleDragSnap), keyEquivalent: "")
+        let dragItem = menuItem("Shift-drag to snap", #selector(toggleDragSnap), symbol: "hand.draw")
         dragItem.state = dragSnap.isEnabled ? .on : .off
         menu.addItem(dragItem)
-        let loginItem = NSMenuItem(title: "Launch at login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        let loginItem = menuItem("Launch at login", #selector(toggleLaunchAtLogin), symbol: "power")
         loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "About Lineup", action: #selector(showAbout), keyEquivalent: ""))
+        menu.addItem(menuItem("Check for Updates…", #selector(checkForUpdates), symbol: "arrow.down.circle"))
+        menu.addItem(menuItem("About Lineup", #selector(showAbout), symbol: "info.circle"))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Lineup", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(menuItem("Quit Lineup", #selector(quit), key: "q", symbol: "xmark.circle"))
         statusItem.menu = menu
     }
+
+    /// A menu row with a consistent SF Symbol icon, so every action lines up the same way
+    /// (titles share one image column; the checkmark for toggles sits in the state column).
+    private func menuItem(_ title: String, _ action: Selector, key: String = "", symbol: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
+            item.image = img.withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+        }
+        return item
+    }
+
+    #if DEBUG
+    /// Render the Welcome + About content views to PNGs for offscreen visual QA. Debug-only.
+    private static func renderPreviews(to dir: String) {
+        func write(_ view: NSView, _ size: NSSize, _ name: String) {
+            view.frame = NSRect(origin: .zero, size: size)
+            let win = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            win.contentView = view
+            view.layoutSubtreeIfNeeded()
+            view.display()
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(dir)/\(name)"))
+        }
+        write(WelcomeWindowController.makeEmbeddedContent(size: NSSize(width: 460, height: 388)),
+              NSSize(width: 460, height: 388), "preview-welcome.png")
+        write(AboutWindowController.makeEmbeddedContent(size: NSSize(width: 420, height: 430)),
+              NSSize(width: 420, height: 430), "preview-about.png")
+    }
+    #endif
 
     @objc private func checkForUpdates() { UpdateChecker.checkInteractively() }
 

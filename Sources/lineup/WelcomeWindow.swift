@@ -17,6 +17,11 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    /// The welcome content as a standalone view (used for offscreen preview rendering).
+    static func makeEmbeddedContent(size: NSSize) -> NSView {
+        WelcomeWindowController(onGrant: {}, onClose: {}).makeContent(size: size)
+    }
+
     func show() {
         let size = NSSize(width: 460, height: 388)
         let win = NSWindow(
@@ -46,15 +51,16 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
         view.addSubview(icon)
 
         let title = NSTextField(labelWithString: "Welcome to Lineup")
-        title.frame = NSRect(x: 30, y: size.height - 166, width: size.width - 60, height: 28)
+        title.frame = NSRect(x: 30, y: size.height - 168, width: size.width - 60, height: 30)
         title.font = .systemFont(ofSize: 22, weight: .semibold)
         title.textColor = .labelColor
         title.alignment = .center
         view.addSubview(title)
 
+        // Sit the description a clear gap below the title — it used to butt right up against it.
         let body = NSTextField(wrappingLabelWithString:
             "Lineup lives in your menu bar, at the top of your screen. To move and resize your windows it needs one permission, Accessibility. That is the only thing it asks for, and it never collects your data.")
-        body.frame = NSRect(x: 44, y: 132, width: size.width - 88, height: 96)
+        body.frame = NSRect(x: 44, y: 104, width: size.width - 88, height: 96)
         body.font = .systemFont(ofSize: 13)
         body.textColor = .secondaryLabelColor
         body.alignment = .center

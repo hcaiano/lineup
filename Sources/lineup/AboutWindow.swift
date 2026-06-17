@@ -53,7 +53,8 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         icon.imageScaling = .scaleProportionallyUpOrDown
         view.addSubview(icon)
 
-        let title = label("Lineup", y: size.height - 148, size: 24, weight: .semibold, color: .labelColor)
+        // Taller box than the 12pt rows: a 24pt line needs ~34pt or the "p" descender clips.
+        let title = label("Lineup", y: size.height - 154, size: 24, weight: .semibold, color: .labelColor, height: 34)
         title.alignment = .center
         view.addSubview(title)
 
@@ -90,9 +91,9 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         return view
     }
 
-    private func label(_ text: String, y: CGFloat, size: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSTextField {
+    private func label(_ text: String, y: CGFloat, size: CGFloat, weight: NSFont.Weight, color: NSColor, height: CGFloat = 22) -> NSTextField {
         let f = NSTextField(labelWithString: text)
-        f.frame = NSRect(x: 42, y: y, width: 336, height: 22)
+        f.frame = NSRect(x: 42, y: y, width: 336, height: height)
         f.font = .systemFont(ofSize: size, weight: weight)
         f.textColor = color
         f.lineBreakMode = .byTruncatingTail
