@@ -24,5 +24,18 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Lineup</string>
+
+	<!-- Sparkle auto-updates. The feed lives on the site (auto-deployed from web/appcast.xml).
+	     SUPublicEDKey is the EdDSA PUBLIC key from `generate_keys`; the matching private key
+	     stays only in the developer's Keychain and signs each release (Scripts/sparkle-appcast.sh).
+	     Replace the placeholder below with your real public key before shipping an update. -->
+	<key>SUFeedURL</key>
+	<string>https://lineup.caiano.com/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>REPLACE_WITH_SUPublicEDKey_FROM_generate_keys</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

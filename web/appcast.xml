@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sparkle update feed for Lineup. Served at https://lineup.caiano.com/appcast.xml and
+     referenced by SUFeedURL in Resources/Info.plist. Regenerated per release by
+     Scripts/sparkle-appcast.sh, which EdDSA-signs the DMG with the key in the developer's
+     Keychain. Empty channel = no update offered yet. -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Lineup</title>
+    <link>https://lineup.caiano.com/appcast.xml</link>
+    <description>Updates for Lineup, a macOS window manager.</description>
+    <language>en</language>
+  </channel>
+</rss>

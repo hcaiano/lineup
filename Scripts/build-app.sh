@@ -45,30 +45,51 @@ cp "${BUILD_DIR}/${EXEC_NAME}" "${APP}/Contents/MacOS/${EXEC_NAME}"
 cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
 cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
-# Sign with the best identity available, in order:
+# Embed Sparkle.framework (auto-updates). SwiftPM copies the binary XCFramework's macOS slice
+# next to the product; fall back to the extracted artifact. ditto (not cp) preserves the
+# framework's Versions symlink structure — a plain copy would break its signature.
+SPARKLE_FW="${BUILD_DIR}/Sparkle.framework"
+[ -d "${SPARKLE_FW}" ] || SPARKLE_FW="$(find .build/artifacts -type d -name Sparkle.framework -path '*macos*' 2>/dev/null | head -1)"
+[ -d "${SPARKLE_FW}" ] || { echo "error: Sparkle.framework not found; run 'swift build -c release' first." >&2; exit 1; }
+mkdir -p "${APP}/Contents/Frameworks"
+ditto "${SPARKLE_FW}" "${APP}/Contents/Frameworks/Sparkle.framework"
+
+# Resolve the best signing identity (valid identities only), in order:
 #   1. Developer ID Application — Apple-issued. Enables notarization (removes the Gatekeeper
-#      "unidentified developer" warning) and gives a Team-ID-stable requirement, so the build
-#      machine no longer has to be the one that holds a local cert. Needs --timestamp.
+#      "unidentified developer" warning) and gives a Team-ID-stable requirement. Needs --timestamp.
 #   2. The local self-signed identity (Scripts/setup-signing.sh) — stable across rebuilds so
 #      Accessibility persists, but NOT notarizable; users still see the Gatekeeper warning.
 #   3. Ad-hoc — last resort; signature changes every build.
-# We attempt the real sign rather than gating on `find-certificate` (a cert can exist with no
-# usable key), then inspect the result.
-# Set DEVELOPER_ID_IDENTITY to pin a specific identity; else auto-detect the first Developer
-# ID Application in the keychain (excludes "Developer ID Installer", which we don't want).
+# `security find-identity -p codesigning -v` lists only identities with a usable private key.
+# Set DEVELOPER_ID_IDENTITY to pin a specific one (excludes "Developer ID Installer").
 DEVID="${DEVELOPER_ID_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
-sig_kind="ad-hoc"
-if [ -n "${DEVID}" ] && codesign --force --options runtime --timestamp \
-      --sign "${DEVID}" --identifier "${BUNDLE_ID}" "${APP}" 2>/dev/null; then
-  sig_kind="developer-id"
-  echo "==> codesigned with Developer ID (notarizable): ${DEVID}"
-elif codesign --force --options runtime --sign "${SIGN_IDENTITY}" --identifier "${BUNDLE_ID}" "${APP}" 2>/dev/null; then
-  sig_kind="self-signed"
-  echo "==> codesigned with the local stable identity '${SIGN_IDENTITY}' (not notarizable)"
+TIMESTAMP_FLAG=""
+if [ -n "${DEVID}" ]; then
+  SIGN_ID="${DEVID}"; sig_kind="developer-id"; TIMESTAMP_FLAG="--timestamp"
+  echo "==> signing with Developer ID (notarizable): ${DEVID}"
+elif security find-identity -p codesigning -v 2>/dev/null | grep -q "${SIGN_IDENTITY}"; then
+  SIGN_ID="${SIGN_IDENTITY}"; sig_kind="self-signed"
+  echo "==> signing with the local stable identity '${SIGN_IDENTITY}' (not notarizable)"
 else
-  echo "==> no stable identity available; ad-hoc codesign (identifier: ${BUNDLE_ID})"
-  codesign --force --sign - --identifier "${BUNDLE_ID}" "${APP}"
+  SIGN_ID="-"; sig_kind="ad-hoc"
+  echo "==> no stable identity; ad-hoc signing (identifier: ${BUNDLE_ID})"
 fi
+
+# Sign the embedded Sparkle.framework INSIDE-OUT: each nested helper/XPC service first, then
+# the framework itself. Apple requires inner code signed before its container, and Sparkle's
+# own docs say to sign these individually and NEVER with --deep (it mis-signs the components).
+# Hardened runtime on every piece; Downloader.xpc keeps its own entitlements.
+FW="${APP}/Contents/Frameworks/Sparkle.framework"
+if [ -d "${FW}" ]; then
+  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/XPCServices/Installer.xpc"
+  codesign --force --options runtime ${TIMESTAMP_FLAG} --preserve-metadata=entitlements --sign "${SIGN_ID}" "${FW}/Versions/B/XPCServices/Downloader.xpc"
+  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/Autoupdate"
+  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/Updater.app"
+  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}"
+fi
+
+# Sign the app LAST (identifier pinned; hardened runtime). This seals the embedded framework.
+codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" --identifier "${BUNDLE_ID}" "${APP}"
 
 # The signature TCC keys on is the designated requirement. Cert-based (Developer ID or the
 # self-signed cert) => stable across rebuilds, so Accessibility sticks; a bare cdhash => ad-hoc
@@ -95,8 +116,8 @@ if [ "${REQUIRE_DEVELOPER_ID_SIGNATURE:-0}" = "1" ] && [ "${sig_kind}" != "devel
   exit 1
 fi
 
-# Belt-and-suspenders: the signature must at least be valid.
-codesign --verify --strict "${APP}"
+# Belt-and-suspenders: the whole bundle (app + embedded framework) must verify.
+codesign --verify --deep --strict "${APP}"
 
 echo "==> done: ${APP}"
 echo "    Launch with:  open \"${APP}\""

@@ -3,6 +3,7 @@ import ApplicationServices
 import Carbon.HIToolbox
 import ServiceManagement
 import LineupCore
+import Sparkle
 
 /// Minimal menu-bar agent: loads the zone config, registers Hyper+key global hotkeys,
 /// and snaps the focused window into the matching zone.
@@ -52,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         NSApp.setActivationPolicy(.accessory) // agent: no Dock icon (also LSUIElement)
+        _ = AppUpdater.shared  // start Sparkle's scheduled background update checks
         reloadConfig()
         registerHotkeys()      // must precede buildStatusItem so the menu shows real
         if config.dragSnapEnabled ?? true { dragSnap.start() } // shift-drag-to-snap (default on); respect a saved opt-out
@@ -381,7 +383,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(loginItem)
 
         menu.addItem(.separator())
-        menu.addItem(menuItem("Check for Updates…", #selector(checkForUpdates), symbol: "arrow.down.circle"))
+        // Sparkle owns this item: it runs the check AND enables/disables the item via
+        // canCheckForUpdates, so it targets the updater controller, not the app delegate.
+        let updatesItem = menuItem("Check for Updates…",
+                                   #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                                   symbol: "arrow.down.circle")
+        updatesItem.target = AppUpdater.shared
+        menu.addItem(updatesItem)
         menu.addItem(menuItem("About Lineup", #selector(showAbout), symbol: "info.circle"))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit Lineup", #selector(quit), key: "q", symbol: "xmark.circle"))
@@ -417,8 +425,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               NSSize(width: 420, height: 430), "preview-about.png")
     }
     #endif
-
-    @objc private func checkForUpdates() { UpdateChecker.checkInteractively() }
 
     @objc private func showAbout() { AboutWindowController.show() }
 

@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import LineupCore
+import Sparkle
 
 /// Hooks the Settings window needs from the app.
 struct SettingsContext {
@@ -328,7 +329,8 @@ private final class AboutTabView: NSView {
         about.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin]
         addSubview(about)
 
-        let update = NSButton(title: "Check for Updates…", target: self, action: #selector(checkUpdates))
+        let update = NSButton(title: "Check for Updates…", target: AppUpdater.shared,
+                              action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)))
         update.bezelStyle = .rounded
         update.sizeToFit()
         update.frame = NSRect(x: (640 - update.frame.width - 24) / 2, y: 12,
@@ -337,8 +339,6 @@ private final class AboutTabView: NSView {
         addSubview(update)
     }
     required init?(coder: NSCoder) { fatalError() }
-
-    @objc private func checkUpdates() { UpdateChecker.checkInteractively() }
 }
 
 // MARK: - General tab
