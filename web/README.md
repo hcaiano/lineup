@@ -30,16 +30,22 @@ cd web && python3 -m http.server 8799
 ## Deploy (Cloudflare)
 
 The site is the `lineup` Worker on the Caiano Cloudflare account, with the custom domain
-`lineup.caiano.com` attached (Cloudflare manages the DNS record). To ship changes:
+`lineup.caiano.com` attached (Cloudflare manages the DNS record). The account id is in
+`wrangler.toml`; the custom-domain attachment is a one-time setup and survives deploys.
+
+**Automatic (default):** `.github/workflows/deploy-web.yml` deploys on every push to `main`
+that touches `web/`. One-time setup: add a repo secret **`CLOUDFLARE_API_TOKEN`** (a token
+with *Workers Scripts:Edit* on the Caiano account) under Settings → Secrets and variables →
+Actions. You can also run it on demand from the **Actions** tab (Run workflow).
+
+**Manual (fallback):**
 
 ```sh
 cd web
-CLOUDFLARE_ACCOUNT_ID=8fb78b17553e40987100290645e00bbc \
-CLOUDFLARE_API_TOKEN=<token with Workers Scripts:Edit on the Caiano account> \
-npx wrangler deploy
+CLOUDFLARE_API_TOKEN=<token with Workers Scripts:Edit on the Caiano account> npx wrangler deploy
 ```
 
-Changes go live in seconds. The custom-domain attachment is a one-time setup and survives deploys.
+Changes go live in seconds.
 
 ## Regenerate the social card
 
