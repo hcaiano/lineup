@@ -3,3 +3,10 @@ vercel.json
 make-og.swift
 README.md
 .assetsignore
+
+# CI installs wrangler into web/node_modules (workingDirectory), which is huge
+# (workerd is ~122 MiB, over Cloudflare's 25 MiB asset cap). Never serve build cruft.
+node_modules
+.wrangler
+package.json
+package-lock.json
