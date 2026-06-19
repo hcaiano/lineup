@@ -21,8 +21,30 @@ BUILD_DIR=".build/release"
 OUT_DIR="${1:-dist}"          # pass a target dir, e.g. ~/Applications
 APP="${OUT_DIR}/${APP_NAME}.app"
 
-echo "==> swift build -c release"
-swift build -c release
+# Build the release executable. Universal (arm64 + x86_64) by default so the app runs on every
+# supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
+# `--arch a --arch b` needs full Xcode (xcbuild); under Command Line Tools we build each slice
+# with --triple into its own scratch path and lipo them.
+UNIVERSAL="${UNIVERSAL:-1}"
+if [ "${UNIVERSAL}" = "1" ]; then
+  echo "==> swift build -c release (universal: arm64 + x86_64)"
+  ARM_SCRATCH=".build/uni-arm64"; X86_SCRATCH=".build/uni-x86_64"
+  swift build -c release --triple arm64-apple-macosx13.0  --scratch-path "${ARM_SCRATCH}"
+  swift build -c release --triple x86_64-apple-macosx13.0 --scratch-path "${X86_SCRATCH}"
+  mkdir -p ".build/uni-universal/release"
+  lipo -create \
+    "${ARM_SCRATCH}/arm64-apple-macosx/release/${EXEC_NAME}" \
+    "${X86_SCRATCH}/x86_64-apple-macosx/release/${EXEC_NAME}" \
+    -output ".build/uni-universal/release/${EXEC_NAME}"
+  EXEC_SRC=".build/uni-universal/release/${EXEC_NAME}"
+  # Sparkle's XCFramework macOS slice is already universal; take it from the arm64 build.
+  SPARKLE_SEARCH_DIR="${ARM_SCRATCH}/arm64-apple-macosx/release"
+else
+  echo "==> swift build -c release (host arch only)"
+  swift build -c release
+  EXEC_SRC="${BUILD_DIR}/${EXEC_NAME}"
+  SPARKLE_SEARCH_DIR="${BUILD_DIR}"
+fi
 
 # Ensure the icon exists.
 if [ ! -f "Resources/AppIcon.icns" ]; then
@@ -41,14 +63,14 @@ if [ -e "${APP}" ]; then
   fi
 fi
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
-cp "${BUILD_DIR}/${EXEC_NAME}" "${APP}/Contents/MacOS/${EXEC_NAME}"
+cp "${EXEC_SRC}" "${APP}/Contents/MacOS/${EXEC_NAME}"
 cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
 cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
 # Embed Sparkle.framework (auto-updates). SwiftPM copies the binary XCFramework's macOS slice
 # next to the product; fall back to the extracted artifact. ditto (not cp) preserves the
 # framework's Versions symlink structure — a plain copy would break its signature.
-SPARKLE_FW="${BUILD_DIR}/Sparkle.framework"
+SPARKLE_FW="${SPARKLE_SEARCH_DIR}/Sparkle.framework"
 [ -d "${SPARKLE_FW}" ] || SPARKLE_FW="$(find .build/artifacts -type d -name Sparkle.framework -path '*macos*' 2>/dev/null | head -1)"
 [ -d "${SPARKLE_FW}" ] || { echo "error: Sparkle.framework not found; run 'swift build -c release' first." >&2; exit 1; }
 mkdir -p "${APP}/Contents/Frameworks"

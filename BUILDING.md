@@ -18,6 +18,11 @@ swift run lineup-tests              # dependency-free test suite (no Xcode/XCTes
 open ~/Applications/Lineup.app
 ```
 
+`build-app.sh` produces a **universal** (arm64 + x86_64) app by default, so it runs on every
+supported Mac. For faster local iteration, `UNIVERSAL=0 ./Scripts/build-app.sh …` builds the
+host arch only. (One-shot `--arch` needs full Xcode; under Command Line Tools each slice is
+built with `--triple` and combined with `lipo`.)
+
 A locally built app is ad-hoc signed, whose signature changes every build, so macOS keeps asking
 you to re-grant Accessibility. `setup-signing.sh` creates a reused self-signed identity once, so
 every build shares one stable signature and you grant Accessibility a single time. The same applies
