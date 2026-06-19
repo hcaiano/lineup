@@ -65,6 +65,14 @@ fi
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${EXEC_SRC}" "${APP}/Contents/MacOS/${EXEC_NAME}"
 cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
+
+# Fail closed if the real Sparkle public key was never filled in: a placeholder SUPublicEDKey
+# ships an app that can never validate an update (users would have to reinstall by hand).
+if grep -q 'REPLACE_WITH_SUPublicEDKey' "${APP}/Contents/Info.plist"; then
+  echo "error: Info.plist still has the placeholder SUPublicEDKey." >&2
+  echo "       Run ./Scripts/sparkle-keygen.sh and paste the public key into Resources/Info.plist." >&2
+  exit 1
+fi
 cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
 # Embed Sparkle.framework (auto-updates). SwiftPM copies the binary XCFramework's macOS slice
@@ -101,21 +109,29 @@ else
   echo "==> no stable identity; ad-hoc signing (identifier: ${BUNDLE_ID})"
 fi
 
-# Sign the embedded Sparkle.framework INSIDE-OUT: each nested helper/XPC service first, then
-# the framework itself. Apple requires inner code signed before its container, and Sparkle's
-# own docs say to sign these individually and NEVER with --deep (it mis-signs the components).
-# Hardened runtime on every piece; Downloader.xpc keeps its own entitlements.
+# Hardened runtime (--options runtime) ONLY for Developer ID. Hardened Runtime turns on Library
+# Validation, which requires every loaded library to be Apple-signed or share the app's Team ID.
+# A self-signed or ad-hoc build has no Team ID, so a hardened app would pass `codesign --verify`
+# but FAIL AT LAUNCH when dyld loads the embedded Sparkle.framework. Developer ID has a Team ID
+# (and needs hardened runtime for notarization), so harden only then; local builds sign without it.
+RUNTIME_FLAG=""
+[ "${sig_kind}" = "developer-id" ] && RUNTIME_FLAG="--options runtime"
+
+# Sign the embedded Sparkle.framework INSIDE-OUT: each nested helper/XPC service first, then the
+# framework itself. Apple requires inner code signed before its container, and Sparkle's own docs
+# say to sign these individually and NEVER with --deep (it mis-signs the components).
+# Downloader.xpc keeps its own entitlements.
 FW="${APP}/Contents/Frameworks/Sparkle.framework"
 if [ -d "${FW}" ]; then
-  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/XPCServices/Installer.xpc"
-  codesign --force --options runtime ${TIMESTAMP_FLAG} --preserve-metadata=entitlements --sign "${SIGN_ID}" "${FW}/Versions/B/XPCServices/Downloader.xpc"
-  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/Autoupdate"
-  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/Updater.app"
-  codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}"
+  codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/XPCServices/Installer.xpc"
+  codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --preserve-metadata=entitlements --sign "${SIGN_ID}" "${FW}/Versions/B/XPCServices/Downloader.xpc"
+  codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/Autoupdate"
+  codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}/Versions/B/Updater.app"
+  codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}"
 fi
 
-# Sign the app LAST (identifier pinned; hardened runtime). This seals the embedded framework.
-codesign --force --options runtime ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" --identifier "${BUNDLE_ID}" "${APP}"
+# Sign the app LAST (identifier pinned). This seals the embedded framework.
+codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" --identifier "${BUNDLE_ID}" "${APP}"
 
 # The signature TCC keys on is the designated requirement. Cert-based (Developer ID or the
 # self-signed cert) => stable across rebuilds, so Accessibility sticks; a bare cdhash => ad-hoc
