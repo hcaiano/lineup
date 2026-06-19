@@ -145,6 +145,16 @@ fi
 # Belt-and-suspenders: the whole bundle (app + embedded framework) must verify.
 codesign --verify --deep --strict "${APP}"
 
+# Fail closed on a universal build if either shipped binary isn't actually fat — e.g. a --triple
+# build silently produced one arch — instead of relying on manual `lipo -info` inspection.
+if [ "${UNIVERSAL}" = "1" ]; then
+  lipo -verify_arch arm64 x86_64 "${APP}/Contents/MacOS/${EXEC_NAME}" \
+    || { echo "error: ${EXEC_NAME} is not universal (arm64 + x86_64)." >&2; exit 1; }
+  lipo -verify_arch arm64 x86_64 "${FW}/Versions/B/Sparkle" \
+    || { echo "error: embedded Sparkle.framework is not universal (arm64 + x86_64)." >&2; exit 1; }
+  echo "    arch: universal (arm64 + x86_64) verified."
+fi
+
 echo "==> done: ${APP}"
 echo "    Launch with:  open \"${APP}\""
 echo "    First launch will prompt for Accessibility permission."
