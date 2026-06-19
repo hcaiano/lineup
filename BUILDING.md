@@ -18,6 +18,11 @@ swift run lineup-tests              # dependency-free test suite (no Xcode/XCTes
 open ~/Applications/Lineup.app
 ```
 
+`build-app.sh` produces a **universal** (arm64 + x86_64) app by default, so it runs on every
+supported Mac. For faster local iteration, `UNIVERSAL=0 ./Scripts/build-app.sh …` builds the
+host arch only. (One-shot `--arch` needs full Xcode; under Command Line Tools each slice is
+built with `--triple` and combined with `lipo`.)
+
 A locally built app is ad-hoc signed, whose signature changes every build, so macOS keeps asking
 you to re-grant Accessibility. `setup-signing.sh` creates a reused self-signed identity once, so
 every build shares one stable signature and you grant Accessibility a single time. The same applies
@@ -53,7 +58,9 @@ Sources/lineup/             AppKit agent
   WindowMover.swift         Accessibility window get/set
   ShortcutKit.swift         Defaults + Cocoa/Carbon + combo strings
   Theme.swift               Brand colour + menu-bar logo
-Scripts/                    build-app, setup-signing, make-dmg, make-icon, make-icns
+  Updater.swift             Sparkle updater controller (Check for Updates + background checks)
+Scripts/                    build-app, setup-signing, make-dmg, make-icon, make-icns,
+                            notarize, sparkle-keygen, sparkle-appcast
 ```
 
 Config lives at `~/.config/lineup/zones.json` (one layout per display, keyed to the monitor). The
@@ -84,3 +91,34 @@ REQUIRE_DEVELOPER_ID_SIGNATURE=1 ./Scripts/build-app.sh dist   # sign the app w/
 Stapling the app makes the dragged-out copy pass Gatekeeper offline; notarizing the DMG makes
 the download itself open cleanly. `notarytool` and `stapler` ship with the Command Line Tools,
 so no full Xcode is needed.
+
+## Auto-updates (Sparkle)
+
+Lineup updates in place with [Sparkle](https://sparkle-project.org). `build-app.sh` embeds
+`Sparkle.framework` and re-signs it inside-out with the same identity as the app; updates are
+authenticated with an **EdDSA** signature so a tampered or man-in-the-middled download is
+rejected. The feed is `web/appcast.xml`, served at `https://lineup.caiano.com/appcast.xml`
+(auto-deployed from `web/`), and pointed to by `SUFeedURL` in `Resources/Info.plist`.
+
+**One-time key setup** (do this once, ever — losing the key means you can't sign future
+updates that existing installs will accept):
+
+```sh
+./Scripts/sparkle-keygen.sh         # private key -> your login Keychain (never committed)
+```
+
+Paste the printed public key into `Resources/Info.plist` under `SUPublicEDKey` (replacing the
+placeholder). That's the only Sparkle value that ships in the app. The private key stays in
+your Keychain, exactly like the notarization credential.
+
+**Per release**, after notarizing the DMG and uploading it to its GitHub release, regenerate
+the signed feed and commit it (committing `web/appcast.xml` auto-deploys the feed):
+
+```sh
+./Scripts/sparkle-appcast.sh dist/Lineup-<version>.dmg   # EdDSA-signs the DMG, writes web/appcast.xml
+git add web/appcast.xml && git commit -m "Appcast: <version>"   # deploys; installs see the update
+```
+
+The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) → `make-dmg.sh`
+→ `notarize.sh` (DMG) → publish the GitHub release with the DMG → `sparkle-appcast.sh` →
+commit `web/appcast.xml`.

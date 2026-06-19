@@ -24,5 +24,19 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Lineup</string>
+
+	<!-- Sparkle auto-updates. The feed lives on the site (auto-deployed from web/appcast.xml).
+	     SUPublicEDKey is the EdDSA PUBLIC key from `generate_keys`; the matching private key
+	     stays only in the developer's Keychain and signs each release (Scripts/sparkle-appcast.sh).
+	     This is the shared Caiano signing key (also used by Synclock) — its private half is the
+	     existing Keychain item, so no new key was generated. -->
+	<key>SUFeedURL</key>
+	<string>https://lineup.caiano.com/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>nRxOca8UMvC83e7/DELKYh0h6VHBPRqMkZfIDLDIgpw=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>
