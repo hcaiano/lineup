@@ -22,6 +22,24 @@ SIGN_UPDATE="$(find .build/artifacts -type f -name sign_update -not -path '*old_
 VERSION="${2:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)}"
 BUILD="${3:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist)}"
 
+# FAIL CLOSED: only ever EdDSA-sign a real, notarized, stapled Developer ID DMG. Once an
+# enclosure lands in web/appcast.xml, Sparkle clients trust its archive signature and install it
+# without a Gatekeeper prompt — so appcasting an unsigned / pre-notarization / ad-hoc / stale DMG
+# by accident would hand auto-update users a binary that bypassed the guarantees a normal
+# download enforces. Require the same acceptance as a release before signing.
+# (Capture codesign output first: piping it into `grep -q` makes codesign die with SIGPIPE under
+# `set -o pipefail`, a false negative.)
+sig_info="$(codesign -dvvv "${DMG}" 2>&1 || true)"
+if ! grep -q 'Authority=Developer ID Application' <<<"${sig_info}"; then
+  echo "error: ${DMG} is not Developer ID-signed; refusing to appcast it." >&2; exit 1
+fi
+if ! spctl -a -vvv -t open --context context:primary-signature "${DMG}" 2>/dev/null; then
+  echo "error: ${DMG} is not notarized / not accepted by Gatekeeper; refusing to appcast it." >&2; exit 1
+fi
+if ! xcrun stapler validate "${DMG}" >/dev/null 2>&1; then
+  echo "error: ${DMG} is not stapled; run ./Scripts/notarize.sh \"${DMG}\" first." >&2; exit 1
+fi
+
 # sign_update prints e.g.  sparkle:edSignature="…" length="12345"
 # (it reads the private key from the Keychain; fails loudly if the key is missing).
 SIG_LINE="$("${SIGN_UPDATE}" "${DMG}")"
@@ -47,7 +65,7 @@ cat > web/appcast.xml <<XML
       <sparkle:releaseNotesLink>${NOTES}</sparkle:releaseNotesLink>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
       <pubDate>${DATE}</pubDate>
-      <enclosure url="${URL}" type="application/x-apple-diskimage" ${SIG_LINE} />
+      <enclosure url="${URL}" type="application/octet-stream" ${SIG_LINE} />
     </item>
   </channel>
 </rss>

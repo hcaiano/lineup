@@ -54,20 +54,24 @@ SPARKLE_FW="${BUILD_DIR}/Sparkle.framework"
 mkdir -p "${APP}/Contents/Frameworks"
 ditto "${SPARKLE_FW}" "${APP}/Contents/Frameworks/Sparkle.framework"
 
-# Resolve the best signing identity (valid identities only), in order:
+# Resolve the signing identity by ATTEMPTING the sign on the bundled executable (a probe that
+# proves the key is actually usable), in order:
 #   1. Developer ID Application — Apple-issued. Enables notarization (removes the Gatekeeper
 #      "unidentified developer" warning) and gives a Team-ID-stable requirement. Needs --timestamp.
 #   2. The local self-signed identity (Scripts/setup-signing.sh) — stable across rebuilds so
 #      Accessibility persists, but NOT notarizable; users still see the Gatekeeper warning.
 #   3. Ad-hoc — last resort; signature changes every build.
-# `security find-identity -p codesigning -v` lists only identities with a usable private key.
-# Set DEVELOPER_ID_IDENTITY to pin a specific one (excludes "Developer ID Installer").
+# find-identity is reliable for Developer ID but NOT for the untrusted self-signed cert: codesign
+# can sign with "Lineup Self-Signed" even when `find-identity -v` reports zero valid identities,
+# so the self-signed tier must be PROBED, not queried (matches setup-signing.sh). The probe sign
+# is overwritten by the final inside-out sign below. DEVELOPER_ID_IDENTITY pins a specific one.
+PROBE="${APP}/Contents/MacOS/${EXEC_NAME}"
 DEVID="${DEVELOPER_ID_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
 TIMESTAMP_FLAG=""
-if [ -n "${DEVID}" ]; then
+if [ -n "${DEVID}" ] && codesign --force --options runtime --sign "${DEVID}" "${PROBE}" 2>/dev/null; then
   SIGN_ID="${DEVID}"; sig_kind="developer-id"; TIMESTAMP_FLAG="--timestamp"
   echo "==> signing with Developer ID (notarizable): ${DEVID}"
-elif security find-identity -p codesigning -v 2>/dev/null | grep -q "${SIGN_IDENTITY}"; then
+elif codesign --force --options runtime --sign "${SIGN_IDENTITY}" "${PROBE}" 2>/dev/null; then
   SIGN_ID="${SIGN_IDENTITY}"; sig_kind="self-signed"
   echo "==> signing with the local stable identity '${SIGN_IDENTITY}' (not notarizable)"
 else
