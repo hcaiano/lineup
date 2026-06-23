@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Resolves what a shift-drag should snap to, so complex arrangements come straight from
+/// Resolves what a modifier-drag should snap to, so complex arrangements come straight from
 /// the drag with no layout editing: every edge of a zone has a 5% hot band. The top or
 /// bottom band targets that vertical HALF, the left or right band targets that horizontal
 /// half, and two bands at once (a corner) target that QUARTER. The middle of the zone

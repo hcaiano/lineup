@@ -32,10 +32,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private lazy var dragSnap = DragSnapController(configProvider: { [weak self] in
         self?.config ?? LineupConfig()
+    }, triggerProvider: { [weak self] in
+        self?.dragSnapTrigger ?? .default
     })
 
     /// The effective shortcut set (user config, or built-in defaults).
     private var shortcuts: Shortcuts { config.shortcuts ?? ShortcutKit.defaults }
+    /// The effective drag-snap bind, with nil/unknown config values falling back to Shift.
+    private var dragSnapTrigger: DragSnapTrigger {
+        DragSnapTrigger(keyCode: config.dragSnapKeyCode, modifiers: config.dragSnapModifiers ?? ShortcutKit.defaultDragSnapModifiers)
+    }
 
     static var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -56,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = AppUpdater.shared  // start Sparkle's scheduled background update checks
         reloadConfig()
         registerHotkeys()      // must precede buildStatusItem so the menu shows real
-        if config.dragSnapEnabled ?? true { dragSnap.start() } // shift-drag-to-snap (default on); respect a saved opt-out
+        if config.dragSnapEnabled ?? true { dragSnap.start() } // modifier-drag-to-snap (default on); respect a saved opt-out
         buildStatusItem()      // hotkey status (e.g. failures if Magnet owns the combos)
         // First launch only: explain who we are and why we need Accessibility BEFORE any OS
         // prompt (a menu-bar agent has no window, so an unexplained permission sheet is jarring
@@ -127,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
     }
 
-    /// Persist the shift-drag toggle so it survives relaunch (and a disabled state keeps the
+    /// Persist the modifier-drag toggle so it survives relaunch (and a disabled state keeps the
     /// global mouse monitor uninstalled at next launch — see applicationDidFinishLaunching).
     /// Best-effort, mirroring applyShortcuts: write-then-assign, and if config writes are
     /// blocked or fail, the in-session toggle still holds; we just don't persist.
@@ -140,6 +146,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             config = updated
         } catch {
             FileHandle.standardError.write(Data("drag-snap setting save failed (kept in session): \(error)\n".utf8))
+        }
+    }
+
+    private func applyDragSnapTrigger(_ trigger: DragSnapTrigger) {
+        guard configCanWrite else { return }
+        var updated = config
+        updated.dragSnapKeyCode = trigger.keyCode
+        updated.dragSnapModifiers = trigger.modifiers
+        do {
+            try updated.write(to: AppDelegate.configURL)
+            config = updated
+            buildStatusItem()
+        } catch {
+            FileHandle.standardError.write(Data("drag-snap bind save failed (not applied): \(error)\n".utf8))
         }
     }
 
@@ -226,6 +246,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setRecording: { [weak self] on in self?.setRecording(on) },
             isDragSnapOn: { [weak self] in self?.dragSnap.isEnabled ?? false },
             toggleDragSnap: { [weak self] in self?.toggleDragSnap() },
+            dragSnapTrigger: { [weak self] in self?.dragSnapTrigger ?? .default },
+            setDragSnapTrigger: { [weak self] trigger in self?.applyDragSnapTrigger(trigger) },
             isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
             toggleLaunchAtLogin: { [weak self] in self?.toggleLaunchAtLogin() },
             isTrusted: { AXIsProcessTrusted() },
@@ -375,7 +397,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Settings…", #selector(openSettings), key: ",", symbol: "gearshape"))
 
         menu.addItem(.separator())
-        let dragItem = menuItem("Shift-drag to snap", #selector(toggleDragSnap), symbol: "hand.draw")
+        let trigger = dragSnapTrigger
+        let dragItem = menuItem("\(ShortcutKit.dragSnapDisplay(keyCode: trigger.keyCode, modifiers: trigger.modifiers))-drag to snap",
+                                #selector(toggleDragSnap), symbol: "hand.draw")
         dragItem.state = dragSnap.isEnabled ? .on : .off
         menu.addItem(dragItem)
         let loginItem = menuItem("Launch at login", #selector(toggleLaunchAtLogin), symbol: "power")

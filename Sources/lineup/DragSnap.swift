@@ -1,8 +1,8 @@
 import AppKit
 import LineupCore
 
-/// Shift-drag snapping: while the user drags a window with SHIFT held, highlight the
-/// zone under the cursor; on mouse-release, snap the dragged window into it.
+/// Modifier-drag snapping: while the configured bind is held, dragging a real window
+/// highlights the zone under the cursor; on mouse-release, snap the dragged window into it.
 ///
 /// Every edge of a zone has a 5% hot band that targets that HALF of the zone instead, and
 /// a corner (two bands at once) targets that QUARTER — so a column can hold two apps
@@ -11,14 +11,18 @@ import LineupCore
 /// that teaches the edge snaps.
 ///
 /// Uses a global mouse monitor (mouse events need no extra permission beyond the
-/// Accessibility grant the app already requires to move windows). Reads SHIFT from the
-/// mouse event's own modifier flags — no keyboard monitor.
+/// Accessibility grant the app already requires to move windows). Reads modifiers from the
+/// mouse event and, for key-based binds, asks CoreGraphics whether that key is held.
 final class DragSnapController {
     private var monitor: Any?
     private let configProvider: () -> LineupConfig
+    private let triggerProvider: () -> DragSnapTrigger
 
     private var captured: AXUIElement?   // the window grabbed at drag start
-    private var armed = false            // SHIFT held + a window captured
+    private var armed = false            // trigger modifier held + a window captured
+    private var dragCandidate: (window: AXUIElement, startFrame: CGRect, startPoint: CGPoint, startedInMoveBand: Bool)?
+    private var preArmFrameChecks = 0
+    private static let maxPreArmFrameChecks = 10
     private var highlight: HighlightWindow?
     private var lastTargetRect: CGRect?  // what release will snap to (zone or half)
 
@@ -27,7 +31,7 @@ final class DragSnapController {
     private var lingerZone: CGRect?
     private var lingerTimer: Timer?
     private var hintShown = false
-    private var teachHint = false   // first shift-drag ever: surface the edge hint right away
+    private var teachHint = false   // first modifier-drag ever: surface the edge hint right away
     private static let seenEdgeHintKey = "lineup.seenEdgeHint"
 
     // Unsnap restore: dragging a snapped window away brings its pre-snap size back under
@@ -41,8 +45,9 @@ final class DragSnapController {
     private var restoreCandidate: (window: AXUIElement, preFrame: CGRect, frameAtMatch: CGRect)?
     private var restoreRetries = 0
 
-    init(configProvider: @escaping () -> LineupConfig) {
+    init(configProvider: @escaping () -> LineupConfig, triggerProvider: @escaping () -> DragSnapTrigger) {
         self.configProvider = configProvider
+        self.triggerProvider = triggerProvider
     }
 
     var isEnabled: Bool { monitor != nil }
@@ -66,21 +71,28 @@ final class DragSnapController {
     private func handle(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
-            reset() // clear stale state; capture happens on the first SHIFT-drag
+            reset()
             dragStart = NSEvent.mouseLocation
+            // Preserve the natural Shift-first UX: if the bind is already down, sample the
+            // candidate window now, then wait for its AX frame to move before arming. App
+            // content drags (Figma selection, canvas moves, etc.) leave the window frame still.
+            if dragTriggerMatches(event) { sampleDragCandidate(at: NSEvent.mouseLocation) }
         case .leftMouseDragged:
-            if event.modifierFlags.contains(.shift) {
-                if captured == nil { captured = WindowMover.window(atCocoaPoint: NSEvent.mouseLocation) }
+            if dragTriggerMatches(event) {
+                if captured == nil { captured = movingWindowCandidate(at: NSEvent.mouseLocation) }
                 if captured != nil {
                     if !armed { armEdgeHintIfFirstEver() } // on the disarmed -> armed transition
                     armed = true
+                } else {
+                    armed = false
+                    hideHighlight()
                 }
             } else {
-                // SHIFT released mid-drag: disarm and hide (re-arms if SHIFT returns).
+                // Trigger modifier released mid-drag: disarm and hide (re-arms if it returns).
                 armed = false
                 hideHighlight()
             }
-            // After the capture so a shift-drag's hit-test is shared, not repeated.
+            // After the capture so a modifier-drag's hit-test is shared, not repeated.
             maybeRestoreUnsnappedSize()
             if armed { updateHighlight() }
         case .leftMouseUp:
@@ -93,10 +105,65 @@ final class DragSnapController {
         }
     }
 
+    private func dragTriggerMatches(_ event: NSEvent) -> Bool {
+        let trigger = triggerProvider()
+        let keyDown = trigger.keyCode.map {
+            CGEventSource.keyState(.combinedSessionState, key: CGKeyCode($0))
+        } ?? false
+        return trigger.matches(
+            activeKeyDown: keyDown,
+            activeModifiers: ShortcutKit.carbonModifiers(from: event.modifierFlags))
+    }
+
+    private func sampleDragCandidate(at point: CGPoint) {
+        guard dragCandidate == nil else { return }
+        guard let window = WindowMover.window(atCocoaPoint: point),
+              let frame = WindowMover.frame(of: window)
+        else {
+            preArmFrameChecks += 1
+            return
+        }
+        dragCandidate = (
+            window,
+            frame,
+            point,
+            DragSnapWindowMotion.isLikelyWindowMoveStart(point: point, windowFrame: frame)
+        )
+        preArmFrameChecks = 0
+    }
+
+    private func movingWindowCandidate(at point: CGPoint) -> AXUIElement? {
+        if let captured { return captured }
+        guard preArmFrameChecks < Self.maxPreArmFrameChecks else { return nil }
+        if dragCandidate == nil {
+            sampleDragCandidate(at: point)
+            return nil
+        }
+        guard let candidate = dragCandidate else { return nil }
+        preArmFrameChecks += 1
+        guard let current = WindowMover.frame(of: candidate.window) else {
+            preArmFrameChecks = Self.maxPreArmFrameChecks
+            return nil
+        }
+        switch DragSnapWindowMotion.classify(start: candidate.startFrame, current: current) {
+        case .moved:
+            return candidate.window
+        case .resized:
+            preArmFrameChecks = Self.maxPreArmFrameChecks
+            return nil
+        case .stationary:
+            if candidate.startedInMoveBand,
+               hypot(point.x - candidate.startPoint.x, point.y - candidate.startPoint.y) > 6 {
+                return candidate.window
+            }
+            return nil
+        }
+    }
+
     // MARK: - Unsnap restore
 
     /// If the dragged window is one we snapped, give it back its pre-snap size under the
-    /// cursor once the drag is real. Works for plain drags and shift-drags alike —
+    /// cursor once the drag is real. Works for plain drags and modifier-drags alike —
     /// dragging away IS the undo.
     private func maybeRestoreUnsnappedSize() {
         guard !restoreChecked, !SnapMemory.shared.isEmpty, let start = dragStart else { return }
@@ -168,7 +235,7 @@ final class DragSnapController {
         if targetingHalf { clearLinger(); return }
         if zone != lingerZone {
             lingerZone = zone
-            // First-ever shift-drag: show the hint right away (updateHighlight draws it on this
+            // First-ever modifier-drag: show the hint right away (updateHighlight draws it on this
             // same pass) instead of waiting out the linger, so everyone meets the edge snap once.
             if teachHint {
                 hintShown = true
@@ -189,7 +256,7 @@ final class DragSnapController {
     }
 
     /// The half/quarter edge snap is delightful but hidden: today you only meet it by lingering.
-    /// Teach it ONCE. On the user's first-ever shift-drag, surface the hint immediately; after
+    /// Teach it ONCE. On the user's first-ever modifier-drag, surface the hint immediately; after
     /// that the linger behavior still teaches anyone who hesitates, and we never force it again.
     private func armEdgeHintIfFirstEver() {
         // Arm the one-time teach, but DON'T burn the flag yet: if this first drag goes straight to
@@ -214,6 +281,8 @@ final class DragSnapController {
     private func reset() {
         captured = nil
         armed = false
+        dragCandidate = nil
+        preArmFrameChecks = 0
         teachHint = false
         highlight?.orderOut(nil)
         highlight = nil

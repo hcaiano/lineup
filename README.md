@@ -69,13 +69,15 @@ Each zone has a number. Those numbers are how the keyboard shortcuts find them.
 
 There are two ways to drop a window into a zone.
 
-**Drag and drop.** Hold **Shift** while you drag a window. The zone under your cursor lights up. Let
-go to drop the window in. You can turn this off in Settings.
+**Drag and drop.** Hold the configured drag bind (**Shift** by default) and drag a window. The zone
+under your cursor lights up once the window itself starts moving. Let go to drop the window in. You
+can turn this off or change the bind in Settings. In-app drags, like selecting on a canvas, are
+ignored.
 
-Want two apps sharing one zone? While shift-dragging, aim near any **edge** of the zone and the
-highlight switches to that half: top or bottom edge for stacked, left or right edge for side by
-side. Aim near a **corner** and you get that quarter, so four apps fit in one zone. The highlight
-always shows exactly where the window will land.
+Want two apps sharing one zone? While drag-snapping, aim near any **edge** of the zone and the
+highlight switches to that half: top or bottom edge for stacked, left or right edge for side by side.
+Aim near a **corner** and you get that quarter, so four apps fit in one zone. The highlight always
+shows exactly where the window will land.
 
 Changed your mind? Just drag the window out again. The moment it leaves the zone it returns to the
 size it had before, right under your cursor.
@@ -102,8 +104,8 @@ use. Add the ones you want in Settings.
 Open **Settings** from the menu bar.
 
 - **Shortcuts** lets you set or change any shortcut. Click a shortcut field and press the keys you want.
-- **General** has the drag-and-drop switch, an option to start Lineup when your Mac turns on, and your
-  permission status.
+- **General** has the drag-and-drop switch, the drag bind, an option to start Lineup when your Mac
+  turns on, and your permission status.
 
 ## Good to know
 

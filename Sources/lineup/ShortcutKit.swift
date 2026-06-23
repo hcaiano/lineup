@@ -7,6 +7,24 @@ import LineupCore
 enum ShortcutKit {
     /// Hyperkey = ⌃⌥⇧⌘ as a Carbon modifier mask.
     static let hyper = Int(controlKey) | Int(optionKey) | Int(shiftKey) | Int(cmdKey)
+    static let defaultDragSnapModifiers = DragSnapModifierMask.default
+    static let dragSnapModifierChoices: [(modifiers: Int, label: String)] = [
+        (DragSnapModifierMask.shift, "Shift"),
+        (DragSnapModifierMask.option, "Option"),
+        (DragSnapModifierMask.control, "Control"),
+        (DragSnapModifierMask.command, "Command"),
+        (DragSnapModifierMask.control | DragSnapModifierMask.option, "Control-Option"),
+        (DragSnapModifierMask.control | DragSnapModifierMask.shift, "Control-Shift"),
+        (DragSnapModifierMask.option | DragSnapModifierMask.shift, "Option-Shift"),
+        (DragSnapModifierMask.command | DragSnapModifierMask.shift, "Command-Shift"),
+        (DragSnapModifierMask.control | DragSnapModifierMask.command, "Control-Command"),
+        (DragSnapModifierMask.option | DragSnapModifierMask.command, "Option-Command"),
+        (DragSnapModifierMask.control | DragSnapModifierMask.option | DragSnapModifierMask.shift, "Control-Option-Shift"),
+        (DragSnapModifierMask.control | DragSnapModifierMask.option | DragSnapModifierMask.command, "Control-Option-Command"),
+        (DragSnapModifierMask.control | DragSnapModifierMask.shift | DragSnapModifierMask.command, "Control-Shift-Command"),
+        (DragSnapModifierMask.option | DragSnapModifierMask.shift | DragSnapModifierMask.command, "Option-Shift-Command"),
+        (DragSnapModifierMask.hyper, "Hyper"),
+    ]
 
     /// Actions shown in the Shortcuts tab, in order, with display names.
     static let quickActions: [(id: String, label: String)] = [
@@ -47,6 +65,27 @@ enum ShortcutKit {
 
     static func hasModifier(_ flags: NSEvent.ModifierFlags) -> Bool {
         !flags.intersection([.command, .option, .control, .shift]).isEmpty
+    }
+
+    static func normalizedDragSnapModifiers(_ modifiers: Int?) -> Int {
+        DragSnapModifierMask.normalized(modifiers)
+    }
+
+    static func dragSnapDisplay(keyCode: Int?, modifiers: Int) -> String {
+        if let keyCode { return display(keyCode: keyCode, modifiers: modifiers) }
+        return modifierDisplay(modifiers)
+    }
+
+    static func modifierDisplay(_ modifiers: Int) -> String {
+        if let choice = dragSnapModifierChoices.first(where: { $0.modifiers == modifiers }) {
+            return choice.label
+        }
+        var parts: [String] = []
+        if modifiers & DragSnapModifierMask.control != 0 { parts.append("Control") }
+        if modifiers & DragSnapModifierMask.option != 0 { parts.append("Option") }
+        if modifiers & DragSnapModifierMask.shift != 0 { parts.append("Shift") }
+        if modifiers & DragSnapModifierMask.command != 0 { parts.append("Command") }
+        return parts.isEmpty ? "Shift" : parts.joined(separator: "-")
     }
 
     static func display(keyCode: Int, modifiers: Int) -> String {

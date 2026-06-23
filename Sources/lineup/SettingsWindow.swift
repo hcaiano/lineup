@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import LineupCore
 import Sparkle
+import SwiftUI
 
 /// Hooks the Settings window needs from the app.
 struct SettingsContext {
@@ -13,296 +14,288 @@ struct SettingsContext {
     var setRecording: (Bool) -> Void                     // suspend global hotkeys while capturing a combo
     var isDragSnapOn: () -> Bool
     var toggleDragSnap: () -> Void
+    var dragSnapTrigger: () -> DragSnapTrigger
+    var setDragSnapTrigger: (DragSnapTrigger) -> Void
     var isLaunchAtLoginOn: () -> Bool
     var toggleLaunchAtLogin: () -> Void
     var isTrusted: () -> Bool
     var requestAccessibility: () -> Void
 }
 
-/// The Settings window: a Shortcuts tab and a General tab. (Layout editing lives in the
-/// on-screen overlay, opened from the menu's Edit Layout… — not here.)
+/// Native SwiftUI settings hosted from the existing AppKit menu-bar app.
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
-    private let ctx: SettingsContext
-    private let generalView: GeneralView
+    private let model: SettingsModel
     var onClose: (() -> Void)?
 
     init(context: SettingsContext) {
-        self.ctx = context
+        self.model = SettingsModel(context: context)
+        let root = SettingsRootView(model: model)
+        let hosting = NSHostingView(rootView: root)
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 520),
-            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 500),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false)
         window.title = "Lineup Settings"
+        window.contentMinSize = NSSize(width: 560, height: 440)
         window.isReleasedWhenClosed = false
-        self.generalView = GeneralView(context: context)
+        window.contentView = hosting
         super.init()
         window.delegate = self
-
-        let tabs = NSTabView(frame: window.contentView!.bounds)
-        tabs.autoresizingMask = [.width, .height]
-        let shortcutsItem = NSTabViewItem(identifier: "shortcuts")
-        shortcutsItem.label = "Shortcuts"
-        shortcutsItem.view = ShortcutsView(context: context)
-        let generalItem = NSTabViewItem(identifier: "general")
-        generalItem.label = "General"
-        generalItem.view = generalView
-        tabs.addTabViewItem(shortcutsItem)
-        tabs.addTabViewItem(generalItem)
-        let aboutItem = NSTabViewItem(identifier: "about")
-        aboutItem.label = "About"
-        aboutItem.view = AboutTabView()
-        tabs.addTabViewItem(aboutItem)
-        window.contentView?.addSubview(tabs)
     }
 
     func show() {
+        model.refresh()
         NSApp.activate(ignoringOtherApps: true)
         window.center()
         window.makeKeyAndOrderFront(nil)
     }
 
     /// Called when the app detects Accessibility was granted/revoked while Settings is open.
-    func refreshAccessibility() { generalView.refresh() }
+    func refreshAccessibility() { model.refresh() }
 
-    func windowWillClose(_ notification: Notification) { onClose?() }
+    func windowDidResignKey(_ notification: Notification) {
+        model.stopAllRecording()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        model.stopAllRecording()
+        onClose?()
+    }
 }
 
-
-// MARK: - A click-to-record shortcut field
-
-/// Looks like a rounded text field but is the record trigger: click it to start capturing a
-/// combo (people reach for the field, not a separate "Record" button). Highlights blue while
-/// recording.
-private final class RecorderField: NSView {
-    var onClick: () -> Void = {}
-    var isRecording = false { didSet { needsDisplay = true } }
-    var text = "" { didSet { needsDisplay = true } }      // the combo, or "" when unassigned
-    var enabled = true { didSet { needsDisplay = true } }
-    var actionLabel = ""                                  // human action name, for VoiceOver
-
-    override var isFlipped: Bool { true }
-
-    // VoiceOver: a custom-drawn NSView is invisible to assistive tech by default. Expose this
-    // record field as a button with a live label so it can be reached and operated without sight.
-    override func isAccessibilityElement() -> Bool { true }
-    override func accessibilityRole() -> NSAccessibility.Role? { .button }
-    override func isAccessibilityEnabled() -> Bool { enabled }
-    override func accessibilityLabel() -> String? {
-        if isRecording { return "\(actionLabel) shortcut, recording, press a key combination" }
-        return "\(actionLabel) shortcut, \(text.isEmpty ? "not set" : text)"
-    }
-    override func accessibilityPerformPress() -> Bool {
-        guard enabled else { return false }
-        onClick(); return true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let r = bounds.insetBy(dx: 1, dy: 1)
-        let path = NSBezierPath(roundedRect: r, xRadius: 7, yRadius: 7)
-        (isRecording ? Brand.blue.withAlphaComponent(0.12) : NSColor.textBackgroundColor).setFill()
-        path.fill()
-        (isRecording ? Brand.blue : NSColor.separatorColor).setStroke()
-        path.lineWidth = isRecording ? 2 : 1
-        path.stroke()
-
-        let str: String, color: NSColor, weight: NSFont.Weight
-        if isRecording { str = "Press keys…"; color = Brand.blue; weight = .regular }
-        else if text.isEmpty { str = "Click to set a shortcut"; color = .secondaryLabelColor; weight = .regular }
-        else { str = text; color = enabled ? .labelColor : .disabledControlTextColor; weight = .medium }
-        let s = NSAttributedString(string: str, attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: weight), .foregroundColor: color])
-        let sz = s.size()
-        s.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2))
-    }
-
-    override func mouseDown(with event: NSEvent) { if enabled { onClick() } }
-    override func resetCursorRects() { if enabled { addCursorRect(bounds, cursor: .pointingHand) } }
+private enum SettingsTab: Hashable {
+    case general
+    case shortcuts
+    case about
 }
 
+private struct ShortcutRow: Identifiable {
+    var id: String
+    var label: String
+}
 
-// MARK: - Shortcuts tab (key recorder)
+private let settingsContentWidth: CGFloat = 540
 
-private final class ShortcutsView: NSView {
+private final class SettingsModel: ObservableObject {
     private let ctx: SettingsContext
-    private var rows: [(action: String, field: RecorderField, clear: NSButton)] = []
-    private let header = NSTextField(labelWithString:
-        "Click a shortcut, then press a key combo (must include a modifier). Esc cancels, Delete clears.")
-    private let banner = NSTextField(labelWithString: "")
-    private var recordingAction: String?
     private var monitor: Any?
+    private var modifierOnlyTimer: Timer?
+    private var pendingModifierOnly: Int?
+
+    @Published var selectedTab: SettingsTab = .general
+    @Published private(set) var canWrite = true
+    @Published private(set) var blockedMessage: String?
+    @Published private(set) var shortcuts = Shortcuts()
+    @Published private(set) var dragSnapOn = true
+    @Published private(set) var dragTrigger = DragSnapTrigger.default
+    @Published private(set) var launchAtLoginOn = false
+    @Published private(set) var accessibilityGranted = false
+    @Published var recordingAction: String?
+    @Published var isRecordingDrag = false
 
     init(context: SettingsContext) {
         self.ctx = context
-        super.init(frame: NSRect(x: 0, y: 0, width: 640, height: 492))
-        autoresizingMask = [.width, .height]
-        build()
         refresh()
     }
-    required init?(coder: NSCoder) { fatalError() }
 
     deinit {
         if let m = monitor { NSEvent.removeMonitor(m) }
-        NotificationCenter.default.removeObserver(self)
+        modifierOnlyTimer?.invalidate()
     }
 
-    // Stop recording when the window loses key/closes (the local monitor only fires while key,
-    // so a stuck "Press…" state would otherwise linger and hotkeys would stay suspended).
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        NotificationCenter.default.removeObserver(self)
-        guard let w = window else { return }
-        for name in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification] {
-            NotificationCenter.default.addObserver(self, selector: #selector(windowLeft), name: name, object: w)
-        }
-        refresh()
-    }
-    @objc private func windowLeft() { stopRecording() }
-
-    private func build() {
-        header.frame = NSRect(x: 20, y: 462, width: 600, height: 20)
-        header.font = .systemFont(ofSize: 11); header.textColor = .secondaryLabelColor
-        header.lineBreakMode = .byTruncatingTail
-        header.autoresizingMask = [.width, .minYMargin]
-        addSubview(header)
-
-        banner.frame = header.frame
-        banner.font = .systemFont(ofSize: 11); banner.textColor = .systemOrange
-        banner.autoresizingMask = [.width, .minYMargin]; banner.isHidden = true
-        addSubview(banner)
-
-        let scroll = NSScrollView(frame: NSRect(x: 12, y: 12, width: 616, height: 442))
-        scroll.autoresizingMask = [.width, .height]
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-
-        var actions: [(id: String, label: String)] = ShortcutKit.quickActions
-        for i in 1...ShortcutKit.zoneRows { actions.append((ZoneAction.id(i), "Zone \(i)")) }
-
-        let rowH: CGFloat = 40
-        let doc = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: CGFloat(actions.count) * rowH))
-        for (i, a) in actions.enumerated() {
-            let y = doc.frame.height - CGFloat(i + 1) * rowH + 6
-            let label = NSTextField(labelWithString: a.label)
-            label.frame = NSRect(x: 12, y: y + 5, width: 140, height: 20)
-            doc.addSubview(label)
-
-            let field = RecorderField(frame: NSRect(x: 160, y: y, width: 322, height: 30))
-            let action = a.id
-            field.actionLabel = a.label                      // VoiceOver reads "<label> shortcut, …"
-            field.onClick = { [weak self] in self?.fieldClicked(action) }
-            doc.addSubview(field)
-
-            let clear = NSButton(title: "✕", target: self, action: #selector(clearTapped(_:)))
-            clear.bezelStyle = .circular; clear.frame = NSRect(x: 496, y: y + 1, width: 28, height: 28)
-            clear.tag = i; clear.toolTip = "Clear this shortcut"
-            clear.setAccessibilityLabel("Clear shortcut for \(a.label)") // was read aloud as just "✕"
-            doc.addSubview(clear)
-
-            rows.append((a.id, field, clear))
-        }
-        scroll.documentView = doc
-        doc.scroll(NSPoint(x: 0, y: doc.frame.height)) // start at top
-        addSubview(scroll)
+    var quickShortcutRows: [ShortcutRow] {
+        ShortcutKit.quickActions.map { ShortcutRow(id: $0.id, label: $0.label) }
     }
 
-    private func refresh() {
-        let sc = ctx.shortcuts()
-        let writable = ctx.canWrite()
-        for row in rows {
-            let bound = sc.binding(for: row.action)
-            row.field.text = bound.map { ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers) } ?? ""
-            row.field.isRecording = (row.action == recordingAction)
-            row.field.enabled = writable
-            row.clear.isEnabled = writable && bound != nil
-        }
-        if writable {
-            banner.isHidden = true
-            header.isHidden = false
-        } else {
-            banner.isHidden = false
-            header.isHidden = true // banner shares the frame; don't overlap
-            banner.stringValue = ctx.blockedMessage() ?? "Editing is disabled."
-        }
+    var zoneShortcutRows: [ShortcutRow] {
+        (1...ShortcutKit.zoneRows).map { ShortcutRow(id: ZoneAction.id($0), label: "Zone \($0)") }
     }
 
-    private func fieldClicked(_ action: String) {
-        guard ctx.canWrite() else { return }
-        if recordingAction == action { stopRecording(); return }
-        startRecording(action)
+    var dragTriggerDisplay: String {
+        ShortcutKit.dragSnapDisplay(keyCode: dragTrigger.keyCode, modifiers: dragTrigger.modifiers)
     }
 
-    @objc private func clearTapped(_ sender: NSButton) {
-        guard ctx.canWrite() else { return }
-        let action = rows[sender.tag].action
-        // End ANY in-flight recording (not just this row's): setShortcuts re-registers the
-        // global hotkeys, which would silently re-arm them while another row still shows
-        // "Press keys…" — the next combo would fire a window move instead of recording.
-        if recordingAction != nil { stopRecording() }
-        ctx.setShortcuts(ctx.shortcuts().removing(action: action))
+    func refresh() {
+        canWrite = ctx.canWrite()
+        blockedMessage = ctx.blockedMessage()
+        shortcuts = ctx.shortcuts()
+        dragSnapOn = ctx.isDragSnapOn()
+        dragTrigger = ctx.dragSnapTrigger()
+        launchAtLoginOn = ctx.isLaunchAtLoginOn()
+        accessibilityGranted = ctx.isTrusted()
+    }
+
+    func setDragSnapOn(_ value: Bool) {
+        guard value != dragSnapOn else { return }
+        ctx.toggleDragSnap()
         refresh()
     }
 
-    private func startRecording(_ action: String) {
-        guard ctx.canWrite() else { return }
-        if recordingAction != nil { stopRecording() } // only one row records at a time
+    func setLaunchAtLoginOn(_ value: Bool) {
+        guard value != launchAtLoginOn else { return }
+        ctx.toggleLaunchAtLogin()
+        refresh()
+    }
+
+    func requestAccessibility() {
+        ctx.requestAccessibility()
+        refresh()
+    }
+
+    func shortcutDisplay(for action: String) -> String {
+        shortcuts.binding(for: action).map { ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers) } ?? ""
+    }
+
+    func clearShortcut(_ action: String) {
+        guard canWrite else { return }
+        if recordingAction != nil { stopAllRecording() }
+        ctx.setShortcuts(shortcuts.removing(action: action))
+        refresh()
+    }
+
+    func beginShortcutRecording(_ action: String) {
+        guard canWrite else { return }
+        if recordingAction == action {
+            stopAllRecording()
+            return
+        }
+        stopAllRecording()
         recordingAction = action
-        ctx.setRecording(true) // suspend global hotkeys so the combo reaches us (and doesn't move a window)
-        if monitor == nil {
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-                self?.handle(event) == true ? nil : event
-            }
+        ctx.setRecording(true)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            self?.handleShortcutEvent(event) == true ? nil : event
         }
-        refresh()
-        window?.makeFirstResponder(self)
     }
 
-    private func stopRecording() {
-        let wasRecording = recordingAction != nil
+    func beginDragRecording() {
+        guard canWrite else { return }
+        if isRecordingDrag {
+            stopAllRecording()
+            return
+        }
+        stopAllRecording()
+        isRecordingDrag = true
+        ctx.setRecording(true)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+            self?.handleDragRecording(event) == true ? nil : event
+        }
+    }
+
+    func resetDragBind() {
+        guard canWrite else { return }
+        stopAllRecording()
+        ctx.setDragSnapTrigger(.default)
+        refresh()
+    }
+
+    func stopAllRecording() {
+        let wasRecording = recordingAction != nil || isRecordingDrag
         recordingAction = nil
-        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
-        if wasRecording { ctx.setRecording(false) } // restore global hotkeys
+        isRecordingDrag = false
+        pendingModifierOnly = nil
+        modifierOnlyTimer?.invalidate()
+        modifierOnlyTimer = nil
+        if let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
+        }
+        if wasRecording { ctx.setRecording(false) }
         refresh()
     }
 
-    /// Returns true if the event was consumed by the recorder.
-    private func handle(_ event: NSEvent) -> Bool {
+    private func handleShortcutEvent(_ event: NSEvent) -> Bool {
         guard let action = recordingAction else { return false }
-        guard ctx.canWrite() else { stopRecording(); return true }
+        guard canWrite else { stopAllRecording(); return true }
+
         let keyCode = Int(event.keyCode)
-        // Bare Esc cancels and bare Delete clears — but ONLY bare: with modifiers held
-        // they're recordable combos like any other (Hyper+Delete is the Restore default).
         let bare = !ShortcutKit.hasModifier(event.modifierFlags)
-        if keyCode == 53, bare { stopRecording(); return true }       // Esc cancels
+        if keyCode == 53, bare { stopAllRecording(); return true }       // Esc cancels
         if keyCode == 51, bare {                                      // Delete clears
-            ctx.setShortcuts(ctx.shortcuts().removing(action: action)); stopRecording(); return true
+            ctx.setShortcuts(shortcuts.removing(action: action))
+            stopAllRecording()
+            return true
         }
-        guard ShortcutKit.hasModifier(event.modifierFlags) else { NSSound.beep(); return true } // need a modifier
+        guard ShortcutKit.hasModifier(event.modifierFlags) else {
+            NSSound.beep()
+            return true
+        }
+
         let mods = ShortcutKit.carbonModifiers(from: event.modifierFlags)
-
-        // Stop recording (remove the monitor, restore hotkeys) BEFORE any modal alert, so the
-        // alert's own Return/Esc keys aren't swallowed by the recorder.
-        stopRecording()
-
-        let existing = ctx.shortcuts()
-        let conflicts = existing.conflicts(keyCode: keyCode, modifiers: mods, excluding: action)
+        let conflicts = shortcuts.conflicts(keyCode: keyCode, modifiers: mods, excluding: action)
+        stopAllRecording()
         if !conflicts.isEmpty, !confirmConflict(conflicts) { return true }
+        if dragBindConflicts(keyCode: keyCode, modifiers: mods) {
+            showDragBindConflict()
+            return true
+        }
 
-        // Take the combo; clear it from any conflicting action so there's no duplicate.
-        var updated = existing
-        for c in conflicts { updated = updated.removing(action: c) }
-        updated = updated.setting(action: action, keyCode: keyCode, modifiers: mods)
-        ctx.setShortcuts(updated)
+        var updated = shortcuts
+        for conflict in conflicts { updated = updated.removing(action: conflict) }
+        ctx.setShortcuts(updated.setting(action: action, keyCode: keyCode, modifiers: mods))
         refresh()
         return true
     }
 
-    private func confirmConflict(_ conflicts: [String]) -> Bool {
-        // Show the labels users see in the list, never raw action ids like "leftHalf".
-        let names = conflicts.map { id in
-            ShortcutKit.quickActions.first(where: { $0.id == id })?.label
-                ?? ZoneAction.zeroBasedIndex(from: id).map { "Zone \($0 + 1)" }
-                ?? id
+    private func handleDragRecording(_ event: NSEvent) -> Bool {
+        guard isRecordingDrag else { return false }
+        guard canWrite else { stopAllRecording(); return true }
+
+        switch event.type {
+        case .keyDown:
+            let keyCode = Int(event.keyCode)
+            let bare = !ShortcutKit.hasModifier(event.modifierFlags)
+            if keyCode == 53, bare { stopAllRecording(); return true } // Esc cancels
+            if keyCode == 51, bare { resetDragBind(); return true }    // Delete resets
+
+            let mods = ShortcutKit.carbonModifiers(from: event.modifierFlags)
+            let conflicts = shortcuts.conflicts(keyCode: keyCode, modifiers: mods, excluding: "")
+            stopAllRecording()
+            if !conflicts.isEmpty {
+                showDragConflict(conflicts)
+                return true
+            }
+            ctx.setDragSnapTrigger(DragSnapTrigger(keyCode: keyCode, modifiers: mods))
+            refresh()
+            return true
+
+        case .flagsChanged:
+            let mods = ShortcutKit.carbonModifiers(from: event.modifierFlags)
+            guard mods != 0 else {
+                if let pending = pendingModifierOnly {
+                    stopAllRecording()
+                    ctx.setDragSnapTrigger(DragSnapTrigger(keyCode: nil, modifiers: pending))
+                    refresh()
+                    return true
+                }
+                modifierOnlyTimer?.invalidate()
+                modifierOnlyTimer = nil
+                return true
+            }
+
+            pendingModifierOnly = preferredModifierOnlyCandidate(current: pendingModifierOnly, new: mods)
+            modifierOnlyTimer?.invalidate()
+            modifierOnlyTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+                guard let self, self.isRecordingDrag, let mods = self.pendingModifierOnly else { return }
+                self.stopAllRecording()
+                self.ctx.setDragSnapTrigger(DragSnapTrigger(keyCode: nil, modifiers: mods))
+                self.refresh()
+            }
+            return true
+
+        default:
+            return false
         }
+    }
+
+    private func preferredModifierOnlyCandidate(current: Int?, new: Int) -> Int {
+        guard let current else { return new }
+        return new.nonzeroBitCount >= current.nonzeroBitCount ? new : current
+    }
+
+    private func confirmConflict(_ conflicts: [String]) -> Bool {
+        let names = conflicts.map(displayName(for:))
         let alert = NSAlert()
         alert.messageText = "Shortcut already in use"
         alert.informativeText = "This combo is assigned to: \(names.joined(separator: ", ")). Reassign it here? The other action becomes unassigned."
@@ -310,83 +303,385 @@ private final class ShortcutsView: NSView {
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
     }
+
+    private func dragBindConflicts(keyCode: Int, modifiers: Int) -> Bool {
+        dragTrigger.keyCode == keyCode && dragTrigger.modifiers == modifiers
+    }
+
+    private func showDragBindConflict() {
+        let alert = NSAlert()
+        alert.messageText = "Shortcut already in use"
+        alert.informativeText = "This combo is assigned to the drag bind. Choose a different shortcut or change the drag bind in General."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func showDragConflict(_ conflicts: [String]) {
+        let names = conflicts.map(displayName(for:))
+        let alert = NSAlert()
+        alert.messageText = "Drag bind already in use"
+        alert.informativeText = "This key combination is already assigned to: \(names.joined(separator: ", ")). Choose a different drag bind so dragging does not trigger a shortcut."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func displayName(for id: String) -> String {
+        ShortcutKit.quickActions.first(where: { $0.id == id })?.label
+            ?? ZoneAction.zeroBasedIndex(from: id).map { "Zone \($0 + 1)" }
+            ?? id
+    }
 }
 
-// MARK: - About tab
+private struct SettingsRootView: View {
+    @ObservedObject var model: SettingsModel
 
-/// Hosts the shared About content (icon, version, links, license) plus the update check —
-/// the same panel as the menu's About window, embedded per the Settings convention.
-private final class AboutTabView: NSView {
-    init() {
-        super.init(frame: NSRect(x: 0, y: 0, width: 640, height: 492))
-        autoresizingMask = [.width, .height]
-        // The About content has a fixed internal layout designed at 420×430 — embed it at its
-        // natural size, pinned to the top, with the update button in the strip below it.
-        let aboutSize = NSSize(width: 420, height: 430)
-        let about = AboutWindowController.makeEmbeddedContent(size: aboutSize)
-        about.frame = NSRect(x: (640 - aboutSize.width) / 2, y: 492 - aboutSize.height,
-                             width: aboutSize.width, height: aboutSize.height)
-        about.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin]
-        addSubview(about)
-
-        let update = NSButton(title: "Check for Updates…", target: AppUpdater.shared,
-                              action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)))
-        update.bezelStyle = .rounded
-        update.sizeToFit()
-        update.frame = NSRect(x: (640 - update.frame.width - 24) / 2, y: 12,
-                              width: update.frame.width + 24, height: 30)
-        update.autoresizingMask = [.minXMargin, .maxXMargin, .maxYMargin]
-        addSubview(update)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-}
-
-// MARK: - General tab
-
-private final class GeneralView: NSView {
-    private let ctx: SettingsContext
-    init(context: SettingsContext) {
-        self.ctx = context
-        super.init(frame: NSRect(x: 0, y: 0, width: 640, height: 492))
-        autoresizingMask = [.width, .height]
-        build()
-    }
-    required init?(coder: NSCoder) { fatalError() }
-
-    /// Rebuild (e.g. after Accessibility is granted while this is open).
-    func refresh() {
-        subviews.forEach { $0.removeFromSuperview() }
-        build()
-    }
-
-    private func build() {
-        var y: CGFloat = 440
-        let granted = ctx.isTrusted()
-        let ax = NSTextField(labelWithString: granted ? "Accessibility: granted" : "Accessibility: not granted")
-        ax.frame = NSRect(x: 24, y: y, width: 580, height: 22)
-        ax.textColor = granted ? .secondaryLabelColor : .systemOrange
-        addSubview(ax)
-        if !granted {
-            y -= 32 // button on its own line below the label (no overlap)
-            let b = NSButton(title: "Open Accessibility settings…", target: self, action: #selector(reqAX))
-            b.bezelStyle = .rounded; b.sizeToFit()
-            b.frame = NSRect(x: 24, y: y, width: b.frame.width + 24, height: 28)
-            addSubview(b)
+    var body: some View {
+        TabView(selection: $model.selectedTab) {
+            GeneralSettingsView(model: model)
+                .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(SettingsTab.general)
+            ShortcutsSettingsView(model: model)
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+                .tag(SettingsTab.shortcuts)
+            AboutSettingsView()
+                .tabItem { Label("About", systemImage: "info.circle") }
+                .tag(SettingsTab.about)
         }
-        y -= 46
-        addCheck("Shift-drag to snap", y: y, on: ctx.isDragSnapOn(), action: #selector(toggleDrag))
-        y -= 34
-        addCheck("Launch at login", y: y, on: ctx.isLaunchAtLoginOn(), action: #selector(toggleLogin))
+        .padding(.top, 12)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 20)
+        .frame(minWidth: 560, minHeight: 440)
+        .tint(Color(nsColor: Brand.blue))
+    }
+}
+
+private struct GeneralSettingsView: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                SettingsSectionView("Permissions") {
+                    SettingsRow(
+                        title: "Accessibility",
+                        detail: "Required so Lineup can move and resize windows.") {
+                        HStack(spacing: 10) {
+                            Label(
+                                model.accessibilityGranted ? "Granted" : "Not granted",
+                                systemImage: model.accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                            )
+                            .foregroundStyle(model.accessibilityGranted ? Color.secondary : Color.orange)
+
+                            if !model.accessibilityGranted {
+                                Button("Open System Settings") {
+                                    model.requestAccessibility()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SettingsSectionView("Behavior") {
+                    SettingsRow(
+                        title: "Drag to snap",
+                        detail: "Hold the drag bind while dragging a window.") {
+                        Toggle("", isOn: Binding(
+                            get: { model.dragSnapOn },
+                            set: { model.setDragSnapOn($0) }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+
+                    SettingsRow(
+                        title: "Drag bind",
+                        detail: "Click to record a key or modifier combo.") {
+                        HStack(spacing: 8) {
+                            RecorderButton(
+                                text: model.dragTriggerDisplay,
+                                emptyText: "Click to set",
+                                isRecording: model.isRecordingDrag,
+                                enabled: model.canWrite,
+                                accessibilityLabel: "Drag snap bind",
+                                action: { model.beginDragRecording() })
+
+                            CircleClearButton(
+                                help: "Reset drag bind to Shift",
+                                accessibilityLabel: "Reset drag bind to Shift",
+                                disabled: !model.canWrite
+                            ) {
+                                model.resetDragBind()
+                            }
+                        }
+                    }
+
+                    SettingsRow(
+                        title: "Launch at login",
+                        detail: "Start Lineup automatically when you sign in.") {
+                        Toggle("", isOn: Binding(
+                            get: { model.launchAtLoginOn },
+                            set: { model.setLaunchAtLoginOn($0) }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+                }
+
+                if !model.canWrite {
+                    SettingsSectionView("Configuration") {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "lock.fill")
+                                .foregroundStyle(.secondary)
+                            Text(model.blockedMessage ?? "Editing is disabled.")
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.callout)
+                    }
+                }
+            }
+            .frame(width: settingsContentWidth, alignment: .leading)
+            .padding(.top, 24)
+            .padding(.bottom, 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct SettingsSectionView<Content: View>: View {
+    private let title: String
+    private let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
     }
 
-    private func addCheck(_ title: String, y: CGFloat, on: Bool, action: Selector) {
-        let c = NSButton(checkboxWithTitle: title, target: self, action: action)
-        c.state = on ? .on : .off
-        c.frame = NSRect(x: 24, y: y, width: 400, height: 22)
-        addSubview(c)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            VStack(spacing: 0) {
+                content
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
+private struct SettingsRow<Content: View>: View {
+    var title: String
+    var detail: String?
+    var content: Content
+
+    init(title: String, detail: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.detail = detail
+        self.content = content()
     }
 
-    @objc private func reqAX() { ctx.requestAccessibility() }
-    @objc private func toggleDrag() { ctx.toggleDragSnap() }
-    @objc private func toggleLogin() { ctx.toggleLaunchAtLogin() }
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 18) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    if let detail {
+                        Text(detail)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 24)
+                content
+            }
+            .frame(minHeight: 44)
+            .padding(.vertical, 6)
+
+            Divider()
+                .padding(.leading, 0)
+        }
+    }
+}
+
+private struct ShortcutsSettingsView: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("Click a shortcut, then press a key combo. Esc cancels, Delete clears.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                if !model.canWrite {
+                    Label(model.blockedMessage ?? "Editing is disabled.", systemImage: "lock.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+
+                SettingsSectionView("Window") {
+                    ForEach(model.quickShortcutRows) { row in
+                        ShortcutSettingsRow(row: row, model: model)
+                    }
+                }
+
+                SettingsSectionView("Zones") {
+                    ForEach(model.zoneShortcutRows) { row in
+                        ShortcutSettingsRow(row: row, model: model)
+                    }
+                }
+            }
+            .frame(width: settingsContentWidth, alignment: .leading)
+            .padding(.top, 20)
+            .padding(.bottom, 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct ShortcutSettingsRow: View {
+    let row: ShortcutRow
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text(row.label)
+                Spacer(minLength: 24)
+                RecorderButton(
+                    text: model.shortcutDisplay(for: row.id),
+                    emptyText: "Click to set",
+                    isRecording: model.recordingAction == row.id,
+                    enabled: model.canWrite,
+                    accessibilityLabel: "\(row.label) shortcut",
+                    action: { model.beginShortcutRecording(row.id) })
+
+                CircleClearButton(
+                    help: "Clear shortcut",
+                    accessibilityLabel: "Clear shortcut for \(row.label)",
+                    disabled: !model.canWrite || model.shortcutDisplay(for: row.id).isEmpty
+                ) {
+                    model.clearShortcut(row.id)
+                }
+            }
+            .frame(minHeight: 38)
+            .padding(.vertical, 4)
+
+            Divider()
+        }
+    }
+}
+
+private struct CircleClearButton: View {
+    var help: String
+    var accessibilityLabel: String
+    var disabled: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
+                .imageScale(.medium)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(help)
+        .disabled(disabled)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct RecorderButton: View {
+    var text: String
+    var emptyText: String
+    var isRecording: Bool
+    var enabled: Bool
+    var accessibilityLabel: String
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(labelText)
+                .font(.system(size: 13, weight: text.isEmpty ? .regular : .medium))
+                .foregroundStyle(isRecording || !text.isEmpty ? .primary : .secondary)
+                .lineLimit(1)
+                .frame(width: 164)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .disabled(!enabled)
+        .help(isRecording ? "Press keys" : accessibilityLabel)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(isRecording ? "Recording" : (text.isEmpty ? "Not set" : text))
+    }
+
+    private var labelText: String {
+        if isRecording { return "Press keys..." }
+        return text.isEmpty ? emptyText : text
+    }
+}
+
+private struct AboutSettingsView: View {
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(nsImage: appIcon())
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 84, height: 84)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 3) {
+                Text("Lineup")
+                    .font(.title2.weight(.semibold))
+                Text(versionLine())
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                if let buildDate = buildDateLine() {
+                    Text(buildDate)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(spacing: 8) {
+                Link("lineup.caiano.com", destination: URL(string: "https://lineup.caiano.com")!)
+                Link("github.com/hcaiano/lineup", destination: URL(string: "https://github.com/hcaiano/lineup")!)
+            }
+
+            Button("Check for Updates...") {
+                AppUpdater.shared.checkForUpdates(nil)
+            }
+
+            Text("Copyright 2026 Henrique Caiano. MIT License.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 16)
+    }
+
+    private func appIcon() -> NSImage {
+        if let icon = NSImage(named: "AppIcon") { return icon }
+        let path = Bundle.main.bundlePath
+        if path.hasSuffix(".app") { return NSWorkspace.shared.icon(forFile: path) }
+        return NSApplication.shared.applicationIconImage
+    }
+
+    private func versionLine() -> String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let build = info["CFBundleVersion"] as? String ?? "0"
+        return "Version \(version) (\(build))"
+    }
+
+    private func buildDateLine() -> String? {
+        guard
+            let url = Bundle.main.executableURL,
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+            let date = values.contentModificationDate
+        else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return "Built \(formatter.string(from: date))"
+    }
 }
