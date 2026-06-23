@@ -249,7 +249,7 @@ do { // clampPixelDividers: out-of-range divider clamped inside the screen
     check(out[0] <= out[1], "clamp: sorted")
 }
 
-do { // columnRect(containingX:) picks the block under the cursor (shift-drag snapping)
+do { // columnRect(containingX:) picks the block under the cursor (modifier-drag snapping)
     let cfg = ColumnConfig.fromPixels(dividers: [1133, 2865], halfPixels: 2560)
     func hit(_ x: CGFloat) -> CGRect { cfg.columnRect(containingX: x, frame: frame, visibleFrame: visible, pixelsWide: px)! }
     eq(hit(500).maxX, 1133, "cursor in left col -> left block")
@@ -775,6 +775,79 @@ do { // zone action id <-> index
     check(ZoneAction.zeroBasedIndex(from: "zone:0") == nil, "zone:0 invalid -> nil")
 }
 
+do { // drag-snap modifier masks normalize and match exactly
+    check(DragSnapModifierMask.normalized(nil) == DragSnapModifierMask.shift, "drag modifier: nil defaults to Shift")
+    check(DragSnapModifierMask.normalized(DragSnapModifierMask.option) == DragSnapModifierMask.option,
+          "drag modifier: known value passes through")
+    check(DragSnapModifierMask.normalized(0xDEAD) == DragSnapModifierMask.shift,
+          "drag modifier: unknown value falls back to Shift")
+    check(DragSnapModifierMask.matches(active: DragSnapModifierMask.shift, required: DragSnapModifierMask.shift),
+          "drag modifier: exact Shift matches")
+    check(!DragSnapModifierMask.matches(active: DragSnapModifierMask.shift, required: DragSnapModifierMask.shift | DragSnapModifierMask.option),
+          "drag modifier: missing required Option fails")
+    check(!DragSnapModifierMask.matches(active: DragSnapModifierMask.shift | DragSnapModifierMask.option, required: DragSnapModifierMask.shift),
+          "drag modifier: extra active Option fails exact match")
+    check(DragSnapModifierMask.matches(active: DragSnapModifierMask.hyper, required: DragSnapModifierMask.hyper),
+          "drag modifier: Hyper matches exactly")
+}
+
+do { // drag-snap trigger supports modifier-only and key-combo binds
+    let modifierOnly = DragSnapTrigger(keyCode: nil, modifiers: DragSnapModifierMask.option)
+    check(modifierOnly.matches(activeKeyDown: false, activeModifiers: DragSnapModifierMask.option),
+          "drag trigger: modifier-only bind matches without a key")
+    check(!modifierOnly.matches(activeKeyDown: false, activeModifiers: DragSnapModifierMask.option | DragSnapModifierMask.shift),
+          "drag trigger: modifier-only bind rejects extra modifier")
+
+    let keyCombo = DragSnapTrigger(keyCode: 2, modifiers: DragSnapModifierMask.option) // D on ANSI keyboards
+    check(keyCombo.matches(activeKeyDown: true, activeModifiers: DragSnapModifierMask.option),
+          "drag trigger: key combo matches with key down")
+    check(!keyCombo.matches(activeKeyDown: false, activeModifiers: DragSnapModifierMask.option),
+          "drag trigger: key combo rejects missing key")
+    check(!keyCombo.matches(activeKeyDown: true, activeModifiers: DragSnapModifierMask.option | DragSnapModifierMask.shift),
+          "drag trigger: key combo rejects extra modifier")
+    let bareKey = DragSnapTrigger(keyCode: 2, modifiers: 0)
+    check(bareKey.modifiers == 0, "drag trigger: bare key keeps empty modifiers")
+    check(bareKey.matches(activeKeyDown: true, activeModifiers: 0),
+          "drag trigger: bare key matches with no modifiers")
+    check(!bareKey.matches(activeKeyDown: true, activeModifiers: DragSnapModifierMask.shift),
+          "drag trigger: bare key rejects extra Shift")
+    check(DragSnapTrigger(keyCode: nil, modifiers: 0x4000).modifiers == DragSnapModifierMask.shift,
+          "drag trigger: invalid modifier-only bind falls back to Shift")
+}
+
+do { // drag-snap arms only for actual window movement, not in-app drags or resizes
+    let start = CGRect(x: 100, y: 200, width: 800, height: 600)
+    check(DragSnapWindowMotion.classify(start: start, current: start) == .stationary,
+          "drag window motion: unchanged frame stays stationary")
+    check(DragSnapWindowMotion.classify(start: start, current: start.offsetBy(dx: 6, dy: 0)) == .moved,
+          "drag window motion: origin move with stable size arms")
+    check(DragSnapWindowMotion.classify(start: start, current: start.offsetBy(dx: 3, dy: 4)) == .stationary,
+          "drag window motion: jitter at threshold stays stationary")
+    check(DragSnapWindowMotion.classify(
+        start: start,
+        current: CGRect(x: 100, y: 200, width: 808, height: 600)) == .resized,
+          "drag window motion: size change is a resize")
+    check(DragSnapWindowMotion.classify(
+        start: start,
+        current: CGRect(x: 94, y: 200, width: 806, height: 600)) == .resized,
+          "drag window motion: edge resize with origin change is still a resize")
+    check(DragSnapWindowMotion.isLikelyWindowMoveStart(
+        point: CGPoint(x: 500, y: 770), windowFrame: start),
+          "drag window motion: titlebar/top band can arm when AX frame is stale")
+    check(!DragSnapWindowMotion.isLikelyWindowMoveStart(
+        point: CGPoint(x: 500, y: 500), windowFrame: start),
+          "drag window motion: content area does not arm from cursor movement alone")
+    check(!DragSnapWindowMotion.isLikelyWindowMoveStart(
+        point: CGPoint(x: 500, y: 742), windowFrame: start),
+          "drag window motion: top content sliver below chrome band does not arm")
+    check(!DragSnapWindowMotion.isLikelyWindowMoveStart(
+        point: CGPoint(x: 500, y: 798), windowFrame: start),
+          "drag window motion: top resize edge does not count as move band")
+    check(!DragSnapWindowMotion.isLikelyWindowMoveStart(
+        point: CGPoint(x: 102, y: 770), windowFrame: start),
+          "drag window motion: side resize edge does not count as move band")
+}
+
 do { // shortcuts are optional + backward compatible in LineupConfig
     var cfg = LineupConfig().setting(layout: .thirds, for: wide, now: nil)
     check(cfg.shortcuts == nil, "config: shortcuts absent by default")
@@ -791,17 +864,27 @@ do { // shortcuts are optional + backward compatible in LineupConfig
 do { // dragSnapEnabled is optional + backward compatible (same pattern as shortcuts)
     var cfg = LineupConfig()
     check(cfg.dragSnapEnabled == nil, "config: dragSnapEnabled absent by default (nil = on)")
+    check(cfg.dragSnapModifiers == nil, "config: dragSnapModifiers absent by default (nil = Shift)")
+    check(cfg.dragSnapKeyCode == nil, "config: dragSnapKeyCode absent by default (nil = modifier-only)")
     // setting() preserves the flag while updating a screen's layout
     cfg.dragSnapEnabled = false
+    cfg.dragSnapModifiers = DragSnapModifierMask.option
+    cfg.dragSnapKeyCode = 2
     let carried = cfg.setting(layout: .thirds, for: wide, now: nil)
     check(carried.dragSnapEnabled == false, "config: setting(layout:) preserves dragSnapEnabled")
+    check(carried.dragSnapModifiers == DragSnapModifierMask.option, "config: setting(layout:) preserves dragSnapModifiers")
+    check(carried.dragSnapKeyCode == 2, "config: setting(layout:) preserves dragSnapKeyCode")
     // false round-trips intact (an explicit opt-out must survive a write/read cycle)
     let back = try JSONDecoder().decode(LineupConfig.self, from: try JSONEncoder().encode(carried))
     check(back.dragSnapEnabled == false, "config: dragSnapEnabled=false round-trips")
+    check(back.dragSnapModifiers == DragSnapModifierMask.option, "config: dragSnapModifiers round-trips")
+    check(back.dragSnapKeyCode == 2, "config: dragSnapKeyCode round-trips")
     // a schema-3 doc without the key decodes to nil, which the app reads as the default (on)
     let d2 = try JSONEncoder().encode(LineupConfig())
     let decoded = try JSONDecoder().decode(LineupConfig.self, from: d2)
     check(decoded.dragSnapEnabled == nil, "config: missing dragSnapEnabled decodes to nil")
+    check(decoded.dragSnapModifiers == nil, "config: missing dragSnapModifiers decodes to nil")
+    check(decoded.dragSnapKeyCode == nil, "config: missing dragSnapKeyCode decodes to nil")
     check((decoded.dragSnapEnabled ?? true) == true, "config: nil dragSnapEnabled defaults to on")
 }
 

@@ -91,6 +91,42 @@ public enum UnsnapRestore {
     }
 }
 
+public enum DragSnapWindowFrameChange: Equatable {
+    case stationary
+    case moved
+    case resized
+}
+
+/// Classifies AX frame changes while a drag-snap bind is held. Drag-snap should arm only
+/// when the actual window moves; in-app drags keep the frame still, and edge/corner resizes
+/// change the size.
+public enum DragSnapWindowMotion {
+    public static func classify(start: CGRect,
+                                current: CGRect,
+                                moveThreshold: CGFloat = 5,
+                                sizeTolerance: CGFloat = 4) -> DragSnapWindowFrameChange {
+        if abs(current.width - start.width) > sizeTolerance ||
+           abs(current.height - start.height) > sizeTolerance {
+            return .resized
+        }
+        let distance = hypot(current.minX - start.minX, current.minY - start.minY)
+        return distance > moveThreshold ? .moved : .stationary
+    }
+
+    public static func isLikelyWindowMoveStart(point: CGPoint,
+                                               windowFrame: CGRect,
+                                               topBand: CGFloat = 52,
+                                               resizeEdgeTolerance: CGFloat = 6) -> Bool {
+        guard windowFrame.contains(point) else { return false }
+        guard point.x > windowFrame.minX + resizeEdgeTolerance,
+              point.x < windowFrame.maxX - resizeEdgeTolerance,
+              point.y < windowFrame.maxY - resizeEdgeTolerance
+        else { return false }
+        let band = min(topBand, max(36, windowFrame.height * 0.18))
+        return point.y >= windowFrame.maxY - band
+    }
+}
+
 /// Pick the display a window belongs to by maximum area of intersection, falling back
 /// to the display nearest the window's center (handles windows dragged into gaps /
 /// negative-origin secondary displays). All rects are Cocoa-space.

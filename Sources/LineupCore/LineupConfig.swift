@@ -82,22 +82,34 @@ public struct LineupConfig: Codable, Equatable {
     /// Global shortcuts (optional; nil means "use the app's defaults"). Backward-compatible:
     /// a schema-3 file written before shortcuts existed decodes with this absent.
     public var shortcuts: Shortcuts?
-    /// Whether shift-drag-to-snap is enabled. Optional/backward-compatible like `shortcuts`:
+    /// Whether modifier-drag-to-snap is enabled. Optional/backward-compatible like `shortcuts`:
     /// a config written before this existed decodes as nil, which the app treats as the
     /// default (on). When the user turns it off, persisting `false` keeps the global mouse
     /// monitor uninstalled at the next launch.
     public var dragSnapEnabled: Bool?
+    /// Carbon modifier mask for drag-snap activation. Optional/backward-compatible:
+    /// nil means the legacy/default Shift-drag behavior. The app normalizes unsupported
+    /// masks to Shift when reading this, so hand-edited configs don't break dragging.
+    public var dragSnapModifiers: Int?
+    /// Optional Carbon virtual key code for drag-snap activation. nil means modifier-only,
+    /// which preserves the legacy Shift-drag behavior and the first configurable-modifier
+    /// builds.
+    public var dragSnapKeyCode: Int?
 
     public init(schemaVersion: Int = LineupConfig.currentSchema,
                 screens: [String: ScreenLayout] = [:],
                 defaultLayout: Node = .halves,
                 shortcuts: Shortcuts? = nil,
-                dragSnapEnabled: Bool? = nil) {
+                dragSnapEnabled: Bool? = nil,
+                dragSnapModifiers: Int? = nil,
+                dragSnapKeyCode: Int? = nil) {
         self.schemaVersion = schemaVersion
         self.screens = screens
         self.defaultLayout = defaultLayout
         self.shortcuts = shortcuts
         self.dragSnapEnabled = dragSnapEnabled
+        self.dragSnapModifiers = dragSnapModifiers
+        self.dragSnapKeyCode = dragSnapKeyCode
     }
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.

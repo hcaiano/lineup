@@ -222,7 +222,7 @@ enum WindowMover {
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
-    /// Snap a specific window element to a Cocoa-space rect (used by shift-drag snapping,
+    /// Snap a specific window element to a Cocoa-space rect (used by modifier-drag snapping,
     /// where the dragged window isn't necessarily the focused one yet).
     static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
         guard AXIsProcessTrusted() else { return }

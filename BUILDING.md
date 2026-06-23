@@ -53,7 +53,7 @@ Sources/LineupCore/         Pure, tested core (no AppKit)
 Sources/lineup/             AppKit agent
   main.swift                Menu-bar app, hotkeys, config lifecycle
   LayoutEditorOverlay.swift The on-screen layout editor
-  DragSnap.swift            Shift-drag-to-snap
+  DragSnap.swift            Modifier-drag-to-snap
   SettingsWindow.swift      Shortcuts + General
   WindowMover.swift         Accessibility window get/set
   ShortcutKit.swift         Defaults + Cocoa/Carbon + combo strings

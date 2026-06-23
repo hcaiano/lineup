@@ -87,7 +87,7 @@ public struct ColumnConfig: Codable, Equatable {
         return rects
     }
 
-    /// The column rect containing global x (points) — used by shift-drag snapping to pick
+    /// The column rect containing global x (points) — used by modifier-drag snapping to pick
     /// the block under the cursor. If x is outside all columns, returns the nearest end
     /// column so a drag past the screen edge still snaps sensibly.
     public func columnRect(containingX x: CGFloat, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> CGRect? {

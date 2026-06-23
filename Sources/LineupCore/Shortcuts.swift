@@ -46,6 +46,63 @@ public struct Shortcuts: Codable, Equatable {
     }
 }
 
+/// Carbon modifier masks used by drag-snap. Kept in core so config fallback and exact
+/// matching stay covered by the dependency-free test runner.
+public enum DragSnapModifierMask {
+    public static let command = 0x0100
+    public static let shift = 0x0200
+    public static let option = 0x0800
+    public static let control = 0x1000
+    public static let hyper = control | option | shift | command
+    public static let all = control | option | shift | command
+    public static let `default` = shift
+    public static let choices = [
+        shift,
+        option,
+        control,
+        command,
+        control | option,
+        control | shift,
+        option | shift,
+        command | shift,
+        control | command,
+        option | command,
+        control | option | shift,
+        control | option | command,
+        control | shift | command,
+        option | shift | command,
+        hyper,
+    ]
+
+    public static func normalized(_ modifiers: Int?) -> Int {
+        let candidate = modifiers ?? Self.default
+        return choices.contains(candidate) ? candidate : Self.default
+    }
+
+    public static func matches(active: Int, required: Int) -> Bool {
+        (active & all) == normalized(required)
+    }
+}
+
+public struct DragSnapTrigger: Equatable {
+    public var keyCode: Int?
+    public var modifiers: Int
+
+    public init(keyCode: Int? = nil, modifiers: Int = DragSnapModifierMask.default) {
+        self.keyCode = keyCode
+        self.modifiers = keyCode == nil
+            ? DragSnapModifierMask.normalized(modifiers)
+            : modifiers & DragSnapModifierMask.all
+    }
+
+    public static let `default` = DragSnapTrigger()
+
+    public func matches(activeKeyDown: Bool, activeModifiers: Int) -> Bool {
+        guard (activeModifiers & DragSnapModifierMask.all) == modifiers else { return false }
+        return keyCode == nil || activeKeyDown
+    }
+}
+
 /// Positional Zone-N action ids ("zone:1" = first zone). Indices are 1-based in the id,
 /// 0-based when resolving against `Layout.zoneRect`.
 public enum ZoneAction {
