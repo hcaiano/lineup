@@ -109,6 +109,8 @@ jobs:
           DEVELOPER_ID_IDENTITY="$(security find-identity -p codesigning -v "$KEYCHAIN_PATH" \
             | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
           export DEVELOPER_ID_IDENTITY
+          # The notary profile is in the throwaway keychain; tell notarize.sh to read from it.
+          export NOTARY_KEYCHAIN="$KEYCHAIN_PATH"
           ./Scripts/build-app.sh dist
           ./Scripts/make-dmg.sh dist
           ./Scripts/notarize.sh "dist/Lineup-${{ steps.ver.outputs.version }}.dmg" lineup-notary
