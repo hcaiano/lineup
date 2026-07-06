@@ -23,47 +23,33 @@ public struct ScreenInfo: Equatable {
 /// (virtual/headless displays). Never key on resolution alone — it collides on two
 /// identical monitors.
 public enum ScreenKey {
-    /// `tieBreaker` (e.g. CGDisplay unitNumber + displayID) disambiguates two otherwise
-    /// identical fallback displays (same model, serial 0, same label). Always best-effort
-    /// (keyIsStable=false) — the UUID path is preferred when available.
+    /// `tieBreaker` (e.g. CGDisplay unitNumber, or frame origin as a last resort) disambiguates
+    /// two otherwise identical fallback displays (same model, serial 0, same label). Always
+    /// best-effort (keyIsStable=false) — the UUID path is preferred when available.
     public static func fallback(vendor: Int, model: Int, serial: Int, width: Int, height: Int, name: String, tieBreaker: String? = nil) -> String {
         var key = "fallback:\(vendor):\(model):\(serial):\(width)x\(height):\(name)"
         if let t = tieBreaker, !t.isEmpty { key += ":\(t)" }
         return key
     }
 
-    /// Previous fallback builds used either the unsalted composite or a bare unit number
-    /// suffix. New tagged fallback keys should still read those layouts, but direct keys win.
+    /// Earlier fallback builds saved layouts under either the unsalted composite or a bare
+    /// unit-number suffix. A current `:unit:<n>`/`:frame:<x,y>` key should still read those, but
+    /// a direct match always wins. (No `:display:` form is derived — that transient salt was never
+    /// shipped.)
     public static func fallbackAliases(for key: String) -> [String] {
         guard key.hasPrefix("fallback:") else { return [] }
 
-        let unsalted: String
-        let unit: String?
-        if let displayRange = key.range(of: ":display:", options: .backwards) {
-            let beforeDisplay = String(key[..<displayRange.lowerBound])
-            if let unitRange = beforeDisplay.range(of: ":unit:", options: .backwards) {
-                unsalted = String(beforeDisplay[..<unitRange.lowerBound])
-                unit = String(beforeDisplay[unitRange.upperBound...])
-            } else {
-                unsalted = beforeDisplay
-                unit = nil
-            }
+        var aliases: [String] = []
+        if let unitRange = key.range(of: ":unit:", options: .backwards) {
+            let unsalted = String(key[..<unitRange.lowerBound])
+            let unit = String(key[unitRange.upperBound...])
+            if !unit.isEmpty { aliases.append("\(unsalted):\(unit)") }  // pre-tag bare-unit form
+            aliases.append(unsalted)                                    // oldest unsalted form
         } else if let frameRange = key.range(of: ":frame:", options: .backwards) {
-            let beforeFrame = String(key[..<frameRange.lowerBound])
-            if let unitRange = beforeFrame.range(of: ":unit:", options: .backwards) {
-                unsalted = String(beforeFrame[..<unitRange.lowerBound])
-                unit = String(beforeFrame[unitRange.upperBound...])
-            } else {
-                unsalted = beforeFrame
-                unit = nil
-            }
+            aliases.append(String(key[..<frameRange.lowerBound]))       // no unit to recover; unsalted only
         } else {
             return []
         }
-
-        var aliases: [String] = []
-        if let unit, !unit.isEmpty { aliases.append("\(unsalted):\(unit)") }
-        aliases.append(unsalted)
         return aliases.reduce(into: []) { result, alias in
             if alias != key && !result.contains(alias) { result.append(alias) }
         }

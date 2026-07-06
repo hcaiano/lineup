@@ -26,10 +26,12 @@ enum ScreenIdentity {
     }
 
     private static func fallbackTieBreaker(displayID: CGDirectDisplayID?, screen: NSScreen) -> String {
-        if let displayID {
-            let unit = CGDisplayUnitNumber(displayID)
-            return "unit:\(unit):display:\(displayID)"
-        }
+        // CGDisplayUnitNumber is distinct per physical display AND stays put across reboot/reconnect
+        // on the same GPU port — unlike CGDirectDisplayID, which macOS reassigns freely and would
+        // bake a transient id into the persisted key (losing the saved layout on the next boot). So
+        // key on the unit alone; only when there's no display id at all fall back to the (unstable)
+        // frame origin, which still beats colliding two UUID-less displays onto one key.
+        if let displayID { return "unit:\(CGDisplayUnitNumber(displayID))" }
         let x = Int(screen.frame.minX.rounded())
         let y = Int(screen.frame.minY.rounded())
         return "frame:\(x),\(y)"

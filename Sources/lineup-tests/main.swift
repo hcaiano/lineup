@@ -390,7 +390,7 @@ do { // fallback-key aliases: a new salted key still reads a layout saved under 
     let base = (vendor: 0, model: 0, serial: 0, width: 1920, height: 1080, name: "Virtual")
     let salted = ScreenKey.fallback(vendor: base.vendor, model: base.model, serial: base.serial,
                                     width: base.width, height: base.height, name: base.name,
-                                    tieBreaker: "unit:3:display:12345")   // new-format key
+                                    tieBreaker: "unit:3")                 // current key (unit only, no transient display id)
     let bareUnit = ScreenKey.fallback(vendor: base.vendor, model: base.model, serial: base.serial,
                                       width: base.width, height: base.height, name: base.name,
                                       tieBreaker: "3")                     // old bare-unit key
