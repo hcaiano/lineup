@@ -3,7 +3,7 @@ import LineupCore
 
 /// Builds a stable `ScreenInfo` for a live `NSScreen`. Primary key is the display's
 /// hardware UUID (`CGDisplayCreateUUIDFromDisplayID`); when that's unavailable
-/// (virtual/headless), a best-effort composite with a unit-number tie-breaker is used.
+/// (virtual/headless), a best-effort composite with a live display tie-breaker is used.
 enum ScreenIdentity {
     static func info(for screen: NSScreen) -> ScreenInfo {
         let displayID = self.displayID(for: screen)
@@ -15,14 +15,24 @@ enum ScreenIdentity {
             return ScreenInfo(key: uuidStr, label: label, pixelsWide: pxW, pixelsHigh: pxH, keyIsStable: true)
         }
 
-        // Fallback: composite of hardware identifiers + a unit-number tie-breaker.
+        // Fallback: composite of hardware identifiers + a live-display tie-breaker.
         let vendor = displayID.map { Int(CGDisplayVendorNumber($0)) } ?? 0
         let model = displayID.map { Int(CGDisplayModelNumber($0)) } ?? 0
         let serial = displayID.map { Int(CGDisplaySerialNumber($0)) } ?? 0
-        let unit = displayID.map { String(CGDisplayUnitNumber($0)) }
+        let tieBreaker = fallbackTieBreaker(displayID: displayID, screen: screen)
         let key = ScreenKey.fallback(vendor: vendor, model: model, serial: serial,
-                                     width: pxW, height: pxH, name: label, tieBreaker: unit)
+                                     width: pxW, height: pxH, name: label, tieBreaker: tieBreaker)
         return ScreenInfo(key: key, label: label, pixelsWide: pxW, pixelsHigh: pxH, keyIsStable: false)
+    }
+
+    private static func fallbackTieBreaker(displayID: CGDirectDisplayID?, screen: NSScreen) -> String {
+        if let displayID {
+            let unit = CGDisplayUnitNumber(displayID)
+            return "unit:\(unit):display:\(displayID)"
+        }
+        let x = Int(screen.frame.minX.rounded())
+        let y = Int(screen.frame.minY.rounded())
+        return "frame:\(x),\(y)"
     }
 
     private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {

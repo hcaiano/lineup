@@ -23,13 +23,50 @@ public struct ScreenInfo: Equatable {
 /// (virtual/headless displays). Never key on resolution alone — it collides on two
 /// identical monitors.
 public enum ScreenKey {
-    /// `tieBreaker` (e.g. CGDisplay unitNumber / displayID) disambiguates two otherwise
+    /// `tieBreaker` (e.g. CGDisplay unitNumber + displayID) disambiguates two otherwise
     /// identical fallback displays (same model, serial 0, same label). Always best-effort
     /// (keyIsStable=false) — the UUID path is preferred when available.
     public static func fallback(vendor: Int, model: Int, serial: Int, width: Int, height: Int, name: String, tieBreaker: String? = nil) -> String {
         var key = "fallback:\(vendor):\(model):\(serial):\(width)x\(height):\(name)"
         if let t = tieBreaker, !t.isEmpty { key += ":\(t)" }
         return key
+    }
+
+    /// Previous fallback builds used either the unsalted composite or a bare unit number
+    /// suffix. New tagged fallback keys should still read those layouts, but direct keys win.
+    public static func fallbackAliases(for key: String) -> [String] {
+        guard key.hasPrefix("fallback:") else { return [] }
+
+        let unsalted: String
+        let unit: String?
+        if let displayRange = key.range(of: ":display:", options: .backwards) {
+            let beforeDisplay = String(key[..<displayRange.lowerBound])
+            if let unitRange = beforeDisplay.range(of: ":unit:", options: .backwards) {
+                unsalted = String(beforeDisplay[..<unitRange.lowerBound])
+                unit = String(beforeDisplay[unitRange.upperBound...])
+            } else {
+                unsalted = beforeDisplay
+                unit = nil
+            }
+        } else if let frameRange = key.range(of: ":frame:", options: .backwards) {
+            let beforeFrame = String(key[..<frameRange.lowerBound])
+            if let unitRange = beforeFrame.range(of: ":unit:", options: .backwards) {
+                unsalted = String(beforeFrame[..<unitRange.lowerBound])
+                unit = String(beforeFrame[unitRange.upperBound...])
+            } else {
+                unsalted = beforeFrame
+                unit = nil
+            }
+        } else {
+            return []
+        }
+
+        var aliases: [String] = []
+        if let unit, !unit.isEmpty { aliases.append("\(unsalted):\(unit)") }
+        aliases.append(unsalted)
+        return aliases.reduce(into: []) { result, alias in
+            if alias != key && !result.contains(alias) { result.append(alias) }
+        }
     }
 }
 
@@ -114,7 +151,11 @@ public struct LineupConfig: Codable, Equatable {
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.
     public func layout(forKey key: String) -> Node {
-        screens[key]?.layout ?? defaultLayout
+        if let layout = screens[key]?.layout { return layout }
+        for alias in ScreenKey.fallbackAliases(for: key) {
+            if let layout = screens[alias]?.layout { return layout }
+        }
+        return defaultLayout
     }
 
     /// Validate every stored layout (structure + unit rules). Throws on the first invalid.

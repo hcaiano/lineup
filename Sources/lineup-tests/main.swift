@@ -386,6 +386,37 @@ do { // fallback screen key composition (never resolution-only)
     check(k != k2, "tie-breaker disambiguates identical fallback displays")
 }
 
+do { // fallback-key aliases: a new salted key still reads a layout saved under an old key
+    let base = (vendor: 0, model: 0, serial: 0, width: 1920, height: 1080, name: "Virtual")
+    let salted = ScreenKey.fallback(vendor: base.vendor, model: base.model, serial: base.serial,
+                                    width: base.width, height: base.height, name: base.name,
+                                    tieBreaker: "unit:3:display:12345")   // new-format key
+    let bareUnit = ScreenKey.fallback(vendor: base.vendor, model: base.model, serial: base.serial,
+                                      width: base.width, height: base.height, name: base.name,
+                                      tieBreaker: "3")                     // old bare-unit key
+    let unsalted = ScreenKey.fallback(vendor: base.vendor, model: base.model, serial: base.serial,
+                                      width: base.width, height: base.height, name: base.name)  // oldest
+    check(ScreenKey.fallbackAliases(for: salted) == [bareUnit, unsalted],
+          "aliases: salted key derives [bare-unit, unsalted] older forms")
+
+    // A layout saved under the old bare-unit key is read through the new salted key.
+    let old = ScreenInfo(key: bareUnit, label: base.name, pixelsWide: base.width, pixelsHigh: base.height, keyIsStable: false)
+    let cfg = LineupConfig().setting(layout: .thirds, for: old, now: nil)
+    check(Layout.zones(cfg.layout(forKey: salted), frame: frame, visibleFrame: visible, pixelsWide: px).count == 3,
+          "alias read-through: new key resolves the old key's saved layout")
+
+    // A direct entry under the new key wins over any alias.
+    let both = cfg.setting(layout: .halves, for: ScreenInfo(key: salted, label: base.name, pixelsWide: base.width, pixelsHigh: base.height, keyIsStable: false), now: nil)
+    check(Layout.zones(both.layout(forKey: salted), frame: frame, visibleFrame: visible, pixelsWide: px).count == 2,
+          "direct key wins over alias")
+
+    // A frame-salted key (no display id) aliases down to the unsalted composite.
+    let framed = ScreenKey.fallback(vendor: base.vendor, model: base.model, serial: base.serial,
+                                    width: base.width, height: base.height, name: base.name, tieBreaker: "frame:100,200")
+    check(ScreenKey.fallbackAliases(for: framed) == [unsalted], "aliases: frame-salted key derives the unsalted form")
+    check(ScreenKey.fallbackAliases(for: "uuid-stable-key").isEmpty, "aliases: non-fallback (UUID) keys have none")
+}
+
 // ---- P1 review fixes: validation ----
 func expectThrow(_ name: String, _ body: () throws -> Void) {
     checks += 1
