@@ -18,6 +18,13 @@ TARGET="${1:?usage: notarize.sh <app-or-dmg> [keychain-profile]}"
 PROFILE="${2:-${NOTARY_PROFILE:-lineup-notary}}"
 [ -e "$TARGET" ] || { echo "no such file: $TARGET" >&2; exit 1; }
 
+# notarytool reads --keychain-profile from the DEFAULT (login) keychain unless told otherwise.
+# In CI the profile lives in a throwaway keychain, so set NOTARY_KEYCHAIN to that path and it's
+# passed through as --keychain on every notarytool call. Unset (local use) = default keychain,
+# unchanged. The ${arr[@]+...} guard keeps this safe under `set -u` with an empty array on bash 3.2.
+KC_ARGS=()
+[ -n "${NOTARY_KEYCHAIN:-}" ] && KC_ARGS=(--keychain "$NOTARY_KEYCHAIN")
+
 # Refuse anything that isn't DEVELOPER ID-signed. A self-signed cert also has a "certificate
 # leaf" requirement (it's stable for Accessibility), but Apple only notarizes Developer ID
 # software, so checking the leaf is not enough — require the Developer ID authority itself, or
@@ -52,7 +59,7 @@ trap cleanup EXIT
 echo "==> submitting to Apple's notary service (typically 1-5 min)"
 # --timeout bounds the wait so a stuck submission can't hang a release shell forever. On
 # failure, surface the detailed log so the rejection reason is actionable.
-if ! xcrun notarytool submit "$SUBMIT" --keychain-profile "$PROFILE" --wait --timeout 30m; then
+if ! xcrun notarytool submit "$SUBMIT" --keychain-profile "$PROFILE" ${KC_ARGS[@]+"${KC_ARGS[@]}"} --wait --timeout 30m; then
   echo "error: notarization failed. Fetch the reason with:" >&2
   echo "       xcrun notarytool history --keychain-profile \"$PROFILE\"" >&2
   echo "       xcrun notarytool log <submission-id> --keychain-profile \"$PROFILE\"" >&2
