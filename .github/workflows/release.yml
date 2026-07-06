@@ -1,0 +1,138 @@
+name: Release
+
+# Hybrid, tag-triggered release. Push a `vX.Y.Z` tag and this builds the universal
+# app, signs it with the Developer ID cert, notarizes + staples the DMG with Apple,
+# and publishes a GitHub release with the DMG attached.
+#
+# It deliberately STOPS before signing the Sparkle appcast: the EdDSA private key
+# (the auto-update root of trust) is kept off CI. After this workflow finishes, run
+# the one local step on a trusted Mac to ship the update to users:
+#
+#     ./Scripts/publish-appcast.sh <version>     # e.g. 1.8.1
+#
+# which downloads the notarized DMG this workflow released, EdDSA-signs the appcast,
+# and opens a PR to update web/appcast.xml (merging it auto-deploys the feed).
+#
+# Required repo secrets (see RELEASING.md for how to set them):
+#   BUILD_CERTIFICATE_BASE64      base64 of the Developer ID Application .p12
+#   P12_PASSWORD                  password that .p12 was exported with
+#   APPLE_ID                      Apple ID email for the notary service
+#   APPLE_TEAM_ID                 Developer team id (e.g. HJ9R8572WN)
+#   APPLE_APP_SPECIFIC_PASSWORD   app-specific password for that Apple ID
+#
+# workflow_dispatch runs the same build + notarize for a smoke test but uploads the
+# DMG as a workflow artifact instead of cutting a release, so you can validate the
+# signing pipeline without publishing anything.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build + notarize only; upload DMG as an artifact, do not create a release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version and guard tag == Info.plist
+        id: ver
+        run: |
+          set -euo pipefail
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          echo "version=$PLIST_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            if [ "$TAG" != "$PLIST_VERSION" ]; then
+              echo "::error::tag v$TAG does not match Info.plist version $PLIST_VERSION — bump Info.plist before tagging." >&2
+              exit 1
+            fi
+          fi
+          echo "Building Lineup $PLIST_VERSION"
+
+      - name: Import Developer ID signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/devid.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          # Put the build keychain first in the search list so codesign/notarytool see it.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          rm -f "$CERT_PATH"
+          echo "Imported identities:"
+          security find-identity -p codesigning -v "$KEYCHAIN_PATH"
+
+      - name: Store notary credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool store-credentials "lineup-notary" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --keychain "$KEYCHAIN_PATH"
+
+      - name: Build, sign, package, notarize
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          REQUIRE_DEVELOPER_ID_SIGNATURE: '1'
+        run: |
+          set -euo pipefail
+          # Pin the Developer ID identity so the build never silently falls back to self-signed.
+          DEVELOPER_ID_IDENTITY="$(security find-identity -p codesigning -v "$KEYCHAIN_PATH" \
+            | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          export DEVELOPER_ID_IDENTITY
+          ./Scripts/build-app.sh dist
+          ./Scripts/make-dmg.sh dist
+          ./Scripts/notarize.sh "dist/Lineup-${{ steps.ver.outputs.version }}.dmg" lineup-notary
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          gh release create "v$V" --target "$GITHUB_SHA" \
+            --title "Lineup $V" \
+            --notes "Automated release for v$V. See the changelog: https://github.com/${{ github.repository }}/compare/v$V...v$V" \
+            "dist/Lineup-$V.dmg"
+          echo "::notice::Released v$V. Now run ./Scripts/publish-appcast.sh $V locally to ship the auto-update."
+
+      - name: Upload DMG artifact (dry run / smoke test)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lineup-${{ steps.ver.outputs.version }}-dmg
+          path: dist/Lineup-${{ steps.ver.outputs.version }}.dmg
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
