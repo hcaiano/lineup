@@ -180,6 +180,11 @@ private final class EditorCanvas: NSView {
 
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
+    // One overlay opens per screen but only the first is key (see LayoutEditorOverlayController.show).
+    // Without this, the first click on any secondary-monitor overlay is swallowed to activate that
+    // window instead of acting — so editing "does nothing" on every display but the primary. Accept
+    // first mouse so a split/merge/drag lands on the first click on whichever monitor you're on.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     // MARK: geometry (overlay is 1:1 over the screen; subtract the screen origin)
     private func viewRect(_ globalCocoa: CGRect) -> CGRect {
@@ -356,6 +361,11 @@ private final class EditorCanvas: NSView {
         let p = convert(event.locationInWindow, from: nil)
         setActive(leaves().first(where: { $0.rect.contains(globalPoint(p)) })?.path, pinned: false)
     }
+    override func mouseEntered(with event: NSEvent) {
+        // Make the pointer's screen the key window, so Return/Esc and the Save/Cancel buttons act on
+        // the monitor you're actually editing — not only the primary one that came up key at open.
+        if window?.isKeyWindow == false { window?.makeKey() }
+    }
     override func mouseExited(with event: NSEvent) {
         guard !pinned else { return }
         setActive(nil, pinned: false)
@@ -514,6 +524,8 @@ private final class ZoneControlBar: NSView {
         override func mouseEntered(with event: NSEvent) { hovered = true }
         override func mouseExited(with event: NSEvent) { hovered = false }
         override func mouseDown(with event: NSEvent) { action() }
+        // Same first-mouse fix as the canvas: act on the first click on a non-primary overlay.
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
         override func draw(_ dirtyRect: NSRect) {

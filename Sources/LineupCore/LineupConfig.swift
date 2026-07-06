@@ -23,13 +23,36 @@ public struct ScreenInfo: Equatable {
 /// (virtual/headless displays). Never key on resolution alone — it collides on two
 /// identical monitors.
 public enum ScreenKey {
-    /// `tieBreaker` (e.g. CGDisplay unitNumber / displayID) disambiguates two otherwise
-    /// identical fallback displays (same model, serial 0, same label). Always best-effort
-    /// (keyIsStable=false) — the UUID path is preferred when available.
+    /// `tieBreaker` (e.g. CGDisplay unitNumber, or frame origin as a last resort) disambiguates
+    /// two otherwise identical fallback displays (same model, serial 0, same label). Always
+    /// best-effort (keyIsStable=false) — the UUID path is preferred when available.
     public static func fallback(vendor: Int, model: Int, serial: Int, width: Int, height: Int, name: String, tieBreaker: String? = nil) -> String {
         var key = "fallback:\(vendor):\(model):\(serial):\(width)x\(height):\(name)"
         if let t = tieBreaker, !t.isEmpty { key += ":\(t)" }
         return key
+    }
+
+    /// Earlier fallback builds saved layouts under either the unsalted composite or a bare
+    /// unit-number suffix. A current `:unit:<n>`/`:frame:<x,y>` key should still read those, but
+    /// a direct match always wins. (No `:display:` form is derived — that transient salt was never
+    /// shipped.)
+    public static func fallbackAliases(for key: String) -> [String] {
+        guard key.hasPrefix("fallback:") else { return [] }
+
+        var aliases: [String] = []
+        if let unitRange = key.range(of: ":unit:", options: .backwards) {
+            let unsalted = String(key[..<unitRange.lowerBound])
+            let unit = String(key[unitRange.upperBound...])
+            if !unit.isEmpty { aliases.append("\(unsalted):\(unit)") }  // pre-tag bare-unit form
+            aliases.append(unsalted)                                    // oldest unsalted form
+        } else if let frameRange = key.range(of: ":frame:", options: .backwards) {
+            aliases.append(String(key[..<frameRange.lowerBound]))       // no unit to recover; unsalted only
+        } else {
+            return []
+        }
+        return aliases.reduce(into: []) { result, alias in
+            if alias != key && !result.contains(alias) { result.append(alias) }
+        }
     }
 }
 
@@ -114,7 +137,11 @@ public struct LineupConfig: Codable, Equatable {
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.
     public func layout(forKey key: String) -> Node {
-        screens[key]?.layout ?? defaultLayout
+        if let layout = screens[key]?.layout { return layout }
+        for alias in ScreenKey.fallbackAliases(for: key) {
+            if let layout = screens[alias]?.layout { return layout }
+        }
+        return defaultLayout
     }
 
     /// Validate every stored layout (structure + unit rules). Throws on the first invalid.
