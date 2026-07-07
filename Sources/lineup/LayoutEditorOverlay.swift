@@ -44,7 +44,12 @@ final class LayoutEditorOverlayController {
     private func draft(for info: ScreenInfo) -> Node { drafts[info.key] ?? baseConfig.layout(forKey: info.key) }
 
     private func openWindow(for screen: NSScreen, info: ScreenInfo) {
-        let win = EditorWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
+        // No `screen:` param — with one, AppKit interprets contentRect RELATIVE to that screen's
+        // origin, so passing the global screen.frame double-offsets the window (harmless at the
+        // primary's (0,0), but it pushed every secondary display's overlay fully off its screen —
+        // the editor looked like it only opened on one monitor). Without it, contentRect is
+        // global coordinates, which screen.frame already is.
+        let win = EditorWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
         win.isOpaque = false
         win.backgroundColor = NSColor.black.withAlphaComponent(0.001)
         win.level = .screenSaver
