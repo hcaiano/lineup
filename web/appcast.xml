@@ -7,14 +7,14 @@
     <description>Updates for Lineup, a macOS window manager.</description>
     <language>en</language>
     <item>
-      <title>Lineup 1.8.1</title>
-      <link>https://github.com/hcaiano/lineup/releases/tag/v1.8.1</link>
-      <sparkle:version>15</sparkle:version>
-      <sparkle:shortVersionString>1.8.1</sparkle:shortVersionString>
-      <sparkle:releaseNotesLink>https://github.com/hcaiano/lineup/releases/tag/v1.8.1</sparkle:releaseNotesLink>
+      <title>Lineup 1.8.2</title>
+      <link>https://github.com/hcaiano/lineup/releases/tag/v1.8.2</link>
+      <sparkle:version>16</sparkle:version>
+      <sparkle:shortVersionString>1.8.2</sparkle:shortVersionString>
+      <sparkle:releaseNotesLink>https://github.com/hcaiano/lineup/releases/tag/v1.8.2</sparkle:releaseNotesLink>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <pubDate>Mon, 06 Jul 2026 18:59:13 +0000</pubDate>
-      <enclosure url="https://github.com/hcaiano/lineup/releases/download/v1.8.1/Lineup-1.8.1.dmg" type="application/octet-stream" sparkle:edSignature="bGtvKL4ho/KPZb0yzIju404nMXlRYAyhp4o3UaYh62itHuUUqBjFgKzI8Ih5tGUOwnHqKzlrOU2UI+dShS32Dg==" length="1986020" />
+      <pubDate>Tue, 07 Jul 2026 19:32:09 +0000</pubDate>
+      <enclosure url="https://github.com/hcaiano/lineup/releases/download/v1.8.2/Lineup-1.8.2.dmg" type="application/octet-stream" sparkle:edSignature="H19WS+UXMWCGtEx87KBFfjL2DFTG3E+L5rYD+8iRcK/tptZb0LdGgFWb9FUoizhOAXiEzCjjfQXZtY49YDK+DQ==" length="1985968" />
     </item>
   </channel>
 </rss>
