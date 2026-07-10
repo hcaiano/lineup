@@ -894,28 +894,34 @@ do { // shortcuts are optional + backward compatible in LineupConfig
 
 do { // dragSnapEnabled is optional + backward compatible (same pattern as shortcuts)
     var cfg = LineupConfig()
+    check(cfg.showMenuBarIcon == nil, "config: showMenuBarIcon absent by default (nil = shown)")
     check(cfg.dragSnapEnabled == nil, "config: dragSnapEnabled absent by default (nil = on)")
     check(cfg.dragSnapModifiers == nil, "config: dragSnapModifiers absent by default (nil = Shift)")
     check(cfg.dragSnapKeyCode == nil, "config: dragSnapKeyCode absent by default (nil = modifier-only)")
     // setting() preserves the flag while updating a screen's layout
+    cfg.showMenuBarIcon = false
     cfg.dragSnapEnabled = false
     cfg.dragSnapModifiers = DragSnapModifierMask.option
     cfg.dragSnapKeyCode = 2
     let carried = cfg.setting(layout: .thirds, for: wide, now: nil)
+    check(carried.showMenuBarIcon == false, "config: setting(layout:) preserves showMenuBarIcon")
     check(carried.dragSnapEnabled == false, "config: setting(layout:) preserves dragSnapEnabled")
     check(carried.dragSnapModifiers == DragSnapModifierMask.option, "config: setting(layout:) preserves dragSnapModifiers")
     check(carried.dragSnapKeyCode == 2, "config: setting(layout:) preserves dragSnapKeyCode")
     // false round-trips intact (an explicit opt-out must survive a write/read cycle)
     let back = try JSONDecoder().decode(LineupConfig.self, from: try JSONEncoder().encode(carried))
+    check(back.showMenuBarIcon == false, "config: showMenuBarIcon=false round-trips")
     check(back.dragSnapEnabled == false, "config: dragSnapEnabled=false round-trips")
     check(back.dragSnapModifiers == DragSnapModifierMask.option, "config: dragSnapModifiers round-trips")
     check(back.dragSnapKeyCode == 2, "config: dragSnapKeyCode round-trips")
     // a schema-3 doc without the key decodes to nil, which the app reads as the default (on)
     let d2 = try JSONEncoder().encode(LineupConfig())
     let decoded = try JSONDecoder().decode(LineupConfig.self, from: d2)
+    check(decoded.showMenuBarIcon == nil, "config: missing showMenuBarIcon decodes to nil")
     check(decoded.dragSnapEnabled == nil, "config: missing dragSnapEnabled decodes to nil")
     check(decoded.dragSnapModifiers == nil, "config: missing dragSnapModifiers decodes to nil")
     check(decoded.dragSnapKeyCode == nil, "config: missing dragSnapKeyCode decodes to nil")
+    check((decoded.showMenuBarIcon ?? true) == true, "config: nil showMenuBarIcon defaults to shown")
     check((decoded.dragSnapEnabled ?? true) == true, "config: nil dragSnapEnabled defaults to on")
 }
 

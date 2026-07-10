@@ -8,7 +8,7 @@ import Sparkle
 /// Minimal menu-bar agent: loads the zone config, registers Hyper+key global hotkeys,
 /// and snaps the focused window into the matching zone.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem!
+    private var statusItem: NSStatusItem?
     private enum ConfigState { case ok, loadError, migrationDeferred }
     private var config = LineupConfig()
     private var configState: ConfigState = .ok
@@ -38,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The effective shortcut set (user config, or built-in defaults).
     private var shortcuts: Shortcuts { config.shortcuts ?? ShortcutKit.defaults }
+    /// Existing configs do not contain this preference, so the menu-bar icon remains visible.
+    private var showsMenuBarIcon: Bool { config.showMenuBarIcon ?? true }
     /// The effective drag-snap bind, with nil/unknown config values falling back to Shift.
     private var dragSnapTrigger: DragSnapTrigger {
         DragSnapTrigger(keyCode: config.dragSnapKeyCode, modifiers: config.dragSnapModifiers ?? ShortcutKit.defaultDragSnapModifiers)
@@ -80,6 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !showsMenuBarIcon else { return true }
+        openSettings()
+        return false
     }
 
     @objc private func screensChanged() {
@@ -160,6 +168,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             buildStatusItem()
         } catch {
             FileHandle.standardError.write(Data("drag-snap bind save failed (not applied): \(error)\n".utf8))
+        }
+    }
+
+    private func setMenuBarIconShown(_ shown: Bool) {
+        guard shown != showsMenuBarIcon, configCanWrite else { return }
+        var updated = config
+        updated.showMenuBarIcon = shown
+        do {
+            try updated.write(to: AppDelegate.configURL)
+            config = updated
+            buildStatusItem()
+        } catch {
+            FileHandle.standardError.write(Data("menu-bar setting save failed (not applied): \(error)\n".utf8))
         }
     }
 
@@ -248,6 +269,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toggleDragSnap: { [weak self] in self?.toggleDragSnap() },
             dragSnapTrigger: { [weak self] in self?.dragSnapTrigger ?? .default },
             setDragSnapTrigger: { [weak self] trigger in self?.applyDragSnapTrigger(trigger) },
+            isMenuBarIconShown: { [weak self] in self?.showsMenuBarIcon ?? true },
+            setMenuBarIconShown: { [weak self] shown in self?.setMenuBarIconShown(shown) },
             isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
             toggleLaunchAtLogin: { [weak self] in self?.toggleLaunchAtLogin() },
             isTrusted: { AXIsProcessTrusted() },
@@ -361,10 +384,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu bar
 
     private func buildStatusItem() {
+        guard showsMenuBarIcon else {
+            if let statusItem {
+                NSStatusBar.system.removeStatusItem(statusItem)
+                self.statusItem = nil
+            }
+            return
+        }
         if statusItem == nil {
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            statusItem.button?.image = Brand.menuBarLogo()
-            statusItem.button?.toolTip = "Lineup — window manager"
+            statusItem?.button?.image = Brand.menuBarLogo()
+            statusItem?.button?.toolTip = "Lineup — window manager"
         }
         let menu = NSMenu()
 
@@ -417,7 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("About Lineup", #selector(showAbout), symbol: "info.circle"))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit Lineup", #selector(quit), key: "q", symbol: "xmark.circle"))
-        statusItem.menu = menu
+        statusItem?.menu = menu
     }
 
     /// A menu row with a consistent SF Symbol icon, so every action lines up the same way
