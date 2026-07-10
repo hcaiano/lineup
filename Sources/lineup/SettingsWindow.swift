@@ -16,6 +16,10 @@ struct SettingsContext {
     var toggleDragSnap: () -> Void
     var dragSnapTrigger: () -> DragSnapTrigger
     var setDragSnapTrigger: (DragSnapTrigger) -> Void
+    var isMenuBarIconShown: () -> Bool
+    var setMenuBarIconShown: (Bool) -> Void
+    var failedHotkeys: () -> Int
+    var retryHotkeys: () -> Void
     var isLaunchAtLoginOn: () -> Bool
     var toggleLaunchAtLogin: () -> Void
     var isTrusted: () -> Bool
@@ -90,6 +94,8 @@ private final class SettingsModel: ObservableObject {
     @Published private(set) var shortcuts = Shortcuts()
     @Published private(set) var dragSnapOn = true
     @Published private(set) var dragTrigger = DragSnapTrigger.default
+    @Published private(set) var menuBarIconShown = true
+    @Published private(set) var failedHotkeys = 0
     @Published private(set) var launchAtLoginOn = false
     @Published private(set) var accessibilityGranted = false
     @Published var recordingAction: String?
@@ -117,12 +123,18 @@ private final class SettingsModel: ObservableObject {
         ShortcutKit.dragSnapDisplay(keyCode: dragTrigger.keyCode, modifiers: dragTrigger.modifiers)
     }
 
+    var failedHotkeysDetail: String {
+        "\(failedHotkeys) shortcut\(failedHotkeys == 1 ? " is" : "s are") blocked by another app."
+    }
+
     func refresh() {
         canWrite = ctx.canWrite()
         blockedMessage = ctx.blockedMessage()
         shortcuts = ctx.shortcuts()
         dragSnapOn = ctx.isDragSnapOn()
         dragTrigger = ctx.dragSnapTrigger()
+        menuBarIconShown = ctx.isMenuBarIconShown()
+        failedHotkeys = ctx.failedHotkeys()
         launchAtLoginOn = ctx.isLaunchAtLoginOn()
         accessibilityGranted = ctx.isTrusted()
     }
@@ -136,6 +148,17 @@ private final class SettingsModel: ObservableObject {
     func setLaunchAtLoginOn(_ value: Bool) {
         guard value != launchAtLoginOn else { return }
         ctx.toggleLaunchAtLogin()
+        refresh()
+    }
+
+    func setMenuBarIconShown(_ value: Bool) {
+        guard value != menuBarIconShown else { return }
+        ctx.setMenuBarIconShown(value)
+        refresh()
+    }
+
+    func retryHotkeys() {
+        ctx.retryHotkeys()
         refresh()
     }
 
@@ -381,6 +404,18 @@ private struct GeneralSettingsView: View {
                     }
                 }
 
+                if model.failedHotkeys > 0 {
+                    SettingsSectionView("Shortcuts") {
+                        SettingsRow(
+                            title: "Global shortcuts",
+                            detail: model.failedHotkeysDetail) {
+                            Button("Retry") {
+                                model.retryHotkeys()
+                            }
+                        }
+                    }
+                }
+
                 SettingsSectionView("Behavior") {
                     SettingsRow(
                         title: "Drag to snap",
@@ -412,6 +447,18 @@ private struct GeneralSettingsView: View {
                                 model.resetDragBind()
                             }
                         }
+                    }
+
+                    SettingsRow(
+                        title: "Show in menu bar",
+                        detail: "Open Lineup again from Applications or Spotlight to return to Settings.") {
+                        Toggle("", isOn: Binding(
+                            get: { model.menuBarIconShown },
+                            set: { model.setMenuBarIconShown($0) }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .disabled(!model.canWrite)
+                        .accessibilityLabel("Show in menu bar")
                     }
 
                     SettingsRow(

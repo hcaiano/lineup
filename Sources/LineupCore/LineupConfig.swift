@@ -118,6 +118,9 @@ public struct LineupConfig: Codable, Equatable {
     /// which preserves the legacy Shift-drag behavior and the first configurable-modifier
     /// builds.
     public var dragSnapKeyCode: Int?
+    /// Whether Lineup appears in the menu bar. Optional/backward-compatible: nil preserves
+    /// the existing default (shown), while false lets the app run without occupying menu-bar space.
+    public var showMenuBarIcon: Bool?
 
     public init(schemaVersion: Int = LineupConfig.currentSchema,
                 screens: [String: ScreenLayout] = [:],
@@ -125,7 +128,8 @@ public struct LineupConfig: Codable, Equatable {
                 shortcuts: Shortcuts? = nil,
                 dragSnapEnabled: Bool? = nil,
                 dragSnapModifiers: Int? = nil,
-                dragSnapKeyCode: Int? = nil) {
+                dragSnapKeyCode: Int? = nil,
+                showMenuBarIcon: Bool? = nil) {
         self.schemaVersion = schemaVersion
         self.screens = screens
         self.defaultLayout = defaultLayout
@@ -133,6 +137,7 @@ public struct LineupConfig: Codable, Equatable {
         self.dragSnapEnabled = dragSnapEnabled
         self.dragSnapModifiers = dragSnapModifiers
         self.dragSnapKeyCode = dragSnapKeyCode
+        self.showMenuBarIcon = showMenuBarIcon
     }
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.
