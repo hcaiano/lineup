@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastTrusted = AXIsProcessTrusted()
     private var trustTimer: Timer?
     private var trustPollTicks = 0
+    private var hasFinishedLaunching = false
+    private var shouldOpenSettingsAfterLaunch = false
 
     private var configBlockedMessage: String? {
         switch configState {
@@ -48,6 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/lineup/zones.json")
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleOpenApplication(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEOpenApplication))
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -82,12 +92,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        hasFinishedLaunching = true
+        showSettingsForExplicitOpenIfReady()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !showsMenuBarIcon else { return true }
         openSettings()
         return false
+    }
+
+    @objc private func handleOpenApplication(
+        _ event: NSAppleEventDescriptor,
+        withReplyEvent replyEvent: NSAppleEventDescriptor
+    ) {
+        guard event.paramDescriptor(forKeyword: AEKeyword(keyAELaunchedAsLogInItem)) == nil else { return }
+        shouldOpenSettingsAfterLaunch = true
+        showSettingsForExplicitOpenIfReady()
+    }
+
+    private func showSettingsForExplicitOpenIfReady() {
+        guard hasFinishedLaunching, shouldOpenSettingsAfterLaunch else { return }
+        if showsMenuBarIcon {
+            shouldOpenSettingsAfterLaunch = false
+            return
+        }
+        guard welcome == nil else { return }
+        shouldOpenSettingsAfterLaunch = false
+        openSettings()
     }
 
     @objc private func screensChanged() {
@@ -511,6 +543,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onClose: { [weak self] in
                 UserDefaults.standard.set(true, forKey: AppDelegate.didOnboardKey)
                 self?.welcome = nil
+                self?.showSettingsForExplicitOpenIfReady()
             })
         welcome = controller
         controller.show()
