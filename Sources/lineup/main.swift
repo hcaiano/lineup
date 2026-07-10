@@ -271,6 +271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setDragSnapTrigger: { [weak self] trigger in self?.applyDragSnapTrigger(trigger) },
             isMenuBarIconShown: { [weak self] in self?.showsMenuBarIcon ?? true },
             setMenuBarIconShown: { [weak self] shown in self?.setMenuBarIconShown(shown) },
+            failedHotkeys: { [weak self] in self?.failedHotkeys ?? 0 },
+            retryHotkeys: { [weak self] in self?.retryHotkeys() },
             isLaunchAtLoginOn: { SMAppService.mainApp.status == .enabled },
             toggleLaunchAtLogin: { [weak self] in self?.toggleLaunchAtLogin() },
             isTrusted: { AXIsProcessTrusted() },
