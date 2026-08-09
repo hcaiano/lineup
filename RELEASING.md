@@ -1,7 +1,10 @@
 # Releasing Lineup
 
-> This file describes the 1.x public release process. It has not been updated for the private
-> 2.0 rewrite on `unified-app`; treat it as reference only until it is revisited.
+> This file describes the 1.x public release process, which ran through CI and GitHub releases.
+> **2.0.0 shipped differently**: built, notarized and appcast on the release Mac, with the DMG
+> and the feed served from `lineup.caiano.com` so no GitHub release is involved. See
+> [BUILDING.md](BUILDING.md#auto-updates-sparkle) for the current process; treat the rest of
+> this file as 1.x history.
 
 Releases are **hybrid**: CI does the heavy, reproducible work (universal build, Developer ID
 signing, Apple notarization, GitHub release), and one local command signs the Sparkle appcast.

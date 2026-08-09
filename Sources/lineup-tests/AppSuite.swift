@@ -637,7 +637,11 @@ private func runIdentityTests() throws {
     check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
 
     check(plistString("CFBundleShortVersionString") == "2.0.0", "Info.plist ships 2.0.0")
-    check(plistString("CFBundleVersion") == "17", "Info.plist ships build 17")
+    // Sparkle offers an update only when the appcast's sparkle:version (CFBundleVersion) sorts
+    // ABOVE the running app's. 1.9.0 shipped as build 17, so a 2.0.0 that reused 17 would be
+    // invisible to every existing user. The build number must stay strictly monotonic.
+    check(plistString("CFBundleVersion") == "18", "Info.plist ships build 18")
+    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 17, "build number is above 1.9.0's build 17")
 }
 
 private func runShellSourceScanTests() throws {

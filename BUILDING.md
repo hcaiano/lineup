@@ -148,14 +148,31 @@ Paste the printed public key into `Resources/Info.plist` under `SUPublicEDKey` (
 placeholder). That's the only Sparkle value that ships in the app. The private key stays in
 your Keychain, exactly like the notarization credential.
 
-**Per release**, after notarizing the DMG and uploading it to its GitHub release, regenerate
-the signed feed and commit it (committing `web/appcast.xml` auto-deploys the feed):
+Downloads are **self-hosted** from 2.0.0 on: `sparkle-appcast.sh` stages the DMG into
+`web/downloads/` and points the enclosure at `https://lineup.caiano.com/downloads/<file>`.
+Nothing in the feed touches GitHub, so this repository can be private without breaking
+auto-updates for installed copies.
+
+**Per release**, after notarizing *and stapling* the DMG:
 
 ```sh
 ./Scripts/sparkle-appcast.sh dist/Lineup-<version>.dmg   # EdDSA-signs the DMG, writes web/appcast.xml
-git add web/appcast.xml && git commit -m "Appcast: <version>"   # deploys; installs see the update
+(cd web && npx wrangler deploy)                          # publishes the feed + the download
+git add web/appcast.xml web/downloads web/release-notes && git commit -m "Appcast: <version>"
 ```
 
-The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) → `make-dmg.sh`
-→ `notarize.sh` (DMG) → publish the GitHub release with the DMG → `sparkle-appcast.sh` →
-commit `web/appcast.xml`.
+Write the release notes first, as an HTML **fragment** in `web/release-notes/<version>.html`;
+the script inlines it as the item `<description>` and links it from `sparkle:releaseNotesLink`.
+
+Two rules the feed depends on:
+
+- **`CFBundleVersion` must be strictly monotonic.** Sparkle offers an update only when the
+  appcast's `sparkle:version` sorts above the running app's `CFBundleVersion`. 1.9.0 shipped as
+  build 17, so 2.0.0 ships as 18; reusing a build number makes the release invisible to
+  everyone who already has it.
+- **Never delete a hosted DMG.** `web/downloads/` is committed because the Cloudflare asset
+  manifest is the *whole* of `web/` — deploying from a checkout that lacks those files would
+  unpublish them and break every older entry in the feed.
+
+The full release sequence is therefore: `build-app.sh` → `make-dmg.sh` → `notarize.sh` (DMG)
+→ `sparkle-appcast.sh` → `wrangler deploy` → commit.
