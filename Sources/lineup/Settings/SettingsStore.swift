@@ -181,10 +181,9 @@ final class SettingsStore: ObservableObject {
         return failures
     }
 
-    /// Combos owned by tools other than `owner`, for cross-tool conflict messages in recorders.
-    func foreignCombos(excluding owner: ToolID) -> [(owner: ToolID, keyCode: Int, modifiers: UInt32)] {
-        HotkeyManager.shared.registeredCombos().filter { $0.owner != owner }
-    }
+    // Cross-tool combo conflicts are NOT answered here. A pane's model gets the list from its
+    // tool's `ToolServices.boundCombos()`, which reads every registered tool's persisted section
+    // — the live Carbon registry this store talks to only knows about tools that are running.
 }
 
 /// Stand-in for a tool pane that hasn't landed yet (Phase 3 registers no tools at all).

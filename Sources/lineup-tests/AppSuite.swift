@@ -32,6 +32,7 @@ func runAppTests() throws {
     try runSettingsWindowTests()
     try runIntegrationTests()
     try runOnboardingTests()
+    try runParityFixTests()
 }
 
 // MARK: - Envelope
@@ -1296,6 +1297,166 @@ private func runOnboardingTests() throws {
     check(source("Sources/lineup/Settings/Components/SettingsSection.swift")
             .contains("init(_ title: String, caption: String? = nil"),
           "SettingsSectionView supports a header caption")
+}
+
+// MARK: - Parity fixes (audit A28/B21/H8/B22-23-A30/A34/B3 + cross-tool conflicts)
+
+/// The six confirmed 1.x parity regressions and the cross-tool conflict gap.
+///
+/// Two of them are pure logic that was deliberately lifted into AppCore so it could be asserted
+/// directly (`ShortcutCaptureRules`, `ToolCombo`); the rest live in the app target, which this
+/// runner does not link, so they are scanned the way every other shell rule here is.
+private func runParityFixTests() throws {
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        guard let text = files.first(where: { $0.path == path })?.text else {
+            check(false, "\(path) exists")
+            return ""
+        }
+        return text
+    }
+
+    // ---- A28: a bare key is capturable ONLY where the field opts in ----
+    do {
+        let intent = ShortcutCaptureRules.intent
+
+        // A shortcut row (allowsBareKey: false) — 1.x's rules, unchanged.
+        check(intent(false, false, false, false) == .reject,
+              "a bare key is refused by a shortcut row")
+        check(intent(false, false, true, false) == .record,
+              "a key with a modifier is recorded by a shortcut row")
+        check(intent(true, false, false, false) == .cancel, "bare Esc cancels a shortcut row")
+        check(intent(false, true, false, false) == .clear, "bare Delete clears a shortcut row")
+
+        // The drag bind (allowsBareKey: true) — 1.x accepted F5-drag.
+        check(intent(false, false, false, true) == .record,
+              "a bare key IS recorded where the field allows one (Zones' drag bind)")
+        check(intent(false, false, true, true) == .record,
+              "a bare-key field still records key + modifiers")
+
+        // The ordering that makes the bare-key field usable at all.
+        check(intent(true, false, false, true) == .cancel,
+              "Esc still cancels a bare-key field rather than being captured as its value")
+        check(intent(false, true, false, true) == .clear,
+              "Delete still resets a bare-key field rather than being captured as its value")
+
+        // With a modifier held, both are ordinary keys — ⌘⌫ has to stay bindable.
+        check(intent(true, false, true, false) == .record, "⌘-Esc is a combo, not a cancel")
+        check(intent(false, true, true, false) == .record, "⌘⌫ is a combo, not a clear")
+        check(intent(true, false, true, true) == .record,
+              "⌘-Esc is a combo in a bare-key field too")
+    }
+
+    // ---- Cross-tool conflicts: a DISABLED tool still owns its combos ----
+    do {
+        let zonesLeft = ToolCombo(owner: .zones, keyCode: 123, modifiers: sampleHyperMask)
+        let cyclerT = ToolCombo(owner: .cycler, keyCode: 17, modifiers: sampleHyperMask)
+        // Exactly the shape `ToolRegistry.boundCombos()` produces with Cycler switched OFF: its
+        // combos come from the persisted section, so they are here even though nothing is live.
+        let combos = [zonesLeft, cyclerT]
+
+        check(combos.conflictOwner(keyCode: 17, modifiers: sampleHyperMask, excluding: .zones) == .cycler,
+              "Zones' recorder is told a combo belongs to Cycler even with Cycler not running")
+        check(combos.conflictOwner(keyCode: 123, modifiers: sampleHyperMask, excluding: .cycler) == .zones,
+              "Cycler's recorder is told a combo belongs to Zones")
+        check(combos.conflictOwner(keyCode: 123, modifiers: sampleHyperMask, excluding: .zones) == nil,
+              "a tool re-recording its OWN combo is not a cross-tool conflict")
+        check(combos.conflictOwner(keyCode: 17, modifiers: 0, excluding: .zones) == nil,
+              "the same key with different modifiers is a different combo")
+        check(combos.conflictOwner(keyCode: 99, modifiers: sampleHyperMask, excluding: .zones) == nil,
+              "an unclaimed combo has no owner")
+        check([ToolCombo]().conflictOwner(keyCode: 17, modifiers: sampleHyperMask, excluding: .zones) == nil,
+              "no bound combos means no conflict")
+        // Deterministic naming: the registry puts persisted combos first, in registration order.
+        check([cyclerT, ToolCombo(owner: .hyperkey, keyCode: 17, modifiers: sampleHyperMask)]
+                .conflictOwner(keyCode: 17, modifiers: sampleHyperMask, excluding: .zones) == .cycler,
+              "the first owner in the list is the one named")
+    }
+
+    // The live Carbon registry must not be anyone's conflict source any more: it only knows
+    // about tools that are RUNNING, which is exactly the gap being closed.
+    let comboSources = files.filter { $0.text.contains("registeredCombos()") }.map(\.path)
+    check(comboSources == ["Sources/lineup/App/HotkeyManager.swift",
+                           "Sources/lineup/App/ToolRegistry.swift"],
+          "the live registry is read only by HotkeyManager and ToolRegistry.boundCombos() (got \(comboSources))")
+    let registry = source("Sources/lineup/App/ToolRegistry.swift")
+    check(registry.contains("func boundCombos() -> [ToolCombo]") && registry.contains("tool.persistedCombos()"),
+          "boundCombos() unions every registered tool's persisted combos with the live ones")
+    check(source("Sources/lineup/App/Tool.swift").contains("boundCombos: () -> [ToolCombo]"),
+          "a tool reaches the conflict source through its ToolServices")
+    check(!source("Sources/lineup/App/Tool.swift").contains("func foreignCombos()"),
+          "HotkeyScope no longer offers a running-tools-only conflict list")
+
+    // ---- B21 + B22: a live capture is cancelled before it can swallow keystrokes ----
+    let cyclerPane = source("Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift")
+    for fn in ["func showAddShortcutPicker()", "func showAddAppPicker(for row: Row)",
+               "func remove(_ row: Row)", "func reload()"] {
+        guard let start = cyclerPane.range(of: fn) else {
+            check(false, "CyclerSettingsModel implements \(fn)")
+            continue
+        }
+        check(cyclerPane[start.lowerBound...].prefix(400).contains("cancelRecording?()"),
+              "\(fn) cancels any live capture")
+    }
+    check(cyclerPane.contains("model.cancelRecording = { [weak recorder] in recorder?.cancel() }")
+            && cyclerPane.contains("model.cancelRecording = nil"),
+          "the Cycler pane lends the model its recorder's cancel, and takes it back on disappear")
+    check(cyclerPane.contains("boundCombos.conflictOwner(keyCode: keyCode, modifiers: modifiers,"),
+          "the Cycler pane now does a cross-tool conflict check of its own")
+    check(cyclerPane.contains("model.prepareForRecording()"),
+          "the Cycler pane snapshots the conflict list when a capture starts")
+    let cyclerTool = source("Sources/lineup/Tools/Cycler/CyclerTool.swift")
+    check(cyclerTool.contains("func persistedCombos()") && cyclerTool.contains("b.modifiers | UInt32(shiftKey)"),
+          "Cycler reports its persisted combos INCLUDING the ⇧ reverses it would generate")
+
+    // ---- H8: the Hyperkey pane behaves like the other two when writes are blocked ----
+    let hyperPane = source("Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift")
+    check(hyperPane.contains("model.blockedMessage") && hyperPane.contains("systemImage: \"lock.fill\""),
+          "the Hyperkey pane shows the write-blocked banner the Zones pane shows")
+    let disabledControls = hyperPane.components(separatedBy: ".disabled(!model.canEdit)").count - 1
+    check(disabledControls == 2,
+          "both the trigger picker and includeShift are disabled while writes are blocked (got \(disabledControls))")
+    check(hyperPane.contains(".alert(item: $model.alert)"),
+          "the Hyperkey pane surfaces a failed save, the way standalone Cycler did")
+    let hyperTool = source("Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift")
+    check(hyperTool.contains("private func save() throws"),
+          "a refused Hyperkey write is thrown, not only logged")
+    check(hyperTool.contains("throw HyperkeyToolError.writesBlocked"),
+          "a write-blocked store produces an error the pane can name")
+    check(hyperTool.contains("func persist(rollingBackTo previous: HyperKeySettings)")
+            && hyperTool.contains("settings = previous"),
+          "a failed save puts the settings back, so the pane never shows a trigger that isn't saved")
+    check(hyperTool.contains("var canPersist: Bool") && hyperTool.contains("var configBlockedMessage: String?"),
+          "the Hyperkey tool exposes the same canPersist/blockedMessage pair Cycler does")
+
+    // ---- A34: the two Abouts tell ONE story ----
+    let aboutWindow = source("Sources/lineup/App/AboutWindow.swift")
+    let aboutPane = source("Sources/lineup/Settings/AboutPane.swift")
+    check(!aboutWindow.contains("MIT"), "the About window has no open-source licence line")
+    check(!aboutWindow.lowercased().contains("github"),
+          "the About window has no source-repository link (this branch is private)")
+    check(aboutWindow.contains("lineup.caiano.com") && aboutPane.contains("lineup.caiano.com"),
+          "both Abouts keep the product site")
+    check(aboutWindow.contains("AboutFacts.copyright") && aboutPane.contains("AboutFacts.copyright"),
+          "both Abouts render the SAME copyright string, so they cannot drift apart again")
+    check(AboutFactsMirror.copyright == "© 2026 Henrique Caiano. All rights reserved."
+            && aboutWindow.contains("\"\(AboutFactsMirror.copyright)\""),
+          "the copyright line reserves all rights and names no licence")
+    check(aboutWindow.contains("AboutFacts.buildDateLine()") && aboutPane.contains("AboutFacts.buildDateLine()"),
+          "the build date the window always had is now on the Settings pane too")
+    check(aboutWindow.contains("func versionLine()") && aboutPane.contains("CFBundleVersion"),
+          "both Abouts show version and build")
+
+    // ---- B3: Settings opens on the Space the user is on ----
+    check(source("Sources/lineup/Settings/SettingsWindowController.swift")
+            .contains("collectionBehavior = [.moveToActiveSpace]"),
+          "the Settings window follows the active Space (it is reused across openings)")
+}
+
+/// `AboutFacts` lives in the app target, which this runner does not link. Mirrored the same way
+/// `ShortcutKitCaps` is, with the scan above pinning the real definition.
+private enum AboutFactsMirror {
+    static let copyright = "© 2026 Henrique Caiano. All rights reserved."
 }
 
 /// The onboarding copy lives in the app target, which this runner does not link. Mirrored the

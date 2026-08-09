@@ -159,42 +159,83 @@ final class HyperkeyTool: Tool {
     /// Start/stop path only. Writing `config.json` on every launch just to restate a flag nothing
     /// reads would be pure churn (and pointless risk on a file three tools share), so this writes
     /// only when the blob actually disagrees with the authoritative tool flag.
+    ///
+    /// Failures are logged, not surfaced: this runs on start/stop, where there is no edit the user
+    /// could be told about and nothing they could do differently.
     private func mirrorEnabledFlag() {
         guard settings.enabled != isRunning else { return }
-        save()
+        do {
+            try save()
+        } catch {
+            log.error("could not mirror the hyperkey enabled flag: \(error, privacy: .public)")
+        }
     }
 
     /// Mirrors the tool flag into the blob and persists. Never called from the quit path.
-    private func save() {
+    ///
+    /// Throws instead of only logging, so an edit made from the pane can be rolled back and
+    /// reported — standalone Cycler alerted on a failed hyper-key save, and swallowing it here
+    /// left the pane showing a trigger the user did not actually have.
+    private func save() throws {
         settings.enabled = isRunning
-        guard let services else { return } // not registered: nothing can be persisted
+        guard let services else { throw HyperkeyToolError.notRegistered }
         guard services.config.canWrite else {
-            log.error("hyperkey settings not saved: \(services.config.blockedMessage ?? "writes blocked", privacy: .public)")
-            return
+            throw HyperkeyToolError.writesBlocked(services.config.blockedMessage)
         }
-        do {
-            try services.config.save(settings)
-        } catch {
-            log.error("could not save hyperkey settings: \(error, privacy: .public)")
-        }
+        try services.config.save(settings)
     }
 
     // MARK: - Settings edits (from the pane; valid whether or not the tool is running)
 
+    /// Whether the pane can persist edits at all. The config scope arrives at registration, so
+    /// this stays true while Hyperkey is switched OFF — only a write-blocked store turns it false.
+    var canPersist: Bool { services?.config.canWrite ?? false }
+
+    /// Why editing is off, if it is.
+    var configBlockedMessage: String? { services?.config.blockedMessage }
+
+    /// The last failed save, consumed by the pane so it alerts exactly once.
+    private var saveError: String?
+
+    func takeSaveError() -> String? {
+        defer { saveError = nil }
+        return saveError
+    }
+
     func setTrigger(_ trigger: TriggerKey) {
         guard settings.triggerKey != trigger else { return }
+        let previous = settings
         settings.triggerKey = trigger
-        save()
+        guard persist(rollingBackTo: previous) else { return }
         apply()
         paneModel.refresh()
     }
 
     func setIncludeShift(_ includeShift: Bool) {
         guard settings.includeShift != includeShift else { return }
+        let previous = settings
         settings.includeShift = includeShift
-        save()
+        guard persist(rollingBackTo: previous) else { return }
         apply()
         paneModel.refresh()
+    }
+
+    /// Persist an edit, or put `settings` back exactly as it was and record why.
+    ///
+    /// The rollback is what keeps the pane honest: `apply()` is skipped too, so a refused write
+    /// never leaves the tap running on a trigger that isn't on disk.
+    private func persist(rollingBackTo previous: HyperKeySettings) -> Bool {
+        do {
+            try save()
+            saveError = nil
+            return true
+        } catch {
+            settings = previous
+            saveError = error.localizedDescription
+            log.error("could not save hyperkey settings: \(error, privacy: .public)")
+            paneModel.refresh()
+            return false
+        }
     }
 
     /// The pane's "Restore Caps Lock" button.
@@ -255,5 +296,21 @@ final class HyperkeyTool: Tool {
     func makeSettingsPane() -> AnyView {
         paneModel.refresh()
         return AnyView(HyperkeySettingsPane(model: paneModel))
+    }
+}
+
+enum HyperkeyToolError: LocalizedError {
+    /// No `ToolServices` yet, so there is no config section to write into.
+    case notRegistered
+    /// The store rejected the file on load and refuses every write until it is fixed.
+    case writesBlocked(String?)
+
+    var errorDescription: String? {
+        switch self {
+        case .notRegistered:
+            return "Hyperkey isn’t ready yet. Try again in a moment."
+        case .writesBlocked(let message):
+            return message ?? "Your settings file couldn’t be read, so changes can’t be saved."
+        }
     }
 }

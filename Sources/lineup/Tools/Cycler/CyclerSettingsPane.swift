@@ -70,6 +70,11 @@ final class CyclerSettingsModel: ObservableObject {
     @Published var pendingRecordRowID: UUID?
 
     private unowned let tool: CyclerTool
+    /// Snapshot of every tool's bound combos, taken when a capture STARTS (§5.6). Rebuilding it
+    /// decodes each tool's config section, so it must not be recomputed per keystroke.
+    private var boundCombos: [ToolCombo] = []
+    /// Cancels the pane's live capture. Set by the pane, which owns the recorder.
+    var cancelRecording: (() -> Void)?
 
     init(tool: CyclerTool) {
         self.tool = tool
@@ -92,19 +97,33 @@ final class CyclerSettingsModel: ObservableObject {
 
     /// Re-read the live bindings. Called when the tool reloads its section from the store.
     func reload() {
+        // The rows are about to be replaced, so a capture aimed at one of them has nothing left
+        // to write into — and leaving it live would strand every tool's hotkeys suspended.
+        cancelRecording?()
         rows = tool.settings.bindings.map { b in
             Row(apps: b.bundleIdentifiers.map(Self.appEntry),
                 keyCode: b.keyCode, modifiers: b.modifiers)
         }
     }
 
+    /// Refresh the cross-tool conflict snapshot. Called as a capture starts.
+    func prepareForRecording() {
+        boundCombos = tool.boundCombos()
+    }
+
     // MARK: - Editing
 
+    // Both pickers stop the capture first. The sheet has a search field, and a recorder left live
+    // behind it would swallow every keystroke typed into it. (Carried over from standalone
+    // Cycler, whose SettingsModel called stopRecording() here.)
+
     func showAddShortcutPicker() {
+        cancelRecording?()
         pickerRequest = PickerRequest(targetRowID: nil)
     }
 
     func showAddAppPicker(for row: Row) {
+        cancelRecording?()
         pickerRequest = PickerRequest(targetRowID: row.id)
     }
 
@@ -132,6 +151,9 @@ final class CyclerSettingsModel: ObservableObject {
     }
 
     func remove(_ row: Row) {
+        // The row being deleted may be the one capturing; the recorder would then hold the whole
+        // registry suspended until the window blurred, with nothing left to deliver into.
+        cancelRecording?()
         rows.removeAll { $0.id == row.id }
         apply()
     }
@@ -176,6 +198,17 @@ final class CyclerSettingsModel: ObservableObject {
             break
 
         case .combo(let keyCode, let modifiers):
+            // Another TOOL's combo is refused outright — there is nothing sensible to merge into,
+            // and Cycler would only lose the race at registration time. Checked before the
+            // same-pane merge so a foreign owner is never silently overwritten.
+            if let owner = boundCombos.conflictOwner(keyCode: keyCode, modifiers: modifiers,
+                                                     excluding: .cycler) {
+                alert = AlertItem(
+                    title: "Shortcut already in use",
+                    message: "This combo is used by \(owner.rawValue.capitalized). Choose a "
+                        + "different shortcut, or change it in that tool's settings.")
+                return
+            }
             // Recording a combo another row already owns means "these apps belong together":
             // fold this row into that one instead of writing a duplicate the coalescer would
             // silently merge later anyway.
@@ -326,14 +359,23 @@ private struct CyclerSettingsPaneBody: View {
             }
         }
         .navigationTitle("Cycler")
+        .onAppear {
+            // The model has to be able to end a capture from a non-recorder action (opening a
+            // picker, deleting a row, reloading), and the recorder is the view's.
+            model.cancelRecording = { [weak recorder] in recorder?.cancel() }
+        }
         .onChange(of: model.pendingRecordRowID) { rowID in
             guard let rowID else { return }
             model.pendingRecordRowID = nil
+            model.prepareForRecording()
             recorder.begin(rowID) { capture in
                 model.handleCapture(capture, for: rowID)
             }
         }
-        .onDisappear { recorder.cancel() }
+        .onDisappear {
+            recorder.cancel()
+            model.cancelRecording = nil
+        }
         .sheet(item: $model.pickerRequest) { request in
             AppPickerView(excluding: model.boundIdentifiers) { choice in
                 model.finishPicking(choice, request: request)
@@ -381,6 +423,8 @@ private struct CyclerBindingRow: View {
                     enabled: model.canEdit,
                     accessibilityLabel: "Shortcut for \(row.title)"
                 ) {
+                    // Once per capture, never per keystroke: this decodes every tool's section.
+                    model.prepareForRecording()
                     recorder.toggle(row.id) { capture in
                         model.handleCapture(capture, for: row.id)
                     }

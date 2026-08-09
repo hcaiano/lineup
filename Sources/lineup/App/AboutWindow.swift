@@ -1,7 +1,37 @@
 import AppKit
+import Foundation
 
+/// The facts both Abouts show. One producer, so the AppKit window and the SwiftUI Settings pane
+/// cannot drift apart the way they had: after 2.0 became a private build this window still
+/// carried an open-source licence line and a source-repository link, and the pane did not.
+enum AboutFacts {
+    /// Nil when the executable can't be dated (nothing to show is better than a wrong date).
+    static func buildDateLine() -> String? {
+        guard
+            let url = Bundle.main.executableURL,
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+            let date = values.contentModificationDate
+        else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return "Built \(formatter.string(from: date))"
+    }
+
+    /// No licence clause: Lineup 2.0 is proprietary. Kept byte-identical to the Settings pane's.
+    static let copyright = "© 2026 Henrique Caiano. All rights reserved."
+}
+
+/// The menu bar's About window. Shows exactly what Settings › About shows — brand mark, version,
+/// build date, the product site — because a user can reach both and they must not disagree.
+///
+/// No source-repository link and no open-source licence line: this branch is private.
 final class AboutWindowController: NSObject, NSWindowDelegate {
     private static let shared = AboutWindowController()
+
+    /// The size the layout below is designed at. Shrunk from 430 when the repository row and the
+    /// licence footer came out.
+    static let naturalSize = NSSize(width: 420, height: 344)
 
     private var window: NSWindow?
 
@@ -10,7 +40,7 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
     }
 
     /// The About content as an embeddable view (Settings hosts it in an About tab).
-    /// Pass the 420×430 natural size; the caller centers it in its container.
+    /// Pass `naturalSize`; the caller centers it in its container.
     static func makeEmbeddedContent(size: NSSize) -> NSView {
         shared.makeContent(size: size)
     }
@@ -22,7 +52,7 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        let size = NSSize(width: 420, height: 430)
+        let size = Self.naturalSize
         let win = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .closable],
@@ -62,13 +92,14 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         version.alignment = .center
         view.addSubview(version)
 
-        if let built = buildDateLine() {
+        if let built = AboutFacts.buildDateLine() {
             let build = label(built, y: size.height - 198, size: 12, weight: .regular, color: .secondaryLabelColor)
             build.alignment = .center
             view.addSubview(build)
         }
 
-        let card = NSView(frame: NSRect(x: 42, y: 150, width: size.width - 84, height: 104))
+        // One row now the repository link is gone; the card is sized to it, not left half empty.
+        let card = NSView(frame: NSRect(x: 42, y: size.height - 262, width: size.width - 84, height: 48))
         card.wantsLayer = true
         card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         card.layer?.cornerRadius = 10
@@ -76,15 +107,13 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         card.layer?.borderWidth = 1
         view.addSubview(card)
 
-        addLinkRow(to: card, y: 56, title: "Website", value: "lineup.caiano.com", url: "https://lineup.caiano.com")
-        addDivider(to: card, y: 47)
-        addLinkRow(to: card, y: 10, title: "GitHub", value: "github.com/hcaiano/lineup", url: "https://github.com/hcaiano/lineup")
+        addLinkRow(to: card, y: 13, title: "Website", value: "lineup.caiano.com", url: "https://lineup.caiano.com")
 
-        let footerDivider = NSBox(frame: NSRect(x: 42, y: 82, width: size.width - 84, height: 1))
+        let footerDivider = NSBox(frame: NSRect(x: 42, y: size.height - 286, width: size.width - 84, height: 1))
         footerDivider.boxType = .separator
         view.addSubview(footerDivider)
 
-        let footer = label("© 2026 Henrique Caiano · MIT License.", y: 46, size: 12, weight: .regular, color: .secondaryLabelColor)
+        let footer = label(AboutFacts.copyright, y: size.height - 320, size: 12, weight: .regular, color: .secondaryLabelColor)
         footer.alignment = .center
         view.addSubview(footer)
 
@@ -117,12 +146,6 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         parent.addSubview(button)
     }
 
-    private func addDivider(to parent: NSView, y: CGFloat) {
-        let divider = NSBox(frame: NSRect(x: 16, y: y, width: parent.bounds.width - 32, height: 1))
-        divider.boxType = .separator
-        parent.addSubview(divider)
-    }
-
     @objc private func openLink(_ sender: NSButton) {
         guard let raw = sender.identifier?.rawValue, let url = URL(string: raw) else { return }
         NSWorkspace.shared.open(url)
@@ -140,17 +163,5 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         let version = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
         let build = info["CFBundleVersion"] as? String ?? "0"
         return "Version \(version) (\(build))"
-    }
-
-    private func buildDateLine() -> String? {
-        guard
-            let url = Bundle.main.executableURL,
-            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
-            let date = values.contentModificationDate
-        else { return nil }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return "Built \(formatter.string(from: date))"
     }
 }

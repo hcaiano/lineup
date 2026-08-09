@@ -1289,6 +1289,44 @@ private func runZonesToolTests() throws {
     check(pane.contains("options: .combo") && pane.contains("options: .comboOrModifiers"),
           "shortcut rows capture combos; the drag bind also accepts modifiers on their own")
     check(pane.contains("case .clear"), "Delete is handled through the recorder's .clear capture")
-    check(pane.contains(".onDisappear { recorder.cancel() }"),
-          "leaving the pane cancels any capture, so the registry is never left suspended")
+    if let start = pane.range(of: ".onDisappear {") {
+        check(pane[start.lowerBound...].prefix(120).contains("recorder.cancel()"),
+              "leaving the pane cancels any capture, so the registry is never left suspended")
+    } else {
+        check(false, "the Zones pane cancels its capture on disappear")
+    }
+
+    // ---- A28: the drag bind accepts a BARE key (1.x allowed F5-drag) ----
+    let recorder = zonesFile("Sources/lineup/Settings/Components/ShortcutRecorder.swift") ?? ""
+    check(recorder.contains("var allowsBareKey = false"),
+          "a modifier-less key is refused unless the field opts in")
+    check(recorder.contains("static let combo = Options()"),
+          "shortcut rows keep the default (no bare key): a modifier-less global hotkey would "
+            + "swallow the key everywhere")
+    check(recorder.contains("static let comboOrModifiers = Options(allowsModifierOnly: true, allowsBareKey: true)"),
+          "the drag bind is the one preset that accepts a bare key")
+    check(recorder.contains("ShortcutCaptureRules.intent(") && recorder.contains("allowsBareKey: options.allowsBareKey"),
+          "the recorder decides through the shared, tested capture rules")
+
+    // ---- B22: clearing a row ends the capture rather than leaving the registry suspended ----
+    if let start = pane.range(of: "func clearShortcut(") {
+        check(pane[start.lowerBound...].prefix(400).contains("cancelRecording?()"),
+              "clearing a Zones shortcut cancels any live capture")
+    } else {
+        check(false, "ZonesSettingsModel implements clearShortcut")
+    }
+
+    // ---- A30: the cross-tool conflict source is the persisted one, not the live registry ----
+    check(pane.contains("boundCombos.conflictOwner(keyCode: keyCode, modifiers: modifiers,"),
+          "the Zones pane answers cross-tool conflicts from ToolCombo.conflictOwner")
+    check(!pane.contains("foreignOwner"),
+          "the running-tools-only conflict lookup is gone from the Zones pane")
+    if let start = pane.range(of: "private func record(") {
+        check(pane[start.lowerBound...].prefix(300).contains("model.prepareForRecording()"),
+              "the conflict snapshot is taken when a capture starts, not per keystroke")
+    } else {
+        check(false, "the Zones pane owns record(_:)")
+    }
+    check(tool.contains("func persistedCombos()") && tool.contains("services.config.load(LineupConfig.self)"),
+          "Zones reports its persisted combos from the config store, so a stopped Zones still owns them")
 }

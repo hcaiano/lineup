@@ -114,7 +114,30 @@ final class ToolRegistry {
             peers: { [weak self] in
                 guard let self else { return [:] }
                 return Dictionary(uniqueKeysWithValues: self.tools.map { ($0.id, $0.isRunning) })
-            })
+            },
+            boundCombos: { [weak self] in self?.boundCombos() ?? [] })
+    }
+
+    /// Every combo any registered tool has bound, tagged with its owner.
+    ///
+    /// Persisted combos come FIRST, in registration order, so the owner a conflict message names
+    /// is deterministic — `HotkeyManager.registeredCombos()` walks a dictionary and has no stable
+    /// order. The live pass only adds what is not already persisted (a combo registered from
+    /// built-in defaults that were never written to disk).
+    func boundCombos() -> [ToolCombo] {
+        var out: [ToolCombo] = []
+        var seen = Set<ToolCombo>()
+        for tool in tools {
+            for combo in tool.persistedCombos() {
+                let entry = ToolCombo(owner: tool.id, keyCode: combo.keyCode, modifiers: combo.modifiers)
+                if seen.insert(entry).inserted { out.append(entry) }
+            }
+        }
+        for live in HotkeyManager.shared.registeredCombos() {
+            let entry = ToolCombo(owner: live.owner, keyCode: live.keyCode, modifiers: live.modifiers)
+            if seen.insert(entry).inserted { out.append(entry) }
+        }
+        return out
     }
 
     /// Every permission any registered tool needs, with the tools that need it — drives the

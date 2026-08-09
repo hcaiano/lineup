@@ -63,6 +63,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             backing: .buffered, defer: false)
         window.pinnedTitle = "\(Product.name) Settings"
         window.isReleasedWhenClosed = false // we keep the controller; AppKit must not free it
+        // The window is kept between openings, so without this it stays on the Space it was first
+        // opened on and choosing Settings from another Space yanks the user across. (From Cycler.)
+        window.collectionBehavior = [.moveToActiveSpace]
         window.delegate = self
         let controller = NSHostingController(rootView: SettingsRootView(store: store))
         if #available(macOS 13.0, *) { controller.sizingOptions = [] }

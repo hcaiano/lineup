@@ -98,11 +98,19 @@ private struct ZonesSettingsPaneBody: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Zones")
-        .onAppear { model.refresh() }
+        .onAppear {
+            model.refresh()
+            // The model has to be able to end a capture from a non-recorder action (clearing a
+            // row), and the recorder is the view's.
+            model.cancelRecording = { [weak recorder] in recorder?.cancel() }
+        }
         // Switching to another pane must not leave a live capture — and therefore must not leave
         // every tool's hotkeys suspended. The window's own close/blur path is handled by
         // SettingsWindowController -> SettingsStore.stopAllRecording().
-        .onDisappear { recorder.cancel() }
+        .onDisappear {
+            recorder.cancel()
+            model.cancelRecording = nil
+        }
     }
 
     // MARK: - Rows
@@ -140,6 +148,8 @@ private struct ZonesSettingsPaneBody: View {
 
     private func record(_ action: String) {
         guard model.canWrite else { return }
+        // Once per capture, never per keystroke: this decodes every registered tool's section.
+        model.prepareForRecording()
         recorder.toggle(action, options: .combo) { capture in
             model.apply(capture, to: action)
         }
@@ -169,8 +179,8 @@ final class ZonesSettingsModel: ObservableObject {
         var setDragSnapOn: (Bool) -> Void
         var dragTrigger: () -> DragSnapTrigger
         var setDragTrigger: (DragSnapTrigger) -> Void
-        /// Which OTHER tool already owns this combo, if any (§5.6 cross-tool collisions).
-        var foreignOwner: (Int, UInt32) -> ToolID?
+        /// Every combo any registered tool has bound, running or not (§5.6 cross-tool collisions).
+        var boundCombos: () -> [ToolCombo]
     }
 
     struct ShortcutRow: Identifiable {
@@ -185,6 +195,12 @@ final class ZonesSettingsModel: ObservableObject {
     @Published private(set) var dragTrigger = DragSnapTrigger.default
 
     private let ctx: Context
+    /// Snapshot of every tool's bound combos, taken when a capture STARTS. Rebuilding it decodes
+    /// each tool's config section, so it must not be recomputed per keystroke — and by the time
+    /// the capture is delivered the list can no longer have changed anyway.
+    private var boundCombos: [ToolCombo] = []
+    /// Cancels the pane's live capture. Set by the pane, which owns the recorder.
+    var cancelRecording: (() -> Void)?
 
     init(context: Context) {
         self.ctx = context
@@ -222,8 +238,16 @@ final class ZonesSettingsModel: ObservableObject {
         refresh()
     }
 
+    /// Refresh the cross-tool conflict snapshot. Called as a capture starts.
+    func prepareForRecording() {
+        boundCombos = ctx.boundCombos()
+    }
+
     func clearShortcut(_ action: String) {
         guard canWrite else { return }
+        // Clearing a row while it (or a sibling row) is capturing would leave the capture live and
+        // therefore every tool's hotkeys suspended until the window blurred.
+        cancelRecording?()
         ctx.setShortcuts(shortcuts.removing(action: action))
         refresh()
     }
@@ -261,7 +285,8 @@ final class ZonesSettingsModel: ObservableObject {
                             + "or change the drag bind above.")
                 return
             }
-            if let owner = ctx.foreignOwner(keyCode, modifiers) {
+            if let owner = boundCombos.conflictOwner(keyCode: keyCode, modifiers: modifiers,
+                                                     excluding: .zones) {
                 showAlert("Shortcut already in use",
                           "This combo is used by \(owner.rawValue.capitalized). Choose a different "
                             + "shortcut, or change it in that tool's settings.")

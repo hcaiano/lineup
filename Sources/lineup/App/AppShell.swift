@@ -403,8 +403,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
         }
         write(WelcomeWindowController.makeEmbeddedContent(), "preview-welcome.png")
         write(WhatsNewWindowController.makeEmbeddedContent(), "preview-whatsnew.png")
-        write(sized(AboutWindowController.makeEmbeddedContent(size: NSSize(width: 420, height: 430)),
-                    NSSize(width: 420, height: 430)), "preview-about.png")
+        write(sized(AboutWindowController.makeEmbeddedContent(size: AboutWindowController.naturalSize),
+                    AboutWindowController.naturalSize), "preview-about.png")
     }
     #endif
 }

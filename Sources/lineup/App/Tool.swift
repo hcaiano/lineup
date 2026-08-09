@@ -71,10 +71,9 @@ struct HotkeyScope {
         HotkeyManager.shared.unregisterAll(owner: owner)
     }
 
-    /// Combos owned by OTHER tools — for cross-tool conflict UX in the recorders.
-    func foreignCombos() -> [(owner: ToolID, keyCode: Int, modifiers: UInt32)] {
-        HotkeyManager.shared.registeredCombos().filter { $0.owner != owner }
-    }
+    // No `foreignCombos()` here on purpose. The live registry only knows about tools that are
+    // RUNNING, so a recorder checking it would happily claim a switched-off sibling's combo.
+    // `ToolServices.boundCombos()` is the conflict source; see `ToolCombo`.
 
     /// True while a Settings recorder holds the whole registry suspended. A tool that retries a
     /// failed registration must wait this out: while suspended, `register` records the row without
@@ -125,6 +124,11 @@ final class ToolServices {
     /// Read-only view of sibling tools, for cross-tool hints (e.g. Hyperkey noticing that
     /// Zones/Cycler have hyper-based shortcuts bound). Never used to mutate a sibling.
     let peers: () -> [ToolID: Bool]
+    /// Every combo EVERY registered tool has bound, running or not — the conflict source for the
+    /// Settings recorders (§5.6). Read from the tools' persisted sections, so switching a tool
+    /// off does not release its shortcuts to a sibling's recorder. Not free (it decodes each
+    /// section), so panes take one snapshot per capture rather than calling it per keystroke.
+    let boundCombos: () -> [ToolCombo]
 
     init(id: ToolID,
          config: ToolConfigScope,
@@ -133,7 +137,8 @@ final class ToolServices {
          termination: TerminationCoordinator,
          refreshMenu: @escaping () -> Void,
          refreshSettings: @escaping () -> Void,
-         peers: @escaping () -> [ToolID: Bool]) {
+         peers: @escaping () -> [ToolID: Bool],
+         boundCombos: @escaping () -> [ToolCombo] = { [] }) {
         self.id = id
         self.hotkeys = HotkeyScope(owner: id)
         self.config = config
@@ -144,6 +149,7 @@ final class ToolServices {
         self.refreshMenu = refreshMenu
         self.refreshSettings = refreshSettings
         self.peers = peers
+        self.boundCombos = boundCombos
     }
 }
 
@@ -183,4 +189,17 @@ protocol Tool: AnyObject {
     var warnings: [ToolWarning] { get }
     /// Rendered even when the tool is disabled, so the user can configure it before enabling.
     func makeSettingsPane() -> AnyView
+
+    /// The combos this tool has PERSISTED, read from its own config section rather than from the
+    /// live Carbon registry — so the answer is the same whether or not the tool is running.
+    ///
+    /// Additive to the Phase 3 contract and defaulted to empty, so a tool with no shortcuts
+    /// (Hyperkey) implements nothing. Must include anything the tool would register on start,
+    /// generated combos included, or a sibling's recorder can claim a combo the tool then fails
+    /// to register when it is switched back on.
+    func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)]
+}
+
+extension Tool {
+    func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)] { [] }
 }

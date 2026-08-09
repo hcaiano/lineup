@@ -188,6 +188,32 @@ final class CyclerTool: Tool {
         updateFailedHotkeyRetryTimer()
     }
 
+    /// Cross-tool conflict source (§5.6): every combo `registerHotkeys()` would install, whether
+    /// or not Cycler is running — the explicit bindings AND the ⇧ reverses generated from them.
+    ///
+    /// The reverses matter: leaving them out would let Zones' recorder take ⌃⌥⇧⌘T while Cycler is
+    /// off, and Cycler's backwards-cycle for ⌃⌥⌘T would then fail to register at the next enable.
+    /// Read back through the config scope so a disabled tool answers from what is persisted.
+    func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)] {
+        var bindings = settings.bindings
+        if let services, let stored = try? services.config.load(CyclerToolSettings.self) {
+            bindings = stored.coalescingDuplicateShortcuts().bindings
+        }
+        var out: [(keyCode: Int, modifiers: UInt32)] = []
+        var seen = Set<HotkeyCombo>()
+        for b in bindings where seen.insert(HotkeyCombo(keyCode: b.keyCode, modifiers: b.modifiers)).inserted {
+            out.append((b.keyCode, b.modifiers))
+        }
+        for b in bindings where b.modifiers & UInt32(shiftKey) == 0 {
+            let reverse = HotkeyCombo(keyCode: b.keyCode, modifiers: b.modifiers | UInt32(shiftKey))
+            if seen.insert(reverse).inserted { out.append((reverse.keyCode, reverse.modifiers)) }
+        }
+        return out
+    }
+
+    /// Every combo any OTHER tool has bound, for the pane's cross-tool conflict check.
+    func boundCombos() -> [ToolCombo] { services?.boundCombos() ?? [] }
+
     private func reloadHotkeys() {
         guard isRunning, let services else { return }
         services.hotkeys.unregisterAll()

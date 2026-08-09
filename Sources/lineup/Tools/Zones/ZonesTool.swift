@@ -409,6 +409,24 @@ final class ZonesTool: Tool {
         return out
     }
 
+    /// Cross-tool conflict source (§5.6): the combos Zones holds whether or not it is running.
+    ///
+    /// Read back through the config scope rather than from `self.config`, so the answer reflects
+    /// what is actually persisted; falls back to the effective set (which is the built-in
+    /// defaults on a fresh install, and those ARE registered the moment Zones starts).
+    ///
+    /// The drag bind is deliberately absent: it is a key held during a mouse drag, not a Carbon
+    /// hotkey, and it is checked separately inside the Zones pane.
+    func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)] {
+        var effective = shortcuts
+        if let services,
+           let stored = try? services.config.load(LineupConfig.self),
+           let storedShortcuts = stored.shortcuts {
+            effective = storedShortcuts
+        }
+        return effective.bindings.map { ($0.keyCode, UInt32(truncatingIfNeeded: $0.modifiers)) }
+    }
+
     static func label(for action: String) -> String {
         ShortcutKit.quickActions.first(where: { $0.id == action })?.label
             ?? ZoneAction.zeroBasedIndex(from: action).map { "Zone \($0 + 1)" }
@@ -437,9 +455,6 @@ final class ZonesTool: Tool {
             setDragSnapOn: { [weak self] in self?.setDragSnapEnabled($0) },
             dragTrigger: { [weak self] in self?.dragSnapTrigger ?? .default },
             setDragTrigger: { [weak self] in self?.applyDragSnapTrigger($0) },
-            foreignOwner: { [weak self] keyCode, modifiers in
-                self?.services?.hotkeys.foreignCombos()
-                    .first { $0.keyCode == keyCode && $0.modifiers == modifiers }?.owner
-            }))
+            boundCombos: { [weak self] in self?.services?.boundCombos() ?? [] }))
     }
 }

@@ -1,3 +1,4 @@
+import AppCore
 import AppKit
 import Carbon.HIToolbox
 import SwiftUI
@@ -5,10 +6,10 @@ import SwiftUI
 /// Drives shortcut capture for one pane.
 ///
 /// It owns the local `NSEvent` monitor and applies the capture rules both 1.x apps already
-/// shared — Esc cancels, Delete clears, a bare key beeps, modifier-only combos settle after a
-/// short pause — and it routes the global hotkey suspension through `SettingsStore`. Panes must
-/// never touch `HotkeyManager` directly: `SettingsStore` is what keeps the suspension ref-counted
-/// and what `windowWillClose` / `windowDidResignKey` can cancel.
+/// shared — Esc cancels, Delete clears, a bare key beeps unless the field allows one, modifier-only
+/// combos settle after a short pause — and it routes the global hotkey suspension through
+/// `SettingsStore`. Panes must never touch `HotkeyManager` directly: `SettingsStore` is what keeps
+/// the suspension ref-counted and what `windowWillClose` / `windowDidResignKey` can cancel.
 ///
 /// One recorder per pane, many fields. `activeID` names the field capturing right now, so the
 /// pane renders "Press keys…" on exactly one row and a blur cancels exactly that row. Use any
@@ -38,13 +39,21 @@ final class ShortcutRecorder: ObservableObject {
     struct Options: Equatable {
         /// Also watch `.flagsChanged` and allow a modifiers-only result (Zones' drag bind).
         var allowsModifierOnly = false
+        /// Accept a plain key with NO modifier held.
+        ///
+        /// Off for shortcut rows — a global hotkey with no modifier would swallow the key
+        /// everywhere. On for Zones' drag bind only, which is not a hotkey but a key held during
+        /// a drag: 1.x accepted `F5`-drag, and `DragSnapTrigger` still models it (`keyCode` set,
+        /// `modifiers` 0). Esc and Delete keep their meanings regardless — see
+        /// `ShortcutCaptureRules`.
+        var allowsBareKey = false
         /// How long modifiers must be held before they settle into `.modifiersOnly`.
         var modifierOnlyDelay: TimeInterval = 0.35
 
         /// Key + modifiers only. The default, and what both Cycler and Zones' shortcut rows want.
         static let combo = Options()
-        /// Key + modifiers, or modifiers on their own.
-        static let comboOrModifiers = Options(allowsModifierOnly: true)
+        /// Zones' drag bind: a key with or without modifiers, or modifiers on their own.
+        static let comboOrModifiers = Options(allowsModifierOnly: true, allowsBareKey: true)
     }
 
     /// The field currently capturing, or `nil`. Published so panes re-render on start/stop.
@@ -142,13 +151,20 @@ final class ShortcutRecorder: ObservableObject {
             // they can never be recorded as the key of a combo.
             if Self.isModifierKeyCode(keyCode) { return true }
 
-            let bare = !ShortcutKit.hasModifier(event.modifierFlags)
-            if keyCode == kVK_Escape, bare { cancel(); return true }
-            if keyCode == kVK_Delete, bare { finish(.clear); return true }
-            guard !bare else { NSSound.beep(); return true }
-
-            finish(.combo(keyCode: keyCode,
-                          modifiers: ShortcutKit.carbonModifierMask(from: event.modifierFlags)))
+            switch ShortcutCaptureRules.intent(isEscape: keyCode == kVK_Escape,
+                                               isDelete: keyCode == kVK_Delete,
+                                               hasModifier: ShortcutKit.hasModifier(event.modifierFlags),
+                                               allowsBareKey: options.allowsBareKey) {
+            case .cancel:
+                cancel()
+            case .clear:
+                finish(.clear)
+            case .reject:
+                NSSound.beep()
+            case .record:
+                finish(.combo(keyCode: keyCode,
+                              modifiers: ShortcutKit.carbonModifierMask(from: event.modifierFlags)))
+            }
             return true
 
         case .flagsChanged:

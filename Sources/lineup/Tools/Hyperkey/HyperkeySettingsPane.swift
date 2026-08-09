@@ -10,12 +10,22 @@ import SwiftUI
 /// re-run from a SwiftUI body.
 @MainActor
 final class HyperkeyPaneModel: ObservableObject {
+    struct AlertItem: Identifiable { let id = UUID(); let title: String; let message: String }
+
     @Published private(set) var settings: HyperKeySettings = .disabled
     @Published private(set) var isRunning = false
     @Published private(set) var status: String?
     @Published private(set) var needsInputMonitoring = false
     @Published private(set) var inputMonitoringGranted = false
     @Published private(set) var orphanedMapping = false
+    /// False when the store refuses writes. The pane then shows a banner and disables the
+    /// controls, the same way the Zones and Cycler panes do — a picker that silently discards the
+    /// choice is worse than one that is visibly off.
+    @Published private(set) var canEdit = true
+    /// Why editing is off, if it is.
+    @Published private(set) var blockedMessage: String?
+    /// A refused or failed save, surfaced once (standalone Cycler alerted on this).
+    @Published var alert: AlertItem?
 
     private weak var tool: HyperkeyTool?
 
@@ -32,6 +42,9 @@ final class HyperkeyPaneModel: ObservableObject {
         needsInputMonitoring = tool.needsInputMonitoring
         inputMonitoringGranted = tool.permissions?.isInputMonitoringGranted ?? false
         orphanedMapping = tool.orphanedMapping
+        canEdit = tool.canPersist
+        blockedMessage = tool.canPersist ? nil : (tool.configBlockedMessage
+            ?? "Your settings file couldn’t be read. It was left untouched — changes won’t be saved.")
     }
 
     /// Called when the pane appears or the app becomes active again — the two moments a grant or
@@ -44,12 +57,23 @@ final class HyperkeyPaneModel: ObservableObject {
 
     var trigger: Binding<TriggerKey> {
         Binding(get: { [weak self] in self?.settings.triggerKey ?? .capsLock },
-                set: { [weak self] in self?.tool?.setTrigger($0) })
+                set: { [weak self] value in self?.edit { $0.setTrigger(value) } })
     }
 
     var includeShift: Binding<Bool> {
         Binding(get: { [weak self] in self?.settings.includeShift ?? true },
-                set: { [weak self] in self?.tool?.setIncludeShift($0) })
+                set: { [weak self] value in self?.edit { $0.setIncludeShift(value) } })
+    }
+
+    /// Run one edit and surface a failed save. Called from a control's setter — a user action —
+    /// so publishing the alert here can never land inside a SwiftUI view update.
+    private func edit(_ change: (HyperkeyTool) -> Void) {
+        guard let tool else { return }
+        change(tool)
+        refresh()
+        if let message = tool.takeSaveError() {
+            alert = AlertItem(title: "Couldn’t save your Hyperkey settings.", message: message)
+        }
     }
 
     func openInputMonitoringSettings() {
@@ -86,6 +110,15 @@ struct HyperkeySettingsPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
+                // Same write-blocked treatment as the Zones and Cycler panes: say why, and turn
+                // the controls off rather than let an edit vanish on save.
+                if let message = model.blockedMessage {
+                    Label(message, systemImage: "lock.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 SettingsSectionView("Hyper key") {
                     SettingsRow(title: "Trigger key",
                                 detail: "Hold this key to send a Hyper modifier to every app.") {
@@ -96,11 +129,13 @@ struct HyperkeySettingsPane: View {
                         }
                         .labelsHidden()
                         .frame(width: 190)
+                        .disabled(!model.canEdit)
                     }
                     SettingsRow(title: "Include Shift (⇧)", detail: model.shortcutHint) {
                         Toggle("", isOn: model.includeShift)
                             .labelsHidden()
                             .toggleStyle(.switch)
+                            .disabled(!model.canEdit)
                     }
                     if model.settings.triggerKey.needsCapsLockRemap {
                         SettingsRow(
@@ -162,6 +197,9 @@ struct HyperkeySettingsPane: View {
         .onAppear { model.recheck() }
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in model.recheck() }
+        .alert(item: $model.alert) { a in
+            Alert(title: Text(a.title), message: Text(a.message), dismissButton: .default(Text("OK")))
+        }
     }
 
     // MARK: - Chrome
