@@ -256,11 +256,15 @@ final class HyperkeyTool: Tool {
     /// section of our own turns it false.
     var canPersist: Bool { sectionLoadError == nil && (services?.config.canWrite ?? false) }
 
+    /// Whether the STORE would accept a write — what the recovery reset needs, even though
+    /// ordinary editing is off while the section is unreadable. Mirrors Cycler's `canReset`.
+    var canResetSection: Bool { services?.config.canWrite ?? false }
+
     /// Why editing is off, if it is.
     var configBlockedMessage: String? {
         if sectionLoadError != nil {
-            return "Your Hyperkey settings couldn’t be read. They were left untouched — reset them "
-                + "from the menu to start editing again."
+            return "Your Hyperkey settings couldn’t be read. They were left untouched. Reset them "
+                + "to start editing again; the unreadable file is kept next to your settings."
         }
         return services?.config.blockedMessage
     }
@@ -411,8 +415,8 @@ enum HyperkeyToolError: LocalizedError {
         case .writesBlocked(let message):
             return message ?? "Your settings file couldn’t be read, so changes can’t be saved."
         case .sectionUnreadable:
-            return "Your Hyperkey settings couldn’t be read. They were left untouched — reset "
-                + "them from the menu to start editing again."
+            return "Your Hyperkey settings couldn’t be read. They were left untouched. Reset "
+                + "them to start editing again."
         }
     }
 }

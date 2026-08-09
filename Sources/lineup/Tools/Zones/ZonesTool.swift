@@ -136,8 +136,8 @@ final class ZonesTool: Tool {
 
     private var configBlockedMessage: String? {
         if configState == .sectionUnreadable {
-            return "Your Zones settings couldn’t be read. They were left untouched — reset them "
-                + "from the menu to start editing again."
+            return "Your Zones settings couldn’t be read. They were left untouched. Reset them "
+                + "to start editing again; the unreadable file is kept next to your settings."
         }
         return services?.config.blockedMessage
     }
@@ -391,6 +391,20 @@ final class ZonesTool: Tool {
         }
     }
 
+    /// How many zones the CURRENT display's layout resolves to, so the Settings pane can mark the
+    /// Zone-N rows past it. Zero when there is no screen to ask about (offscreen test runs).
+    ///
+    /// Resolved against a unit container: only the leaf COUNT is wanted, and that is independent
+    /// of the rectangle the layout is drawn into.
+    private var mainScreenZoneCount: Int {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return 0 }
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        return Layout.zones(root,
+                            container: CGRect(x: 0, y: 0, width: 1000, height: 1000),
+                            pixelsWide: max(info.pixelsWide, 1)).count
+    }
+
     // MARK: - Layout editor
 
     private func openEditor() {
@@ -429,7 +443,7 @@ final class ZonesTool: Tool {
             let count = failedHotkeys.count
             var details = failedHotkeys.prefix(4).map {
                 "\(ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers)) "
-                    + "\(Self.label(for: $0.action)) — \($0.reason)"
+                    + "\(Self.label(for: $0.action)): \($0.reason)"
             }
             if count > 4 { details.append("…and \(count - 4) more") }
             out.append(ToolWarning(
@@ -490,12 +504,17 @@ final class ZonesTool: Tool {
         ZonesSettingsModel(context: ZonesSettingsModel.Context(
             canWrite: { [weak self] in self?.canWrite ?? false },
             blockedMessage: { [weak self] in self?.configBlockedMessage },
+            canReset: { [weak self] in self?.services?.config.canWrite ?? false },
+            resetSection: { [weak self] in self?.resetSection() },
             shortcuts: { [weak self] in self?.shortcuts ?? ShortcutKit.defaults },
             setShortcuts: { [weak self] in self?.applyShortcuts($0) },
             isDragSnapOn: { [weak self] in self?.isDragSnapOn ?? false },
             setDragSnapOn: { [weak self] in self?.setDragSnapEnabled($0) },
             dragTrigger: { [weak self] in self?.dragSnapTrigger ?? .default },
             setDragTrigger: { [weak self] in self?.applyDragSnapTrigger($0) },
+            openLayoutEditor: { [weak self] in self?.openEditor() },
+            isRunning: { [weak self] in self?.isRunning ?? false },
+            zoneCount: { [weak self] in self?.mainScreenZoneCount ?? 0 },
             boundCombos: { [weak self] in self?.services?.boundCombos() ?? [] }))
     }
 }

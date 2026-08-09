@@ -13,6 +13,9 @@ struct AppPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    /// The sheet opens to type into. Without this the first keystroke went nowhere and the user
+    /// had to click a search field that was already the only text control on screen.
+    @FocusState private var searchFocused: Bool
     private let openNow: [AppChoice]
     private let dock: [AppChoice]
 
@@ -37,6 +40,10 @@ struct AppPickerView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search apps", text: $query)
                     .textFieldStyle(.plain)
+                    .focused($searchFocused)
+                    // Return picks the one remaining match, so a search can be finished without
+                    // reaching for the mouse.
+                    .onSubmit { pickFirstMatch() }
             }
             .padding(7).background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
             .padding(.horizontal, 16)
@@ -60,11 +67,21 @@ struct AppPickerView: View {
             .padding(12)
         }
         .frame(width: 380, height: 480)
+        .onAppear { searchFocused = true }
     }
 
     private func filtered(_ apps: [AppChoice]) -> [AppChoice] {
         let q = query.trimmingCharacters(in: .whitespaces)
         return q.isEmpty ? apps : apps.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    /// Return with a search typed: take the first row in the order the list shows them. A no-op
+    /// when nothing matches, so Return never dismisses the sheet with nothing chosen.
+    private func pickFirstMatch() {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty,
+              let choice = filtered(openNow).first ?? filtered(dock).first else { return }
+        onPick(choice)
+        dismiss()
     }
 
     @ViewBuilder private func section(_ title: String, _ apps: [AppChoice]) -> some View {
@@ -110,6 +127,46 @@ enum AppInfo {
     static func name(forBundleIdentifier id: String) -> String {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return id }
         return name(forAppURL: url) ?? id
+    }
+
+    /// A readable name for a binding whose app is no longer installed.
+    ///
+    /// `name(forBundleIdentifier:)` can only answer with the raw identifier when Launch Services
+    /// has never heard of it, and the Cycler pane then showed rows titled
+    /// "com.example.uninstalled.applica…" — a truncated identifier that names nothing. The last
+    /// dot-component is the app's own name in practice, so prettify that and keep the identifier
+    /// for the row's tooltip.
+    static func displayName(forBundleIdentifier id: String) -> String {
+        let resolved = name(forBundleIdentifier: id)
+        return resolved == id ? prettifiedBundleIdentifier(id) : resolved
+    }
+
+    /// `com.company.MyGreatApp` → `My Great App`; `com.company.my-great-app` → `My Great App`.
+    /// Pure string work, so it is safe to call for a bundle that is not on disk.
+    static func prettifiedBundleIdentifier(_ id: String) -> String {
+        let last = id.split(separator: ".").last.map(String.init) ?? id
+        guard !last.isEmpty else { return id }
+        var words: [String] = []
+        var current = ""
+        for character in last {
+            if character == "-" || character == "_" {
+                if !current.isEmpty { words.append(current); current = "" }
+                continue
+            }
+            // Split camel case, but keep runs of capitals together (`HTTPServer` → `HTTP Server`).
+            if character.isUppercase, let previous = current.last, !previous.isUppercase {
+                words.append(current)
+                current = String(character)
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        let joined = words
+            .filter { !$0.isEmpty }
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+        return joined.isEmpty ? id : joined
     }
     static func name(forAppURL url: URL) -> String? {
         if let bundle = Bundle(url: url) {

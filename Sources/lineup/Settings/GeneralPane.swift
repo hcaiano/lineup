@@ -15,7 +15,7 @@ struct GeneralPane: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
                 SettingsSectionView("Startup") {
                     SettingsRow(
                         title: "Launch at login",
@@ -62,7 +62,7 @@ struct GeneralPane: View {
                 }
             }
             .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
-            .padding(.vertical, 24)
+            .padding(.vertical, SettingsMetrics.panePaddingVertical)
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("General")

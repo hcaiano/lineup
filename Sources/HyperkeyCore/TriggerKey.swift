@@ -75,6 +75,19 @@ public enum TriggerKey: String, Codable, Equatable, Hashable, Sendable, CaseIter
     /// function keys are caught directly by the event tap.
     public var needsCapsLockRemap: Bool { self == .capsLock }
 
+    /// A physical function key. These are ordinary keys to the event tap, but macOS only delivers
+    /// them as F-keys when "Use F1, F2, etc. keys as standard function keys" is on — otherwise the
+    /// key sends its media action and Hyperkey never sees it. The pane says so when one is chosen.
+    public var isFunctionKey: Bool {
+        switch self {
+        case .f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10, .f11, .f12,
+             .f18, .f19, .f20:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Modifier triggers arrive as `flagsChanged` events rather than key-down/key-up events.
     public var isModifier: Bool {
         switch self {

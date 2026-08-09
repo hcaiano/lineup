@@ -373,7 +373,7 @@ final class CyclerTool: Tool {
     private func blockedHotkeyTitle(_ failure: FailedHotkey) -> String {
         let prefix = failure.generatedReverse ? "Reverse " : ""
         let combo = ShortcutKit.display(keyCode: failure.keyCode, modifiers: failure.modifiers)
-        return "\(prefix)\(failure.label) \(combo) — \(failure.reason.displayReason)"
+        return "\(prefix)\(failure.label) \(combo): \(failure.reason.displayReason)"
     }
 
     // MARK: - Settings
@@ -419,7 +419,7 @@ enum CyclerToolError: LocalizedError {
         case .notStarted:
             return "Turn Cycler on before changing its shortcuts."
         case .sectionUnreadable:
-            return "Your Cycler shortcuts couldn’t be read. They were left untouched — reset them "
+            return "Your Cycler shortcuts couldn’t be read. They were left untouched. Reset them "
                 + "to start editing again."
         }
     }

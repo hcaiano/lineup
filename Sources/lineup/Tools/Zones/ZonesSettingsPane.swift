@@ -39,69 +39,89 @@ private struct ZonesSettingsPaneBody: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // The recorder instructions used to float here, above "Drag to snap", where they
-                // read as a description of drag-snapping. They belong to the shortcut sections,
-                // so they are a caption on the first of them.
-                if !model.canWrite {
-                    Label(model.blockedMessage ?? "Editing is disabled.", systemImage: "lock.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+        VStack(spacing: 0) {
+            // Pinned, not scrolled. Inside the scroll view the one line explaining why every
+            // control below is dead slid out of sight and left a pane that looked broken.
+            if !model.canWrite {
+                PinnedBannerStrip {
+                    BlockedBanner(
+                        message: model.blockedMessage ?? "Editing is disabled.",
+                        actionTitle: "Reset Zones Settings…",
+                        action: { model.resetSection() },
+                        actionEnabled: model.canReset)
                 }
+            }
 
-                SettingsSectionView("Drag to snap") {
-                    SettingsRow(title: "Drag to snap",
-                                detail: "Hold the drag bind while dragging a window.") {
-                        Toggle("", isOn: Binding(get: { model.dragSnapOn },
-                                                 set: { model.setDragSnapOn($0) }))
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            // Every other control on the pane is off while writes are blocked;
-                            // this one flipped, said nothing, and was back at the next launch.
-                            .disabled(!model.canWrite)
-                            .accessibilityLabel("Drag to snap")
+            ScrollView {
+                VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+                    SettingsSectionView("Behavior") {
+                        SettingsRow(title: "Drag to snap",
+                                    detail: "Hold the drag bind while dragging a window.") {
+                            Toggle("", isOn: Binding(get: { model.dragSnapOn },
+                                                     set: { model.setDragSnapOn($0) }))
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                // Every other control on the pane is off while writes are blocked;
+                                // this one flipped, said nothing, and was back at the next launch.
+                                .disabled(!model.canWrite)
+                                .accessibilityLabel("Drag to snap")
+                        }
+
+                        SettingsRow(title: "Drag bind",
+                                    detail: "Click to record a key or modifier combo.") {
+                            HStack(spacing: 8) {
+                                RecorderButton(
+                                    text: model.dragTriggerDisplay,
+                                    emptyText: "Click to set",
+                                    isRecording: recorder.isRecording(Self.dragBindID),
+                                    enabled: model.canWrite,
+                                    accessibilityLabel: "Drag snap bind",
+                                    accessibilityValue: model.dragTriggerSpokenValue,
+                                    rejectionCount: recorder.rejectionCount,
+                                    action: { recordDragBind() })
+
+                                CircleClearButton(
+                                    help: "Reset drag bind to Shift",
+                                    accessibilityLabel: "Reset drag bind to Shift",
+                                    disabled: !model.canWrite,
+                                    action: { model.resetDragBind() })
+                            }
+                        }
+
+                        // Without this the layout editor is reachable only from the menu-bar icon
+                        // — which General lets the user hide. The pane that owns zones has to be
+                        // able to open the thing that draws them.
+                        SettingsRow(title: "Zone layout",
+                                    detail: "Draw the zones windows snap into, per display.") {
+                            Button("Open Layout Editor…") { model.openLayoutEditor() }
+                                .disabled(!model.canOpenLayoutEditor)
+                                .help(model.canOpenLayoutEditor
+                                      ? "Draw this display's zones"
+                                      : "Turn Zones on to edit its layout")
+                        }
                     }
 
-                    SettingsRow(title: "Drag bind",
-                                detail: "Click to record a key or modifier combo.") {
-                        HStack(spacing: 8) {
-                            RecorderButton(
-                                text: model.dragTriggerDisplay,
-                                emptyText: "Click to set",
-                                isRecording: recorder.isRecording(Self.dragBindID),
-                                enabled: model.canWrite,
-                                accessibilityLabel: "Drag snap bind",
-                                action: { recordDragBind() })
+                    SettingsSectionView(
+                        "Window",
+                        caption: "Click a shortcut, then press a key combo. Esc cancels, Delete clears.") {
+                        ForEach(model.quickShortcutRows) { row in
+                            shortcutRow(row)
+                        }
+                    }
 
-                            CircleClearButton(
-                                help: "Reset drag bind to Shift",
-                                accessibilityLabel: "Reset drag bind to Shift",
-                                disabled: !model.canWrite,
-                                action: { model.resetDragBind() })
+                    SettingsSectionView(
+                        "Zone shortcuts",
+                        caption: "One shortcut per zone in the current layout, in visual order.") {
+                        ForEach(model.zoneShortcutRows) { row in
+                            shortcutRow(row)
                         }
                     }
                 }
-
-                SettingsSectionView(
-                    "Window",
-                    caption: "Click a shortcut, then press a key combo. Esc cancels, Delete clears.") {
-                    ForEach(model.quickShortcutRows) { row in
-                        shortcutRow(row)
-                    }
-                }
-
-                SettingsSectionView("Zones") {
-                    ForEach(model.zoneShortcutRows) { row in
-                        shortcutRow(row)
-                    }
-                }
+                .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
+                .padding(.vertical, SettingsMetrics.panePaddingVertical)
+                .frame(maxWidth: .infinity)
             }
-            .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
-            .padding(.top, 22)
-            .padding(.bottom, 18)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Zones")
@@ -137,6 +157,14 @@ private struct ZonesSettingsPaneBody: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text(row.label)
+                // A binding survives a layout change, so a Zone 7 row on a three-zone layout is
+                // not junk to be hidden — it is a shortcut that does nothing UNTIL the layout
+                // grows. Say so instead of leaving the user to press it and wonder.
+                if row.isBeyondLayout {
+                    Text("(not in current layout)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 24)
                 RecorderButton(
                     text: model.shortcutDisplay(for: row.id),
@@ -144,6 +172,7 @@ private struct ZonesSettingsPaneBody: View {
                     isRecording: recorder.isRecording(row.id),
                     enabled: model.canWrite,
                     accessibilityLabel: "\(row.label) shortcut",
+                    rejectionCount: recorder.rejectionCount,
                     action: { record(row.id) })
 
                 CircleClearButton(
@@ -152,7 +181,7 @@ private struct ZonesSettingsPaneBody: View {
                     disabled: !model.canWrite || model.shortcutDisplay(for: row.id).isEmpty,
                     action: { model.clearShortcut(row.id) })
             }
-            // Denser than a stock SettingsRow: thirteen of these stack up (4 quick actions + 9
+            // Denser than a stock SettingsRow: sixteen of these stack up (7 quick actions + 9
             // zones), and at the default row height the list stops fitting in one look.
             .frame(minHeight: SettingsMetrics.shortcutRowHeight)
             .padding(.vertical, 3)
@@ -190,12 +219,26 @@ final class ZonesSettingsModel: ObservableObject {
     struct Context {
         var canWrite: () -> Bool
         var blockedMessage: () -> String?
+        /// Whether the STORE would accept a write, which is what the recovery reset needs — normal
+        /// editing is off while our own section is unreadable, but the reset is exactly the way out
+        /// of that. Mirrors `CyclerSettingsModel.canReset`.
+        var canReset: () -> Bool
+        /// Preserve the unreadable blob and start again from built-in defaults.
+        var resetSection: () -> Void
         var shortcuts: () -> Shortcuts
         var setShortcuts: (Shortcuts) -> Void
         var isDragSnapOn: () -> Bool
         var setDragSnapOn: (Bool) -> Void
         var dragTrigger: () -> DragSnapTrigger
         var setDragTrigger: (DragSnapTrigger) -> Void
+        /// Open the same layout overlay the menu bar's "Edit Layout…" opens.
+        var openLayoutEditor: () -> Void
+        /// True only while Zones is actually running — the overlay is one of the resources
+        /// `ZonesTool.stop()` gives back, so it cannot be opened on a stopped tool.
+        var isRunning: () -> Bool
+        /// How many zones the layout on the main display actually has, so the rows past it can
+        /// say so.
+        var zoneCount: () -> Int
         /// Every combo any registered tool has bound, running or not (§5.6 cross-tool collisions).
         var boundCombos: () -> [ToolCombo]
     }
@@ -203,13 +246,19 @@ final class ZonesSettingsModel: ObservableObject {
     struct ShortcutRow: Identifiable {
         var id: String
         var label: String
+        /// A zone row past the end of the saved layout. The binding is kept and shown — it starts
+        /// working again the moment the layout grows — but the row says it does nothing today.
+        var isBeyondLayout = false
     }
 
     @Published private(set) var canWrite = true
+    @Published private(set) var canReset = false
     @Published private(set) var blockedMessage: String?
     @Published private(set) var shortcuts = Shortcuts()
     @Published private(set) var dragSnapOn = true
     @Published private(set) var dragTrigger = DragSnapTrigger.default
+    @Published private(set) var isRunning = false
+    @Published private(set) var zoneCount = 0
 
     private let ctx: Context
     /// Snapshot of every tool's bound combos, taken when a capture STARTS. Rebuilding it decodes
@@ -235,19 +284,51 @@ final class ZonesSettingsModel: ObservableObject {
     }
 
     var zoneShortcutRows: [ShortcutRow] {
-        (1...ShortcutKit.zoneRows).map { ShortcutRow(id: ZoneAction.id($0), label: "Zone \($0)") }
+        (1...ShortcutKit.zoneRows).map {
+            ShortcutRow(id: ZoneAction.id($0), label: "Zone \($0)",
+                        isBeyondLayout: zoneCount > 0 && $0 > zoneCount)
+        }
     }
 
     var dragTriggerDisplay: String {
         ShortcutKit.dragSnapDisplay(keyCode: dragTrigger.keyCode, modifiers: dragTrigger.modifiers)
     }
 
+    /// The same bind in words. The field SHOWS glyphs, like every other shortcut in the window,
+    /// and VoiceOver cannot read a glyph — so the spoken value is the worded form.
+    var dragTriggerSpokenValue: String {
+        guard dragTrigger.keyCode == nil else { return dragTriggerDisplay }
+        return ShortcutKit.modifierWords(dragTrigger.modifiers)
+    }
+
+    /// The editor is a live overlay, so it needs a running tool AND a config it can write back to.
+    var canOpenLayoutEditor: Bool { isRunning && canWrite }
+
     func refresh() {
         canWrite = ctx.canWrite()
+        canReset = ctx.canReset()
         blockedMessage = ctx.blockedMessage()
         shortcuts = ctx.shortcuts()
         dragSnapOn = ctx.isDragSnapOn()
         dragTrigger = ctx.dragTrigger()
+        isRunning = ctx.isRunning()
+        zoneCount = ctx.zoneCount()
+    }
+
+    /// Preserve the unreadable section and start again from defaults. Offered by the pane's
+    /// blocked banner — the same recovery the menu bar's warning row offers.
+    func resetSection() {
+        cancelRecording?()
+        ctx.resetSection()
+        refresh()
+    }
+
+    func openLayoutEditor() {
+        guard canOpenLayoutEditor else { return }
+        // The editor takes over the screen; a capture left live would keep every tool's hotkeys
+        // suspended behind it.
+        cancelRecording?()
+        ctx.openLayoutEditor()
     }
 
     func shortcutDisplay(for action: String) -> String {

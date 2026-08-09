@@ -32,6 +32,13 @@ final class CyclerSettingsModel: ObservableObject {
 
         var isGroup: Bool { apps.count > 1 }
         var missingCount: Int { apps.filter { !$0.installed }.count }
+        /// Every app in this binding is gone — the row cannot do anything until one comes back.
+        var isOrphaned: Bool { !apps.isEmpty && missingCount == apps.count }
+        var missingHelp: String {
+            missingCount == 1 && apps.count == 1
+                ? "This app is not installed"
+                : "\(missingCount) of these apps are not installed"
+        }
         var title: String {
             guard !apps.isEmpty else { return "Empty Shortcut" }
             if apps.count <= 2 { return apps.map(\.name).joined(separator: " + ") }
@@ -227,10 +234,15 @@ final class CyclerSettingsModel: ObservableObject {
             }
             // Recording a combo another row already owns means "these apps belong together":
             // fold this row into that one instead of writing a duplicate the coalescer would
-            // silently merge later anyway.
+            // silently merge later anyway. ASK first — two rows collapsing into one with no
+            // warning looks like the other row was deleted. Zones confirms its equivalent
+            // reassign the same way.
             if let other = rows.firstIndex(where: {
                 $0.id != rowID && $0.keyCode == keyCode && $0.modifiers == modifiers
             }) {
+                guard confirmMerge(source: rows[idx], target: rows[other],
+                                   combo: ShortcutKit.display(keyCode: keyCode,
+                                                              modifiers: modifiers)) else { return }
                 merge(rowID: rowID, into: rows[other].id)
                 return
             }
@@ -284,6 +296,19 @@ final class CyclerSettingsModel: ObservableObject {
             message: "\(recorded) is the generated reverse shortcut for \(source.title) (\(sourceShortcut)). Lineup saved it, but that reverse shortcut will not be registered.")
     }
 
+    /// Name both rows and let the user back out. Runs a modal loop, which is safe here: the
+    /// recorder has already handed every tool's hotkeys back by the time a capture is delivered.
+    private func confirmMerge(source: Row, target: Row, combo: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Combine these shortcuts?"
+        alert.informativeText = "\(combo) is already assigned to \(target.title). "
+            + "\(source.title) will join that shortcut as one group, and \(source.title) will no "
+            + "longer have a shortcut of its own."
+        alert.addButton(withTitle: "Merge")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     private func merge(rowID sourceID: UUID, into targetID: UUID) {
         guard sourceID != targetID,
               let sourceIdx = rows.firstIndex(where: { $0.id == sourceID }),
@@ -303,7 +328,9 @@ final class CyclerSettingsModel: ObservableObject {
     private static func appEntry(_ bundleIdentifier: String) -> AppEntry {
         let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
         return AppEntry(bundleIdentifier: bundleIdentifier,
-                        name: AppInfo.name(forBundleIdentifier: bundleIdentifier),
+                        // `displayName`, not `name`: an uninstalled app has no Launch Services
+                        // entry to ask, and the raw identifier is not a name.
+                        name: AppInfo.displayName(forBundleIdentifier: bundleIdentifier),
                         icon: AppInfo.icon(forBundleIdentifier: bundleIdentifier),
                         installed: installed)
     }
@@ -342,14 +369,22 @@ private struct CyclerSettingsPaneBody: View {
     }
 
     var body: some View {
+        // Same shape as every other pane now: a pinned banner strip, then the 540pt content
+        // column of `SettingsSectionView`s. The hero divider, the List inset background and the
+        // fixed footer bar this used to draw were the three things that made Cycler read as a
+        // different app's window — and the footer's own divider ran to the pane edge while the
+        // list's stopped at the inset.
         VStack(alignment: .leading, spacing: 0) {
-            Divider()
-
             // Two INDEPENDENT conditions, not an either/or: an unreadable section and a
             // write-blocked envelope can both be true, and the store-level banner is the one that
             // explains why even the reset below is unavailable.
             if let message = model.blockedMessage {
-                banner(message, systemImage: "info.circle.fill", tint: .secondary)
+                PinnedBannerStrip {
+                    BlockedBanner(message: message,
+                                  actionTitle: "Reset Cycler Shortcuts…",
+                                  action: { model.resetSection() },
+                                  actionEnabled: model.canReset)
+                }
             }
 
             // A section we could not read is NOT an empty binding list. Showing the "No shortcuts
@@ -364,30 +399,35 @@ private struct CyclerSettingsPaneBody: View {
                 CyclerEmptyState(enabled: model.canEdit) { model.showAddShortcutPicker() }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(model.rows) { row in
-                        CyclerBindingRow(row: row, model: model, recorder: recorder)
-                    }
-                }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+                        // The reverse-shortcut hint is the only guidance the hero summary does
+                        // not already give, and as a section caption it is attached to the rows
+                        // it describes instead of floating in a footer bar.
+                        SettingsSectionView(
+                            "Shortcuts",
+                            caption: "Add ⇧ to a shortcut to cycle backwards.") {
+                            ForEach(model.rows) { row in
+                                VStack(spacing: 0) {
+                                    CyclerBindingRow(row: row, model: model, recorder: recorder)
+                                    Divider()
+                                }
+                            }
+                        }
 
-                Divider()
-                HStack(spacing: 12) {
-                    Button { model.showAddShortcutPicker() } label: {
-                        Label("Add Shortcut", systemImage: "plus")
+                        Button { model.showAddShortcutPicker() } label: {
+                            Label("Add Shortcut", systemImage: "plus")
+                        }
+                        .disabled(!model.canEdit)
                     }
-                    .disabled(!model.canEdit)
-                    // The only guidance the pane header's summary does not already give.
-                    Text("Add ⇧ to a shortcut to cycle backwards.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
+                    .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
+                    .padding(.vertical, SettingsMetrics.panePaddingVertical)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Cycler")
         .onAppear {
             // The model has to be able to end a capture from a non-recorder action (opening a
@@ -429,17 +469,8 @@ private struct CyclerSettingsPaneBody: View {
     // No instruction paragraph here on purpose. The same guidance was reaching the user three
     // times over — the `ToolPane` hero summary, a paragraph at the top of this pane, and the
     // empty state. The hero summary and the empty state are kept; what is left over (the reverse
-    // shortcut) is a footer under the list, where it is only shown once there are shortcuts.
-
-    private func banner(_ text: String, systemImage: String, tint: Color) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.callout)
-            .foregroundStyle(tint)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-    }
+    // shortcut) is the "Shortcuts" section caption, where it is only shown once there are
+    // shortcuts to describe.
 }
 
 private struct CyclerBindingRow: View {
@@ -451,8 +482,23 @@ private struct CyclerBindingRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 CyclerAppIconStack(apps: row.apps)
+                    // A row whose apps are all gone is dimmed the way a missing group member is,
+                    // so "this binding does nothing right now" reads before the text does.
+                    .opacity(row.isOrphaned ? 0.55 : 1)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(row.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+                        if row.missingCount > 0 {
+                            // Was a tertiary grey glyph — invisible at the exact moment it had
+                            // something to say. Orange, and named for VoiceOver.
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .help(row.missingHelp)
+                                .accessibilityLabel(row.missingHelp)
+                        }
+                    }
+                    .opacity(row.isOrphaned ? 0.7 : 1)
                     Text(row.detailText).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
@@ -461,7 +507,8 @@ private struct CyclerBindingRow: View {
                     isRecording: recorder.isRecording(row.id),
                     accent: Color(nsColor: Brand.cyclerAccent),
                     enabled: model.canEdit,
-                    accessibilityLabel: "Shortcut for \(row.title)"
+                    accessibilityLabel: "Shortcut for \(row.title)",
+                    rejectionCount: recorder.rejectionCount
                 ) {
                     // Once per capture, never per keystroke: this decodes every tool's section.
                     model.prepareForRecording()
@@ -551,8 +598,9 @@ private struct CyclerGroupAppList: View {
                     if !app.installed {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.orange)
                             .help("App not installed")
+                            .accessibilityLabel("\(app.name) is not installed")
                     }
                     Spacer(minLength: 8)
                     Button {

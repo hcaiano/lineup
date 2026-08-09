@@ -24,6 +24,8 @@ final class HyperkeyPaneModel: ObservableObject {
     @Published private(set) var canEdit = true
     /// Why editing is off, if it is.
     @Published private(set) var blockedMessage: String?
+    /// Whether the recovery reset itself can be written, which is a weaker gate than `canEdit`.
+    @Published private(set) var canReset = false
     /// A refused or failed save, surfaced once (standalone Cycler alerted on this).
     @Published var alert: AlertItem?
 
@@ -43,8 +45,16 @@ final class HyperkeyPaneModel: ObservableObject {
         inputMonitoringGranted = tool.permissions?.isInputMonitoringGranted ?? false
         orphanedMapping = tool.orphanedMapping
         canEdit = tool.canPersist
+        canReset = tool.canResetSection
         blockedMessage = tool.canPersist ? nil : (tool.configBlockedMessage
-            ?? "Your settings file couldn’t be read. It was left untouched — changes won’t be saved.")
+            ?? "Your settings file couldn’t be read. It was left untouched, so changes won’t be saved.")
+    }
+
+    /// Preserve the unreadable section and start again from a disabled Hyperkey. Offered by the
+    /// pane's blocked banner, the same recovery the menu bar's warning row offers.
+    func resetSection() {
+        tool?.resetSection()
+        refresh()
     }
 
     /// Called when the pane appears or the app becomes active again — the two moments a grant or
@@ -94,6 +104,22 @@ final class HyperkeyPaneModel: ObservableObject {
     var shortcutHint: String {
         settings.includeShift ? "Sends ⌃⌥⇧⌘ while held." : "Sends ⌃⌥⌘ while held; a physical ⇧ still passes through."
     }
+
+    /// The standing fact about the chosen trigger, if it has one. Shown as the section's caption
+    /// rather than as a row with no control in it.
+    var triggerCaption: String? {
+        if settings.triggerKey.needsCapsLockRemap {
+            return "Caps Lock is remapped while Hyperkey runs. Lineup restores it when you switch "
+                + "keys, turn Hyperkey off, or quit."
+        }
+        if settings.triggerKey.isFunctionKey {
+            // Without the system setting the key sends its media action (brightness, volume) and
+            // Hyperkey's tap never sees a plain F-key at all.
+            return "Function keys need “Use F1, F2, etc. keys as standard function keys” in "
+                + "System Settings > Keyboard."
+        }
+        return nil
+    }
 }
 
 /// Settings › Hyperkey. Derived from standalone Cycler's `HyperKeyTab`, rebuilt on the shared
@@ -108,95 +134,96 @@ struct HyperkeySettingsPane: View {
     @ObservedObject var model: HyperkeyPaneModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                // Same write-blocked treatment as the Zones and Cycler panes: say why, and turn
-                // the controls off rather than let an edit vanish on save.
-                if let message = model.blockedMessage {
-                    Label(message, systemImage: "lock.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+        VStack(spacing: 0) {
+            // Same write-blocked treatment as the Zones and Cycler panes: one shared banner, say
+            // why, offer the way out, and turn the controls off rather than let an edit vanish on
+            // save. Pinned above the scroll view so it cannot scroll away from the dead controls
+            // it explains.
+            if let message = model.blockedMessage {
+                PinnedBannerStrip {
+                    BlockedBanner(message: message,
+                                  actionTitle: "Reset Hyperkey Settings…",
+                                  action: { model.resetSection() },
+                                  actionEnabled: model.canReset)
                 }
-
-                SettingsSectionView("Hyper key") {
-                    SettingsRow(title: "Trigger key",
-                                detail: "Hold this key to send a Hyper modifier to every app.") {
-                        Picker("", selection: model.trigger) {
-                            ForEach(TriggerKey.pickerCases, id: \.self) { key in
-                                Text(key.displayName).tag(key)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 190)
-                        .disabled(!model.canEdit)
-                        // `labelsHidden()` leaves VoiceOver with the row's visual title only,
-                        // which it does not read as this control's name.
-                        .accessibilityLabel("Trigger key")
-                    }
-                    SettingsRow(title: "Include Shift (⇧)", detail: model.shortcutHint) {
-                        Toggle("", isOn: model.includeShift)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .disabled(!model.canEdit)
-                            .accessibilityLabel("Include Shift")
-                    }
-                    if model.settings.triggerKey.needsCapsLockRemap {
-                        SettingsRow(
-                            title: "Caps Lock is remapped while Hyperkey runs",
-                            detail: "Lineup restores it when you switch keys, turn Hyperkey off, or quit.") {
-                            EmptyView()
-                        }
-                    }
-                }
-
-                if let blocked = model.blockedStatus {
-                    SettingsSectionView("Status") {
-                        SettingsRow(title: blocked,
-                                    detail: model.needsInputMonitoring
-                                        ? "Allow Lineup in System Settings, then come back — Hyperkey retries when the app becomes active."
-                                        : nil) {
-                            if model.needsInputMonitoring {
-                                Button("Open Input Monitoring") { model.openInputMonitoringSettings() }
-                            } else {
-                                EmptyView()
-                            }
-                        }
-                    }
-                } else if model.isRunning, let status = model.status {
-                    SettingsSectionView("Status") {
-                        SettingsRow(title: status, detail: nil) { EmptyView() }
-                    }
-                }
-
-                SettingsSectionView("Permission") {
-                    SettingsRow(
-                        title: "Input Monitoring",
-                        detail: model.inputMonitoringGranted
-                            ? "Granted. Hyperkey needs it to see the trigger key."
-                            : "Not granted. Hyperkey can't see the trigger key without it. Lineup asks for this only when you turn Hyperkey on.") {
-                        Button(model.inputMonitoringGranted ? "Open System Settings…" : "Grant…") {
-                            model.openInputMonitoringSettings()
-                        }
-                    }
-                }
-
-                if model.orphanedMapping {
-                    SettingsSectionView("Recovery") {
-                        SettingsRow(
-                            title: "Caps Lock is still remapped",
-                            detail: "A Caps Lock → F18 mapping is applied that no running app claims — usually a Cycler install that quit without cleaning up. Restoring it is safe.") {
-                            Button("Restore Caps Lock") { model.restoreCapsLock() }
-                        }
-                    }
-                }
-
-                hint
             }
-            .frame(maxWidth: SettingsMetrics.contentWidth, alignment: .leading)
-            .padding(28)
-            .frame(maxWidth: .infinity, alignment: .center)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+                    SettingsSectionView("Hyper key", caption: model.triggerCaption) {
+                        SettingsRow(title: "Trigger key",
+                                    detail: "Hold this key to send a Hyper modifier to every app.") {
+                            Picker("", selection: model.trigger) {
+                                ForEach(TriggerKey.pickerCases, id: \.self) { key in
+                                    Text(key.displayName).tag(key)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 190)
+                            .disabled(!model.canEdit)
+                            // `labelsHidden()` leaves VoiceOver with the row's visual title only,
+                            // which it does not read as this control's name.
+                            .accessibilityLabel("Trigger key")
+                        }
+                        SettingsRow(title: "Include Shift (⇧)", detail: model.shortcutHint) {
+                            Toggle("", isOn: model.includeShift)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .disabled(!model.canEdit)
+                                .accessibilityLabel("Include Shift")
+                        }
+                    }
+
+                    if let blocked = model.blockedStatus {
+                        SettingsSectionView("Status") {
+                            SettingsRow(title: blocked,
+                                        detail: model.needsInputMonitoring
+                                            ? "Allow Lineup in System Settings, then come back. Hyperkey retries when the app becomes active."
+                                            : nil) {
+                                if model.needsInputMonitoring {
+                                    Button("Open Input Monitoring") { model.openInputMonitoringSettings() }
+                                } else {
+                                    EmptyView()
+                                }
+                            }
+                        }
+                    } else if model.isRunning, let status = model.status {
+                        SettingsSectionView("Status") {
+                            SettingsCaption(text: status, systemImage: "checkmark.circle")
+                        }
+                    }
+
+                    SettingsSectionView("Permission") {
+                        SettingsRow(
+                            title: "Input Monitoring",
+                            detail: model.inputMonitoringGranted
+                                ? "Granted. Hyperkey needs it to see the trigger key."
+                                : "Not granted. Hyperkey can't see the trigger key without it. Lineup asks for this only when you turn Hyperkey on.") {
+                            Button(model.inputMonitoringGranted ? "Open System Settings…" : "Grant…") {
+                                model.openInputMonitoringSettings()
+                            }
+                        }
+                    }
+
+                    if model.orphanedMapping {
+                        SettingsSectionView("Recovery") {
+                            SettingsRow(
+                                title: "Caps Lock is still remapped",
+                                detail: "A Caps Lock → F18 mapping is applied that no running app claims, usually a Cycler install that quit without cleaning up. Restoring it is safe.") {
+                                Button("Restore Caps Lock") { model.restoreCapsLock() }
+                            }
+                        }
+                    }
+
+                    hint
+                }
+                .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
+                .padding(.vertical, SettingsMetrics.panePaddingVertical)
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Hyperkey")
         .onAppear { model.recheck() }
         .onReceive(NotificationCenter.default.publisher(
@@ -211,20 +238,15 @@ struct HyperkeySettingsPane: View {
     /// Plan §6.4 — the one genuinely load-bearing cross-tool message in the suite: Zones' defaults
     /// and most Cycler bindings are ⌃⌥⇧⌘, and with Hyperkey off the user needs a hyper source from
     /// somewhere.
+    ///
+    /// Drawn as a caption, not as a card. It was the only card in the whole window, and its fill
+    /// (`textBackgroundColor` at 50%) measured a 1.000 contrast ratio against the light window
+    /// background — a card with no card in it. The section-caption treatment is what every other
+    /// standing explanation in Settings uses.
     private var hint: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "lightbulb")
-                .foregroundStyle(.secondary)
-            Text("Zones and Cycler shortcuts use ⌃⌥⇧⌘. Turn Hyperkey on to get that from Caps Lock without Karabiner or Raycast.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(Color.primary.opacity(0.08)))
+        SettingsCaption(
+            text: "Zones and Cycler shortcuts use ⌃⌥⇧⌘. Turn Hyperkey on to get that from Caps "
+                + "Lock without Karabiner or Raycast.",
+            systemImage: "lightbulb")
     }
 }
