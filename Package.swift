@@ -34,6 +34,11 @@ let package = Package(
                 "HyperkeyCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
+            // Per-tool app icons for the Settings sidebar and pane headers. `.copy` (not
+            // `.process`) so the folder shape inside lineup_lineup.bundle is predictable.
+            // Scripts/build-app.sh must copy that bundle into Contents/Resources, or
+            // Bundle.module finds nothing in the shipped app.
+            resources: [.copy("Resources/ToolIcons")],
             // The bundled app loads Sparkle.framework from Contents/Frameworks; SwiftPM only
             // adds an rpath into .build, so add the bundle-relative one for the shipped app.
             linkerSettings: [

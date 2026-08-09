@@ -29,6 +29,7 @@ func runAppTests() throws {
     try runLegacyImportTests()
     try runIdentityTests()
     try runShellSourceScanTests()
+    try runSettingsWindowTests()
 }
 
 // MARK: - Envelope
@@ -666,5 +667,147 @@ private func runShellSourceScanTests() throws {
     for component in ["SettingsSection", "RecorderButton", "ShortcutField", "ShortcutRecorder"] {
         check(paths.contains("Sources/lineup/Settings/Components/\(component).swift"),
               "shared Settings component \(component).swift exists")
+    }
+}
+
+// MARK: - Settings window (Phase 7b)
+
+/// The Settings window lives in the app target, which this runner does not link, so its
+/// invariants are asserted the same way the other shell rules are: by scanning the sources.
+/// These are the rules three parallel tool agents could each break by accident — the fixed
+/// sidebar order, the single owner of the enable switch, the private-build About, and the
+/// resource plumbing that makes the per-tool icons survive `Scripts/build-app.sh`.
+private func runSettingsWindowTests() throws {
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        guard let text = files.first(where: { $0.path == path })?.text else {
+            check(false, "\(path) exists")
+            return ""
+        }
+        return text
+    }
+
+    // ---- Sidebar: shape and fixed order ----
+    let root = source("Sources/lineup/Settings/SettingsRootView.swift")
+    check(root.contains("NavigationSplitView"), "Settings is a NavigationSplitView")
+    check(root.contains(".listStyle(.sidebar)"), "the navigator uses the sidebar list style")
+    check(root.contains("navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 240)"),
+          "the sidebar column is pinned to min 190 / ideal 200 / max 240")
+    check(root.contains("frame(minWidth: 760, minHeight: 520)"),
+          "the window cannot be resized below 760x520")
+    if let general = root.range(of: "SettingsSection.general"),
+       let tools = root.range(of: "Section(\"Tools\")"),
+       let about = root.range(of: "SettingsSection.about") {
+        check(general.lowerBound < tools.lowerBound && tools.lowerBound < about.lowerBound,
+              "sidebar order is fixed: General, then the Tools section, then About")
+    } else {
+        check(false, "the sidebar declares General, a Tools section and About")
+    }
+    check(root.contains("ToolSidebarRow(row: row)"), "tool rows are ToolSidebarRow")
+    check(root.contains("ToolIcon(id: row.id"), "a sidebar tool row shows the tool's app icon")
+    check(!root.contains("Toggle(\"\""),
+          "the sidebar carries NO switch — the enable switch belongs to the pane header")
+
+    // ---- The shell, not the tools, owns the pane header and the enable switch ----
+    let store = source("Sources/lineup/Settings/SettingsStore.swift")
+    check(store.contains("ToolPane(") && store.contains("tool.makeSettingsPane()"),
+          "a tool's pane is wrapped by the shell's ToolPane header")
+    let paneOwners = files.filter { $0.text.contains("binding(forTool:") }.map(\.path)
+    check(paneOwners == ["Sources/lineup/Settings/SettingsStore.swift"],
+          "the per-tool enable binding has exactly one owner (got \(paneOwners))")
+
+    let pane = source("Sources/lineup/Settings/ToolPane.swift")
+    check(pane.contains("ToolIcon(id: id, size: 72)"), "the pane header shows a 72pt tool icon")
+    check(pane.contains("toggleStyle(.switch)") && pane.contains("alignment: .topTrailing"),
+          "the enable switch sits at the top right of the pane header")
+    check(pane.contains("Text(summary)"), "the pane header shows the tool's one-line summary")
+
+    // ---- Per-tool icons, and the resource plumbing they depend on ----
+    let icon = source("Sources/lineup/Settings/Components/ToolIcon.swift")
+    check(icon.contains("struct AppStyleIcon"),
+          "AppStyleIcon is the drawn-tile template for a tool with no artwork")
+    check(icon.contains("applicationIconImage"), "Zones uses the running app's own icon")
+    check(icon.contains("Bundle.module") && icon.contains("\"cycler-icon\""),
+          "Cycler's icon is loaded from the package resource bundle")
+    let paths = Set(files.map(\.path))
+    check(!paths.contains("Sources/lineup/App/ZZPreviewTools.swift"),
+          "the temporary preview-tool scaffold is not committed")
+    check(!files.contains { $0.text.contains("LINEUP_PREVIEW_TOOLS") },
+          "no source reads the preview-tool escape hatch")
+    check(FileManager.default.fileExists(atPath: "Sources/lineup/Resources/ToolIcons/cycler-icon.png"),
+          "the Cycler icon ships inside the lineup target")
+    let manifest = (try? String(contentsOfFile: "Package.swift", encoding: .utf8)) ?? ""
+    check(manifest.contains(".copy(\"Resources/ToolIcons\")"),
+          "Package.swift declares the tool icons as a target resource")
+    // build-app.sh assembles the .app by hand: without this copy, Bundle.module finds nothing in
+    // the shipped app and every tool icon silently falls back to a drawn tile.
+    let buildScript = (try? String(contentsOfFile: "Scripts/build-app.sh", encoding: .utf8)) ?? ""
+    check(buildScript.contains("${EXEC_NAME}_${EXEC_NAME}.bundle")
+          && buildScript.contains("${APP}/Contents/Resources/$(basename \"${RES_BUNDLE}\")"),
+          "build-app.sh copies the SwiftPM resource bundle into Contents/Resources")
+
+    // ---- Window controller ----
+    let controller = source("Sources/lineup/Settings/SettingsWindowController.swift")
+    check(controller.contains("isReleasedWhenClosed = false"),
+          "the Settings window is not freed by AppKit on close")
+    check(controller.contains("Product.name) Settings"),
+          "the window title is \"\(Product.name) Settings\"")
+    check(controller.contains("private func placeWindowIfNeeded"),
+          "the off-screen window recovery is kept")
+    check(controller.contains("ActivationCoordinator.shared.retain(Self.activationReason)")
+          && controller.contains("ActivationCoordinator.shared.release(Self.activationReason)"),
+          "Settings retains and releases activation under one reason")
+    for hook in ["func windowDidResignKey", "func windowWillClose"] {
+        guard let start = controller.range(of: hook) else {
+            check(false, "SettingsWindowController implements \(hook)")
+            continue
+        }
+        let body = controller[start.lowerBound...].prefix(260)
+        check(body.contains("store.stopAllRecording()"),
+              "\(hook) stops every live recorder")
+    }
+    check(controller.contains("store.onRecordingRestoreFailures"),
+          "combos another app stole during recording are surfaced to the user")
+
+    // ---- General pane ----
+    let general = source("Sources/lineup/Settings/GeneralPane.swift")
+    for section in ["Startup", "Menu bar", "Permissions", "Updates"] {
+        check(general.contains("SettingsSectionView(\"\(section)\")"),
+              "General has a \(section) section, in the shared section style")
+    }
+    check(general.contains("$store.launchAtLogin") && general.contains("$store.showMenuBarIcon"),
+          "General drives launch-at-login and the menu-bar icon")
+    check(general.contains("AppUpdater.shared.checkForUpdates"),
+          "General's Check for Updates goes through the one Sparkle controller")
+    check(general.contains("permissions.openSettings(for: permission)"),
+          "a permission row opens the right System Settings pane")
+    check(general.contains("Required by ") && general.contains("requirements"),
+          "a permission row names the tools that need it, from requiredPermissions")
+    check(!general.contains("RoundedRectangle"),
+          "General uses the shared section style, not a pane-local card")
+
+    // ---- About: private build ----
+    let about = source("Sources/lineup/Settings/AboutPane.swift")
+    check(about.contains("lineup.caiano.com"), "About links the product site")
+    check(about.contains("AppUpdater.shared.checkForUpdates"), "About offers Check for Updates")
+    check(!about.lowercased().contains("github"),
+          "About has no source-repository link (Lineup 2.0 is a private build)")
+    check(!about.contains("MIT"), "About has no open-source licence line")
+
+    // ---- Reopen path: with no menu-bar icon, Settings is the only way back in ----
+    let shell = source("Sources/lineup/App/AppShell.swift")
+    check(shell.contains("func applicationShouldHandleReopen"),
+          "the shell handles reopen (Dock / Spotlight)")
+    if let start = shell.range(of: "func applicationShouldHandleReopen") {
+        let body = shell[start.lowerBound...].prefix(300)
+        check(body.contains("showMenuBarIcon") && body.contains("openSettings()"),
+              "reopen shows Settings when the menu-bar icon is hidden")
+    }
+    if let start = shell.range(of: "private func setShowMenuBarIcon") {
+        let body = shell[start.lowerBound...].prefix(300)
+        check(body.contains("statusItem.refresh()"),
+              "flipping the menu-bar icon updates the status item live")
+    } else {
+        check(false, "AppShell owns setShowMenuBarIcon")
     }
 }
