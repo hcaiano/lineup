@@ -17,6 +17,7 @@ func runSuite(_ name: String, _ body: () throws -> Void) {
 runSuite("ZonesSuite", runZonesTests)
 runSuite("CyclerSuite", runCyclerTests)
 runSuite("HyperkeySuite", runHyperkeyTests)
+runSuite("AppSuite", runAppTests)
 
 // ---- Report ----
 if failures == 0 {
