@@ -36,6 +36,7 @@ func runAppTests() throws {
     try runConfigCorrectnessTests()
     try runToolWriteDisciplineTests()
     try runUIStateContractTests()
+    try runVisualDesignTests()
 }
 
 // MARK: - Envelope
@@ -1349,13 +1350,20 @@ private func runOnboardingTests() throws {
     let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
     check(zonesPane.contains("caption: \"Click a shortcut, then press a key combo."),
           "the recorder instructions are a caption on the shortcut section, not a floating line")
+    // The section is titled "Behavior" since batch 3: it holds drag-to-snap, the drag bind AND the
+    // layout-editor row, so "Drag to snap" named only a third of it (and repeated the row below it).
     if let caption = zonesPane.range(of: "caption: \"Click a shortcut"),
-       let dragSection = zonesPane.range(of: "SettingsSectionView(\"Drag to snap\")") {
+       let dragSection = zonesPane.range(of: "SettingsSectionView(\"Behavior\")") {
         check(dragSection.lowerBound < caption.lowerBound,
-              "the recorder caption sits below the drag-snap section, where the recorders are")
+              "the recorder caption sits below the behaviour section, where the recorders are")
     } else {
-        check(false, "the Zones pane keeps its drag-snap section")
+        check(false, "the Zones pane keeps its behaviour section")
     }
+    check(!zonesPane.contains("SettingsSectionView(\"Drag to snap\")")
+            && !zonesPane.contains("SettingsSectionView(\"Zones\")"),
+          "no section repeats its own row's title, and no section is named after the pane")
+    check(zonesPane.contains("\"Zone shortcuts\","),
+          "the zone rows sit under a \"Zone shortcuts\" header")
     check(source("Sources/lineup/Settings/Components/SettingsSection.swift")
             .contains("init(_ title: String, caption: String? = nil"),
           "SettingsSectionView supports a header caption")
@@ -1473,7 +1481,9 @@ private func runParityFixTests() throws {
 
     // ---- H8: the Hyperkey pane behaves like the other two when writes are blocked ----
     let hyperPane = source("Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift")
-    check(hyperPane.contains("model.blockedMessage") && hyperPane.contains("systemImage: \"lock.fill\""),
+    // Since batch 3 the "lock.fill" glyph is `BlockedBanner`'s own default, so the pane no longer
+    // names it — what it must still do is show that ONE shared banner for `blockedMessage`.
+    check(hyperPane.contains("model.blockedMessage") && hyperPane.contains("BlockedBanner(message: message"),
           "the Hyperkey pane shows the write-blocked banner the Zones pane shows")
     let disabledControls = hyperPane.components(separatedBy: ".disabled(!model.canEdit)").count - 1
     check(disabledControls == 2,
@@ -2069,4 +2079,314 @@ private enum ShortcutKitCaps {
 private enum SettingsMetricsMirror {
     static let rowHeight: Double = 44
     static let shortcutRowHeight: Double = 28
+}
+
+// MARK: - Visual design system (review batch 3)
+
+/// The 2.0 design review's findings, locked in as source rules.
+///
+/// Every one of these is a "this is done in exactly one place, the same way everywhere" property,
+/// which is why they are scans: the panes are SwiftUI view bodies the runner cannot instantiate,
+/// but the shared component being used at all (rather than a fourth hand-rolled variant appearing
+/// in the next tool) is a text property of the tree.
+private func runVisualDesignTests() throws {
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        guard let text = files.first(where: { $0.path == path })?.text else {
+            check(false, "\(path) exists")
+            return ""
+        }
+        return text
+    }
+
+    // ---- 1. ONE blocked banner, used by every pane ----
+    let banner = source("Sources/lineup/Settings/Components/BlockedBanner.swift")
+    check(banner.contains("struct BlockedBanner: View"), "the shared blocked banner exists")
+    check(banner.contains("var actionTitle: String?") && banner.contains("var action: (() -> Void)?"),
+          "the banner carries the tool's own recovery action, so it is never a dead end")
+    check(banner.contains("var actionEnabled: Bool"),
+          "the banner can show a recovery it cannot currently run, rather than hiding it")
+    check(banner.contains("struct PinnedBannerStrip"),
+          "the banner has one placement helper, so every pane pins it the same way")
+    check(banner.contains("SettingsMetrics.contentWidth"),
+          "the pinned banner sits on the shared content column, not on the pane edge")
+
+    let bannerUsers = [
+        "Sources/lineup/Tools/Zones/ZonesSettingsPane.swift",
+        "Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift",
+        "Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift",
+        "Sources/lineup/Settings/ToolPane.swift",
+    ]
+    for path in bannerUsers {
+        let text = source(path)
+        check(text.contains("PinnedBannerStrip {") && text.contains("BlockedBanner("),
+              "\(path) shows the blocked state through the shared pinned banner")
+    }
+    for path in bannerUsers.dropLast() { // ToolPane's banner explains a switch, not a section
+        check(source(path).contains("actionTitle: \"Reset"),
+              "\(path)'s banner offers its tool's reset")
+    }
+    // The three hand-rolled variants the banner replaced. Each was an orange Label at a different
+    // place in a different pane, which gave one condition three severities.
+    for path in bannerUsers {
+        let text = source(path)
+        check(!text.contains("Label(message, systemImage:")
+                && !text.contains("Label(model.blockedMessage"),
+              "\(path) has no hand-rolled blocked label left")
+    }
+
+    // ---- 2. Contrast: a sentence is never drawn in orange ----
+    //
+    // `Color.orange` on the light window background measures 2.34:1, well under the 4.5:1 body
+    // floor. SF Symbols keep it — a glyph only has to be noticed — so the rule is about `Text`.
+    check(banner.contains("Text(message)"), "the banner draws its message as a Text")
+    if let msg = banner.range(of: "Text(message)") {
+        let chain = banner[msg.lowerBound...].prefix(220)
+        check(chain.contains(".foregroundStyle(.primary)"),
+              "the banner's message is .primary, never the orange the old variants used")
+        check(!chain.contains("orange"), "no orange reaches the banner's message text")
+    }
+    var orangeText: [String] = []
+    for file in files where file.path.hasPrefix("Sources/lineup/") {
+        let lines = file.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        for (i, line) in lines.enumerated() where line.contains("Text(") {
+            // Walk the modifier chain hanging off this Text and stop at the next statement.
+            var j = i + 1
+            while j < lines.count, j <= i + 5 {
+                let next = lines[j].trimmingCharacters(in: .whitespaces)
+                guard next.hasPrefix(".") else { break }
+                if next.contains("foregroundStyle(.orange)") || next.contains("foregroundStyle(Color.orange)") {
+                    orangeText.append("\(file.path):\(j + 1)")
+                }
+                j += 1
+            }
+            let inline = line
+            if inline.contains(".foregroundStyle(.orange)") || inline.contains(".foregroundStyle(Color.orange)") {
+                orangeText.append("\(file.path):\(i + 1)")
+            }
+        }
+    }
+    check(orangeText.isEmpty,
+          "no body text is drawn in orange, which cannot reach 4.5:1 on the light window (got \(orangeText))")
+
+    // ---- 3. Shared HUD motion, and glass that does not follow a light desktop ----
+    let motion = source("Sources/lineup/App/HUDMotion.swift")
+    check(motion.contains("static let fadeIn: TimeInterval = 0.12")
+            && motion.contains("static let fadeOut: TimeInterval = 0.14"),
+          "the two overlays share one fade pair (0.12 in, 0.14 out)")
+    check(motion.contains("accessibilityDisplayShouldReduceMotion") && motion.contains("? 0 : base"),
+          "Reduce Motion snaps the overlays instead of crossfading, and still runs the completion")
+    for path in ["Sources/lineup/Tools/Cycler/CycleHUD.swift",
+                 "Sources/lineup/Tools/Hyperkey/HyperKeyBlockedPill.swift"] {
+        let text = source(path)
+        check(text.contains("HUDMotion.duration(HUDMotion.fadeIn)")
+                && text.contains("HUDMotion.duration(HUDMotion.fadeOut)"),
+              "\(path) takes both fades from HUDMotion")
+        check(text.contains("glass.appearance = NSAppearance(named: .darkAqua)"),
+              "\(path) pins its glass dark, because its labels are hard white")
+        check(text.contains("NSAppearance(named: .vibrantDark)"),
+              "\(path)'s pre-26 fallback keeps forcing a dark vibrancy, for the same reason")
+    }
+
+    // ---- 4. One rhythm for every pane ----
+    let metrics = source("Sources/lineup/Settings/Components/SettingsSection.swift")
+    check(metrics.contains("static let contentWidth: CGFloat = 540")
+            && metrics.contains("static let sectionSpacing: CGFloat = 26")
+            && metrics.contains("static let panePaddingVertical: CGFloat = 24"),
+          "SettingsMetrics owns the column width and both outer gaps")
+    let panes = ["Sources/lineup/Settings/GeneralPane.swift",
+                 "Sources/lineup/Tools/Zones/ZonesSettingsPane.swift",
+                 "Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift",
+                 "Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift"]
+    for path in panes {
+        let text = source(path)
+        check(text.contains(".frame(width: SettingsMetrics.contentWidth"),
+              "\(path) sets the column WIDTH, so every pane centres on the same gutter")
+        check(!text.contains("maxWidth: SettingsMetrics.contentWidth"),
+              "\(path) does not merely cap its width (Hyperkey did, and drifted)")
+        check(text.contains("spacing: SettingsMetrics.sectionSpacing")
+                && text.contains(".padding(.vertical, SettingsMetrics.panePaddingVertical)"),
+              "\(path) takes its section spacing and pane padding from SettingsMetrics")
+    }
+    check(source("Sources/lineup/Settings/ToolPane.swift")
+            .contains("ToolIcon(id: id, size: 72)\n                .padding(.bottom, 2)\n                .frame(width: SettingsMetrics.contentWidth)"),
+          "the hero enable switch hangs off the 540pt content gutter, not the pane edge")
+
+    // ---- 5. Type hierarchy and section endings ----
+    check(metrics.contains(".font(.system(size: 15, weight: .semibold))"),
+          "a section header is a real step above the 13pt row title under it")
+    check(metrics.contains(".padding(.bottom, -SettingsMetrics.dividerThickness)")
+            && metrics.contains(".clipped()"),
+          "a section drops the hairline under its LAST row, which separated nothing")
+    check(metrics.contains("struct SettingsCaption"),
+          "a standing explanation has a caption shape, instead of a row promising a control")
+    let hyperPane = source("Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift")
+    check(!hyperPane.contains("EmptyView()\n                        }\n                    }\n                } else if"),
+          "the Hyperkey status line is no longer a SettingsRow with an empty control")
+    check(hyperPane.contains("SettingsCaption(text: status"),
+          "the running status is a caption")
+    check(hyperPane.contains("SettingsCaption(\n            text: \"Zones and Cycler shortcuts use"),
+          "the cross-tool hint is a caption, not the window's only card")
+    check(!hyperPane.contains("Color(nsColor: .textBackgroundColor).opacity(0.5)"),
+          "the hint card's 1.000-contrast fill is gone")
+
+    // ---- 6. One key cap size, one modifier vocabulary ----
+    let caps = source("Sources/lineup/Settings/Components/KeyCapRow.swift")
+    check(!caps.contains("enum Size") && !caps.contains("var size: Size"),
+          "key caps render at ONE size, in both recorder controls")
+    check(source("Sources/lineup/Settings/Components/ShortcutField.swift").contains("KeyCapRow(display: text)"),
+          "Cycler's field uses the same caps Zones' button does")
+    let zonesPaneSource = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
+    let kit = source("Sources/lineup/App/ShortcutKit.swift")
+    check(kit.contains("static func modifierDisplay") && kit.contains("s += \"⇧\""),
+          "a modifier-only bind renders as glyphs, like every other shortcut in the window")
+    check(kit.contains("static func modifierWords"),
+          "the worded form survives for help text and VoiceOver, where a glyph reads as nothing")
+    check(zonesPaneSource.contains("var dragTriggerSpokenValue: String")
+            && zonesPaneSource.contains("ShortcutKit.modifierWords(dragTrigger.modifiers)")
+            && zonesPaneSource.contains("accessibilityValue: model.dragTriggerSpokenValue"),
+          "the drag bind SHOWS glyphs and SPEAKS words, so the swap costs no accessibility")
+    let recorderButton = source("Sources/lineup/Settings/Components/RecorderButton.swift")
+    check(recorderButton.contains(".frame(minWidth: Self.minWidth)") && !recorderButton.contains(".frame(width: 164)"),
+          "the recorder button sizes to its content above a minimum, instead of clipping at 164pt")
+    for path in [recorderButton, source("Sources/lineup/Settings/Components/ShortcutField.swift")] {
+        check(path.contains("Press keys…") && !path.contains("Press keys..."),
+              "the recorder placeholder uses a real ellipsis")
+    }
+
+    // ---- 7. A refused keystroke is seen as well as heard ----
+    let feedback = source("Sources/lineup/Settings/Components/RecordingFeedback.swift")
+    check(feedback.contains("func recordingRejectionShake") && feedback.contains("accessibilityReduceMotion"),
+          "the rejection shake exists and is skipped under Reduce Motion")
+    let recorder = source("Sources/lineup/Settings/Components/ShortcutRecorder.swift")
+    if let beep = recorder.range(of: "NSSound.beep()") {
+        check(recorder[beep.lowerBound...].prefix(120).contains("rejectionCount &+= 1"),
+              "every beep is paired with the counter the capturing control watches")
+    } else {
+        check(false, "the recorder beeps on a refused keystroke")
+    }
+    for path in ["Sources/lineup/Settings/Components/RecorderButton.swift",
+                 "Sources/lineup/Settings/Components/ShortcutField.swift"] {
+        let text = source(path)
+        check(text.contains("var rejectionCount: Int") && text.contains(".recordingRejectionShake(rejectionCount)"),
+              "\(path) shakes on a refused keystroke")
+        check(text.contains("strokeBorder"),
+              "\(path) shows a visible recording border, not only a tint")
+    }
+
+    // ---- 8. The accent belongs to the selection ----
+    let root = source("Sources/lineup/Settings/SettingsRootView.swift")
+    if let tint = root.range(of: ".tint(Color(nsColor: Brand.blue))"),
+       let style = root.range(of: ".navigationSplitViewStyle(") {
+        check(tint.lowerBound < style.lowerBound,
+              "the brand tint is on the SIDEBAR column; on the split view every pane button went blue")
+    } else {
+        check(false, "the Settings root tints its sidebar")
+    }
+    check(root.components(separatedBy: ".tint(").count - 1 == 1,
+          "the window tints exactly one thing")
+
+    // ---- 9. Cycler: an orphaned binding says so, and says which app ----
+    let cyclerPane = source("Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift")
+    check(source("Sources/lineup/Tools/Cycler/AppPicker.swift").contains("static func displayName(forBundleIdentifier"),
+          "an uninstalled app has a friendly name to fall back on")
+    check(cyclerPane.contains("AppInfo.displayName(forBundleIdentifier: bundleIdentifier)"),
+          "the pane uses it, so a row is never titled with a raw bundle identifier")
+    check(cyclerPane.contains("var isOrphaned: Bool") && cyclerPane.contains("row.isOrphaned ? 0.55 : 1"),
+          "a binding whose apps are ALL gone is dimmed, single-app rows included")
+    if let warn = cyclerPane.range(of: "if row.missingCount > 0 {") {
+        let body = cyclerPane[warn.lowerBound...].prefix(700)
+        check(body.contains("exclamationmark.triangle.fill") && body.contains(".foregroundStyle(.orange)"),
+              "the missing-app warning is visible rather than a tertiary grey glyph")
+        check(body.contains(".accessibilityLabel(row.missingHelp)"),
+              "the warning glyph is named for VoiceOver")
+    } else {
+        check(false, "the Cycler row warns about missing apps")
+    }
+    check(cyclerPane.contains(".accessibilityLabel(\"\\(app.name) is not installed\")"),
+          "a missing GROUP member is named too")
+
+    // ---- 10. Merging two Cycler rows is a decision, not a side effect ----
+    if let merge = cyclerPane.range(of: "if let other = rows.firstIndex(where: {") {
+        check(cyclerPane[merge.lowerBound...].prefix(500).contains("guard confirmMerge("),
+              "recording a duplicate combo asks before folding one row into the other")
+    } else {
+        check(false, "the Cycler model still merges on a duplicate combo")
+    }
+    check(cyclerPane.contains("alert.addButton(withTitle: \"Merge\")")
+            && cyclerPane.contains("alert.addButton(withTitle: \"Cancel\")")
+            && cyclerPane.contains("target.title") && cyclerPane.contains("source.title"),
+          "the merge alert names BOTH rows and offers Merge/Cancel, like Zones' reassign")
+
+    // ---- 11. Cycler's pane is the same window as the other two ----
+    check(!cyclerPane.contains(".listStyle(.inset)") && !cyclerPane.contains("scrollContentBackground"),
+          "the List inset background that made Cycler look like another app is gone")
+    check(cyclerPane.contains("SettingsSectionView(\n                            \"Shortcuts\","),
+          "Cycler's rows live in a SettingsSectionView like every other pane's")
+    check(cyclerPane.contains("CyclerEmptyState") && cyclerPane.contains("CyclerLoadErrorState"),
+          "the good empty state and the batch-2 load-error state both survive the unification")
+
+    // ---- 12. Zones: the layout editor is reachable from the pane that owns zones ----
+    let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
+    check(zonesPane.contains("Button(\"Open Layout Editor…\") { model.openLayoutEditor() }")
+            && zonesPane.contains(".disabled(!model.canOpenLayoutEditor)"),
+          "the pane opens the layout editor, and only when the tool can actually show it")
+    check(zonesPane.contains("var canOpenLayoutEditor: Bool { isRunning && canWrite }"),
+          "the editor needs a running tool AND a writable config")
+    check(source("Sources/lineup/Tools/Zones/ZonesTool.swift").contains("openLayoutEditor: { [weak self] in self?.openEditor() }"),
+          "the pane's button and the menu item run the SAME action")
+    check(zonesPane.contains("if row.isBeyondLayout") && zonesPane.contains("(not in current layout)"),
+          "a zone row past the saved layout says so instead of silently doing nothing")
+
+    // ---- 13. Hyperkey: the F-key caveat, where it applies ----
+    check(source("Sources/HyperkeyCore/TriggerKey.swift").contains("public var isFunctionKey: Bool"),
+          "the trigger model knows which keys are function keys")
+    check(hyperPane.contains("settings.triggerKey.isFunctionKey")
+            && hyperPane.contains("Use F1, F2, etc. keys as standard function keys"),
+          "the pane names the System Settings switch a function-key trigger needs")
+    check(hyperPane.contains("caption: model.triggerCaption"),
+          "the caveat is the section's caption, so it appears only for the key it applies to")
+
+    // ---- 14. About: one story, one icon ----
+    let aboutPane = source("Sources/lineup/Settings/AboutPane.swift")
+    check(aboutPane.contains("Image(nsImage: AppIconImage.shared)") && !aboutPane.contains("Brand.menuBarLogo()"),
+          "the About pane shows the real app icon, like the About window does")
+    check(aboutPane.contains("Spacer(minLength: 0)")
+            && aboutPane.components(separatedBy: "Spacer(minLength: 0)").count - 1 == 2,
+          "the About content is centred between equal spacers, not stranded at the two edges")
+
+    // ---- 15. Onboarding: good news reads as good news ----
+    let onboardingKit = source("Sources/lineup/App/OnboardingKit.swift")
+    check(onboardingKit.contains("static let successTint"),
+          "the import confirmation has a success tint of its own")
+    for path in ["Sources/lineup/App/WelcomeWindow.swift", "Sources/lineup/App/WhatsNewWindow.swift"] {
+        let text = source(path)
+        check(text.contains("tint: OnboardingBanner.successTint"),
+              "\(path)'s import confirmation is not drawn in the warning's colour")
+        check(text.contains(".buttonStyle(.borderedProminent)"),
+              "\(path) has exactly one recommended action, and it looks like one")
+    }
+
+    // ---- 16. Em dashes are not user-facing copy ----
+    var dashes: [String] = []
+    for file in files {
+        for (i, raw) in file.text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            let line = String(raw)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("//") || trimmed.hasPrefix("*") { continue }
+            guard line.contains("—") else { continue }
+            // A trailing comment on a code line is prose too, not copy.
+            if let commentStart = line.range(of: "//"),
+               line.range(of: "—")!.lowerBound > commentStart.lowerBound { continue }
+            dashes.append("\(file.path):\(i + 1)")
+        }
+    }
+    check(dashes.isEmpty, "no user-facing string carries an em dash (got \(dashes))")
+
+    // ---- 17. The app picker opens ready to type ----
+    let picker = source("Sources/lineup/Tools/Cycler/AppPicker.swift")
+    check(picker.contains("@FocusState private var searchFocused") && picker.contains("searchFocused = true"),
+          "the app picker focuses its search field on open")
+    check(picker.contains(".onSubmit { pickFirstMatch() }") && picker.contains("private func pickFirstMatch()"),
+          "Return picks the first match, and does nothing when there is none")
 }
