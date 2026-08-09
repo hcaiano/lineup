@@ -973,6 +973,35 @@ private func runIntegrationTests() throws {
               "\(path) takes the store from the environment")
     }
 
+    // ---- A row that failed to come back after a recording reaches its OWNER ----
+    // `HotkeyManager.resumeAll()` keeps a row it could not re-register with a nil Carbon ref:
+    // recorded, but dead. The alert told the user; nothing told the TOOL, so no retry loop ever
+    // saw those rows and the shortcut stayed broken until the next relaunch.
+    check(tool.contains("struct HotkeyRestoreFailure"),
+          "the Tool contract names the rows that failed to come back")
+    check(tool.contains("func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure])"),
+          "the Tool contract has a hook for them")
+    check(tool.contains("func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure]) {}"),
+          "the hook is defaulted, so a tool with no shortcuts implements nothing")
+    check(settingsStore.contains("Dictionary(grouping: failures, by: \\.owner)")
+          && settingsStore.contains("registry.tool(owner)?.hotkeysFailedToRestore("),
+          "resumeOneLevel hands each owner its own failed rows")
+    check(settingsStore.contains("onRecordingRestoreFailures?(failures)"),
+          "the user-facing alert survives alongside the tool hook")
+    for path in ["Sources/lineup/Tools/Zones/ZonesTool.swift",
+                 "Sources/lineup/Tools/Cycler/CyclerTool.swift"] {
+        let text = source(path)
+        check(text.contains("func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure])"),
+              "\(path) takes its failed rows back")
+        check(text.contains("failedHotkeys.append("),
+              "\(path) records them in the blocked list its warning reads")
+    }
+    // Cycler's list is what arms its retry timer, so it has to be re-armed here too.
+    check(source("Sources/lineup/Tools/Cycler/CyclerTool.swift")
+        .components(separatedBy: "func hotkeysFailedToRestore").last?
+        .contains("updateFailedHotkeyRetryTimer()") == true,
+          "CyclerTool re-arms its retry timer for rows that failed to restore")
+
     // ---- isSuspended belongs to the scope, not to the singleton ----
     check(tool.contains("var isSuspended: Bool { HotkeyManager.shared.isSuspended }"),
           "HotkeyScope exposes isSuspended")

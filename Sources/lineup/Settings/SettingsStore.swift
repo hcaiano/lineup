@@ -177,7 +177,18 @@ final class SettingsStore: ObservableObject {
         guard recordingDepth > 0 else { return [] }
         recordingDepth -= 1
         let failures = HotkeyManager.shared.resumeAll()
-        if !failures.isEmpty { onRecordingRestoreFailures?(failures) }
+        guard !failures.isEmpty else { return [] }
+        // Tell each OWNER first. The registry keeps a row that failed to come back with a nil
+        // Carbon ref — recorded but dead — and a tool that never hears about it will not retry it,
+        // so the alert below would be the only trace and the shortcut would stay broken for the
+        // rest of the session. The tools put the rows back into their own blocked lists, which is
+        // what arms their retry loops and their "Retry shortcuts" warning.
+        for (owner, rows) in Dictionary(grouping: failures, by: \.owner) {
+            registry.tool(owner)?.hotkeysFailedToRestore(rows.map {
+                HotkeyRestoreFailure(keyCode: $0.keyCode, modifiers: $0.modifiers, status: $0.status)
+            })
+        }
+        onRecordingRestoreFailures?(failures)
         return failures
     }
 

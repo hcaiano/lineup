@@ -324,6 +324,32 @@ final class ZonesTool: Tool {
         failedHotkeys = failures
     }
 
+    /// A Settings recorder suspended the whole registry and these rows did not come back — some
+    /// other app took the combo in the meantime. `registerHotkeys()` never runs for them, so
+    /// without this they are dead rows in the registry that nothing reports: recording them here
+    /// puts them in the blocked-shortcuts warning, with its "Retry shortcuts" action.
+    func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure]) {
+        guard isRunning else { return }
+        var added = false
+        for failure in failures {
+            guard !failedHotkeys.contains(where: {
+                $0.keyCode == failure.keyCode && UInt32($0.modifiers) == failure.modifiers
+            }) else { continue }
+            guard let binding = shortcuts.bindings.first(where: {
+                $0.keyCode == failure.keyCode && UInt32($0.modifiers) == failure.modifiers
+            }) else { continue }
+            failedHotkeys.append(FailedHotkey(
+                action: binding.action,
+                keyCode: binding.keyCode,
+                modifiers: binding.modifiers,
+                reason: HotkeyFailure.carbon(failure.status).displayReason))
+            added = true
+        }
+        guard added else { return }
+        services?.refreshMenu()
+        settingsModel?.refresh()
+    }
+
     private func retryHotkeys() {
         registerHotkeys()
         services?.refreshMenu()

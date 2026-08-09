@@ -228,6 +228,39 @@ final class CyclerTool: Tool {
         }
     }
 
+    /// A Settings recorder suspended the whole registry and these rows did not come back — some
+    /// other app took the combo in the meantime. `registerHotkeys()` never runs for them, so
+    /// without this they are dead rows in the registry that nothing retries and nothing reports.
+    /// Recording them here is what arms the 10s retry timer, the didBecomeActive retry and the
+    /// "Retry shortcuts" warning, exactly as a failure at start() would.
+    func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure]) {
+        guard isRunning else { return }
+        var added = false
+        for failure in failures {
+            let combo = HotkeyCombo(keyCode: failure.keyCode, modifiers: failure.modifiers)
+            guard !failedHotkeys.contains(where: {
+                HotkeyCombo(keyCode: $0.keyCode, modifiers: $0.modifiers) == combo
+            }) else { continue }
+            // The row may be a binding's own combo or the ⇧ reverse generated from it; both are
+            // registered from the same binding, so the label comes from whichever matches.
+            let binding = settings.bindings.first { $0.keyCode == failure.keyCode
+                && ($0.modifiers == failure.modifiers
+                    || $0.modifiers | UInt32(shiftKey) == failure.modifiers) }
+            let entry = FailedHotkey(
+                label: binding.map { bindingTitle(for: $0.bundleIdentifiers) } ?? "Shortcut",
+                keyCode: failure.keyCode,
+                modifiers: failure.modifiers,
+                reason: .carbon(failure.status),
+                generatedReverse: binding.map { $0.modifiers != failure.modifiers } ?? false)
+            failedHotkeys.append(entry)
+            logHotkeyFailure(entry)
+            added = true
+        }
+        guard added else { return }
+        updateFailedHotkeyRetryTimer()
+        services?.refreshMenu()
+    }
+
     private func retryHotkeys() {
         reloadHotkeys()
         services?.refreshMenu()

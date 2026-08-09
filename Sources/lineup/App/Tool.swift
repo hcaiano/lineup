@@ -50,6 +50,17 @@ enum HotkeyFailure: Error, Equatable {
     case ownedByTool(ToolID)
 }
 
+/// One registration that did NOT come back when a Settings recorder released the registry —
+/// another app claimed the combo while every tool's hotkeys were suspended.
+///
+/// `HotkeyManager` keeps such a row with a nil `ref`, so it is recorded but dead: without telling
+/// the owner, nothing ever retries it and the user's shortcut stays broken for the session.
+struct HotkeyRestoreFailure: Equatable {
+    let keyCode: Int
+    let modifiers: UInt32
+    let status: OSStatus
+}
+
 /// A tool's window onto the shared Carbon registry. Tools never touch `HotkeyManager` directly,
 /// so `unregisterAll()` in `stop()` can't accidentally take a sibling's hotkeys down with it.
 @MainActor
@@ -198,8 +209,18 @@ protocol Tool: AnyObject {
     /// generated combos included, or a sibling's recorder can claim a combo the tool then fails
     /// to register when it is switched back on.
     func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)]
+
+    /// The tool's OWN rows that failed to re-register after a Settings recording (see
+    /// `HotkeyRestoreFailure`). The shell reports them to the user itself; this is what lets the
+    /// tool put them back into its own blocked list, so its retry — the 10s timer, the
+    /// didBecomeActive pass, the "Retry shortcuts" warning — can pick them up again.
+    ///
+    /// Additive to the Phase 3 contract and defaulted to a no-op, so a tool with no shortcuts
+    /// (Hyperkey) implements nothing.
+    func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure])
 }
 
 extension Tool {
     func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)] { [] }
+    func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure]) {}
 }
