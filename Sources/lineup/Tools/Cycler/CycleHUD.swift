@@ -144,7 +144,7 @@ final class CycleHUD {
             panel.orderFrontRegardless()
         }
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.07
+            ctx.duration = HUDMotion.duration(HUDMotion.fadeIn)
             panel.animator().alphaValue = 1
         }
 
@@ -158,7 +158,7 @@ final class CycleHUD {
         dismissWorkItem = nil
         guard panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.14
+            ctx.duration = HUDMotion.duration(HUDMotion.fadeOut)
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated { // AppKit animation completions arrive on the main thread
@@ -245,6 +245,11 @@ final class CycleHUD {
             glass.cornerRadius = corner
             glass.tintColor = NSColor(white: 0.0, alpha: 0.42)
             glass.contentView = content
+            // Every label in this HUD is hard white, so the surface under them must be dark
+            // whatever the user's Mac is set to. Glass follows the effective appearance unless it
+            // is pinned, and on a light desktop the panel came up pale with white text on it —
+            // the pre-26 fallback below has always forced .vibrantDark for exactly this reason.
+            glass.appearance = NSAppearance(named: .darkAqua)
             glass.translatesAutoresizingMaskIntoConstraints = false
             return glass
         }

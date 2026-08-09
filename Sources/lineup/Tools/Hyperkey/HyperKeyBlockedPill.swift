@@ -43,7 +43,7 @@ final class HyperKeyBlockedPill {
             panel.orderFrontRegardless()
         }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
+            context.duration = HUDMotion.duration(HUDMotion.fadeIn)
             panel.animator().alphaValue = 1
         }
     }
@@ -53,7 +53,7 @@ final class HyperKeyBlockedPill {
         generation += 1
         let hiddenGeneration = generation
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.14
+            context.duration = HUDMotion.duration(HUDMotion.fadeOut)
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
@@ -108,6 +108,9 @@ final class HyperKeyBlockedPill {
             glass.cornerRadius = height / 2
             glass.tintColor = NSColor(white: 0, alpha: 0.48)
             glass.contentView = content
+            // The pill's text is hard white, so its surface is pinned dark rather than left to
+            // follow the desktop — the same reason the pre-26 fallback below forces .vibrantDark.
+            glass.appearance = NSAppearance(named: .darkAqua)
             glass.translatesAutoresizingMaskIntoConstraints = false
             return glass
         }
@@ -149,25 +152,25 @@ final class HyperKeyBlockedPill {
 
     private static func displayDetail(for message: String) -> String {
         if message.contains("Secure Input") {
-            return "Secure Input is active — quit and reopen your password app."
+            return "Secure Input is active. Quit and reopen your password app."
         }
         if message.contains("Input Monitoring") {
             return "Allow Lineup in System Settings → Input Monitoring."
         }
         if message.contains("Raycast") {
-            return "Raycast is using Caps Lock — disable its Hyper Key or choose another trigger."
+            return "Raycast is using Caps Lock. Disable its Hyper Key or choose another trigger."
         }
         if message.contains("Cycler is running") {
-            return "Quit the standalone Cycler app — Lineup does this now."
+            return "Quit the standalone Cycler app. Lineup does this now."
         }
         if message.contains("existing hidutil UserKeyMapping") {
             return "Caps Lock is already remapped by another app."
         }
         if message.contains("hidutil failed") {
-            return "Couldn’t remap Caps Lock — try toggling Hyper Key off and on."
+            return "Couldn’t remap Caps Lock. Try toggling Hyper Key off and on."
         }
         if message.contains("CGEvent.tapCreate") {
-            return "Couldn’t monitor the keyboard — check Input Monitoring."
+            return "Couldn’t monitor the keyboard. Check Input Monitoring."
         }
         return "Open Lineup Settings → Hyperkey for details."
     }
