@@ -53,7 +53,10 @@ struct KeyCapRow: View {
             ForEach(Array(ShortcutKit.keyCaps(display).enumerated()), id: \.offset) { _, cap in
                 Text(cap)
                     .font(size.font)
-                    .foregroundStyle(.primary)
+                    // `Color.primary`, not `.primary`: inside a bordered Button's label the
+                    // hierarchical style resolves to the button's tint and every cap comes out
+                    // blue, which reads as a link. Key caps are neutral.
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .padding(.horizontal, size.horizontalPadding)
                     .frame(minWidth: size.minWidth, minHeight: size.height)

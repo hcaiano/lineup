@@ -725,6 +725,10 @@ private func runSettingsWindowTests() throws {
             && !pane.contains("alignment: .topTrailing"),
           "the enable switch is aligned with the pane header's icon row")
     check(pane.contains("Text(summary)"), "the pane header shows the tool's one-line summary")
+    // A fixed header above a scrolling pane otherwise reports an ideal height of header + the
+    // WHOLE scroll content, and a tall pane pushes the entire split view up out of the window.
+    check(pane.contains("GeometryReader"),
+          "ToolPane does not propagate its content's ideal height to the window")
 
     // ---- Per-tool icons, and the resource plumbing they depend on ----
     let icon = source("Sources/lineup/Settings/Components/ToolIcon.swift")

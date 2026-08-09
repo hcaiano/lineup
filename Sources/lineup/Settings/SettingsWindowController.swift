@@ -64,7 +64,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.pinnedTitle = "\(Product.name) Settings"
         window.isReleasedWhenClosed = false // we keep the controller; AppKit must not free it
         window.delegate = self
-        window.contentView = NSHostingView(rootView: SettingsRootView(store: store))
+        let controller = NSHostingController(rootView: SettingsRootView(store: store))
+        if #available(macOS 13.0, *) { controller.sizingOptions = [] }
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: 820, height: 560))
         window.center()
         return window
     }

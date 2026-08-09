@@ -21,12 +21,21 @@ struct ToolPane<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The GeometryReader is load-bearing, not decoration. The header is a fixed block above a
+        // scrolling pane, and that combination makes the stack report an ideal height of
+        // header + FULL scroll content (a ScrollView's ideal height is its content's). The window
+        // honours that ideal, and with a tall pane — Zones has thirteen shortcut rows — the whole
+        // split view slides up out of the window: no header, a clipped sidebar, rows under the
+        // title bar. A GeometryReader takes whatever size it is offered and does not pass its
+        // child's ideal upward, so the pane gets exactly the window and scrolls inside it.
+        GeometryReader { _ in
+            VStack(spacing: 0) {
+                header
+                content()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(title)
     }
 
