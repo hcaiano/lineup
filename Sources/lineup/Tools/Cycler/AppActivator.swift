@@ -63,8 +63,11 @@ final class AppActivator {
             // First press: go to the app. Show the current window position without advancing, so
             // the HUD appears consistently on the first engagement for multi-window apps.
             Self.activate(app)
-            let focusedWindows = Self.windows(of: apps)
-            let visibleWindows = focusedWindows.isEmpty ? windows : focusedWindows
+            // A second full AX sweep is only worth its cost when the first one found nothing —
+            // a hidden app whose windows appear once `activate()` unhides it. Otherwise the list
+            // we already have is the one we cycle, and `indexOfMain` reads each window's live
+            // `AXMain` anyway, so nothing here is stale.
+            let visibleWindows = windows.isEmpty ? Self.windows(of: apps) : windows
             let remembered = lastIndex[bundleIdentifier].flatMap { visibleWindows.indices.contains($0) ? $0 : nil }
             let current = Self.indexOfMain(in: visibleWindows)
                 ?? remembered
@@ -168,9 +171,26 @@ final class AppActivator {
         var windowID: CGWindowID
     }
 
+    /// Every AX call below is synchronous on the main thread, and a beachballing target app blocks
+    /// each one for the system default of SIX seconds — long enough to freeze the menu bar, the
+    /// HUD and Zones, and long enough for the system to kill Hyperkey's event tap for being slow.
+    /// A quarter second is generous for a healthy app; past that the cycle simply does nothing.
+    /// (`WindowMover` does the same with its own budget.)
+    ///
+    /// The timeout is PER-ELEMENT, so every element we go on to talk to — the windows read out of
+    /// the application element included — has to be tamed as well.
+    private static func tame(_ element: AXUIElement) -> AXUIElement {
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        return element
+    }
+
+    private static func axApplication(_ pid: pid_t) -> AXUIElement {
+        tame(AXUIElementCreateApplication(pid))
+    }
+
     private static func windows(of apps: [NSRunningApplication]) -> [WindowRecord] {
         apps
-            .flatMap { app in windows(of: AXUIElementCreateApplication(app.processIdentifier), app: app) }
+            .flatMap { app in windows(of: axApplication(app.processIdentifier), app: app) }
             .sorted { lhs, rhs in lhs.windowID < rhs.windowID }
     }
 
@@ -179,6 +199,7 @@ final class AppActivator {
         guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return [] }
         return windows
+            .map { tame($0) }
             .filter { isStandardWindow($0) && !isMinimized($0) }
             .compactMap { window in
                 guard let windowID = windowID(of: window) else { return nil }
@@ -195,11 +216,12 @@ final class AppActivator {
         }
 
         for app in orderedApps {
-            let axApp = AXUIElementCreateApplication(app.processIdentifier)
+            let axApp = axApplication(app.processIdentifier)
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value) == .success,
                   let windows = value as? [AXUIElement],
-                  let window = windows.first(where: { isStandardWindow($0) && isMinimized($0) }) else {
+                  let window = windows.lazy.map({ tame($0) })
+                      .first(where: { isStandardWindow($0) && isMinimized($0) }) else {
                 continue
             }
             return WindowRecord(app: app, element: window, windowID: windowID(of: window) ?? CGWindowID(0))

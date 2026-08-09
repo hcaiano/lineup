@@ -15,7 +15,10 @@ enum SingleInstance {
         let myPID = ProcessInfo.processInfo.processIdentifier
         let myLaunch = NSRunningApplication.current.launchDate ?? .distantPast
         return NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-            .filter { $0.processIdentifier != myPID }
+            // A process that has already exited is not an incumbent. The list can still carry a
+            // just-quit copy (an update relaunch, a crash), and deferring to a dead one would make
+            // the NEW instance exit and leave the user with no Lineup at all.
+            .filter { $0.processIdentifier != myPID && !$0.isTerminated }
             .first { other in
                 let otherLaunch = other.launchDate ?? .distantPast
                 return otherLaunch < myLaunch
@@ -28,7 +31,10 @@ enum SingleInstance {
     /// engage while it is alive (see `CapsLockHandoff`).
     @MainActor
     static func standaloneCyclerIsRunning() -> NSRunningApplication? {
-        NSRunningApplication.runningApplications(withBundleIdentifier: legacyCyclerBundleID).first
+        // Same `isTerminated` rule as the election: a Cycler that has already quit must not keep
+        // Hyperkey blocked, nor stop us adopting the mapping it left behind.
+        NSRunningApplication.runningApplications(withBundleIdentifier: legacyCyclerBundleID)
+            .first { !$0.isTerminated }
     }
 
     static let legacyCyclerBundleID = "com.caiano.cycler"

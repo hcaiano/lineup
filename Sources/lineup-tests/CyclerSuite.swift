@@ -355,6 +355,31 @@ private func runCyclerToolChecks() throws {
     check(files.first(where: { $0.path.hasSuffix("AppActivator.swift") })?.text.contains("func reset()") == true,
           "AppActivator exposes reset()")
 
+    // ---- Accessibility calls are budgeted (never the 6s system default) ----
+    // Every AX call here is synchronous on the main thread, from a hotkey handler. A beachballing
+    // target app would otherwise freeze the menu bar, the HUD and Zones for six seconds per call —
+    // long enough for the system to kill Hyperkey's event tap for being slow.
+    let activator = files.first(where: { $0.path.hasSuffix("AppActivator.swift") })?.text ?? ""
+    check(activator.contains("AXUIElementSetMessagingTimeout(element, 0.25)"),
+          "AppActivator budgets its AX messaging at 0.25s")
+    let untamedCreates = activator.components(separatedBy: "AXUIElementCreateApplication(").count - 1
+    check(untamedCreates == 1,
+          "every AX application element comes from the one tamed factory (got \(untamedCreates) call sites)")
+    check(activator.contains("private static func axApplication(_ pid: pid_t) -> AXUIElement"),
+          "AppActivator creates application elements through axApplication(_:)")
+    // The timeout is per-element, so the windows read out of the app element are tamed too.
+    check(activator.contains(".map { tame($0) }") && activator.contains(".lazy.map({ tame($0) })"),
+          "window elements are tamed as well, not just the application element")
+
+    // ---- First press enumerates the window list ONCE ----
+    // Activating and then re-reading every window of every process doubled the AX round trips on
+    // the commonest path; `indexOfMain` reads each window's live AXMain anyway, so only an EMPTY
+    // first pass (a hidden app whose windows appear once it is unhidden) is worth a second sweep.
+    check(activator.contains("let visibleWindows = windows.isEmpty ? Self.windows(of: apps) : windows"),
+          "the first press re-enumerates windows only when the first pass found none")
+    let sweeps = activator.components(separatedBy: "Self.windows(of: apps)").count - 1
+    check(sweeps == 2, "engage() has exactly two window sweeps in its source, one of them conditional (got \(sweeps))")
+
     // ---- The forward/reverse registration pair, kept verbatim from standalone Cycler ----
     check(tool.contains("guard b.modifiers & UInt32(shiftKey) == 0 else { continue }"),
           "a binding that already includes Shift gets no generated reverse")
