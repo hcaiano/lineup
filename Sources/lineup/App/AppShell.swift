@@ -70,6 +70,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         statusItem.onShowAbout = { AboutWindowController.show() }
 
         // Tools are registered here in phases 4-6. Nothing yet, by design.
+        registry.register(CyclerTool())
         registry.startEnabledTools()
         statusItem.refresh()
 
