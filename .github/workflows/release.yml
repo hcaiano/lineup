@@ -43,6 +43,11 @@ concurrency:
 
 jobs:
   release:
+    # Disabled on phase9-docs / unified-app: Lineup 2.0 is a private, in-progress rewrite.
+    # This job would notarize and publish a PUBLIC GitHub release from unfinished work if a
+    # `vX.Y.Z` tag reached this branch. Re-enable by deleting this line once 2.0 is ready to
+    # ship publicly (see BUILDING.md and RELEASING.md).
+    if: false
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4

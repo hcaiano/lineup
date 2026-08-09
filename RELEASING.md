@@ -1,5 +1,8 @@
 # Releasing Lineup
 
+> This file describes the 1.x public release process. It has not been updated for the private
+> 2.0 rewrite on `unified-app`; treat it as reference only until it is revisited.
+
 Releases are **hybrid**: CI does the heavy, reproducible work (universal build, Developer ID
 signing, Apple notarization, GitHub release), and one local command signs the Sparkle appcast.
 The Sparkle EdDSA private key — the auto-update root of trust — is deliberately kept **off CI**.

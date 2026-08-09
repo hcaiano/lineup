@@ -1,7 +1,7 @@
 # Building Lineup
 
-For contributors and anyone who wants to build from source. End users should just grab the DMG from
-the [Releases page](https://github.com/hcaiano/lineup/releases/latest); see the [README](README.md).
+Lineup 2.0 is a **private** rewrite (branch `unified-app`); it is not distributed publicly. This
+file is for building it from source. See the [README](README.md) for what the app does.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ the [Releases page](https://github.com/hcaiano/lineup/releases/latest); see the 
 ## Build and run
 
 ```sh
-git clone https://github.com/hcaiano/lineup.git && cd lineup
+cd lineup
 swift run lineup-tests              # dependency-free test suite (no Xcode/XCTest needed)
 ./Scripts/setup-signing.sh          # one-time: stable signature so the macOS permission sticks
 ./Scripts/build-app.sh ~/Applications
@@ -43,30 +43,67 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
+Lineup 2.0 is one app shell hosting three independent tools, on top of four pure ("core") modules
+and one AppKit executable:
+
 ```
-Sources/LineupCore/         Pure, tested core (no AppKit)
+Sources/ZonesCore/          Pure, tested core for the Zones tool (no AppKit)
   ZoneTree.swift            Recursive split-tree model + resolver + editor geometry
   LayoutEdit.swift          Pure split / merge / resize operations
-  LineupConfig.swift        Per-screen schema-3 config + migration
+  LineupConfig.swift        Per-screen schema-3 config + migration (the legacy zones.json shape)
   Shortcuts.swift           Shortcut bindings + conflicts + zone actions
   Cycle.swift               Left/right cycle steps + continuation predicate
-Sources/lineup/             AppKit agent
-  main.swift                Menu-bar app, hotkeys, config lifecycle
-  LayoutEditorOverlay.swift The on-screen layout editor
-  DragSnap.swift            Modifier-drag-to-snap
-  SettingsWindow.swift      Shortcuts + General
-  WindowMover.swift         Accessibility window get/set
-  ShortcutKit.swift         Defaults + Cocoa/Carbon + combo strings
-  Theme.swift               Brand colour + menu-bar logo
-  Updater.swift             Sparkle updater controller (Check for Updates + background checks)
+Sources/CyclerCore/         Pure, tested core for the Cycler tool
+  WindowCycle.swift         Cycle-order math
+  AppGroupCycle.swift       App-group cycling
+  Bindings.swift            Legacy ~/.config/cycler/bindings.json model (CyclerConfig)
+Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
+  TriggerKey.swift          Trigger key enum + display names
+  HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
+Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
+  Product.swift             Identity constants (name, bundle ID, paths, update feed)
+  LineupAppConfig.swift     ~/.config/lineup/config.json envelope schema
+  LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
+  LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
+Sources/lineup/              AppKit agent (the app shell + the three tools)
+  main.swift                 Bootstrap only
+  App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
+                               termination, single-instance, launch-at-login, brand, About
+  Settings/                    Settings window: sidebar shell + shared components
+  Tools/Zones/                 Layout editor, drag-to-snap, window mover
+  Tools/Cycler/                App/window cycling, app picker, cycle HUD
+  Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
+Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
+  main.swift                  Orchestrates the four suites below
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / AppSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, make-icon, make-icns,
                             notarize, sparkle-keygen, sparkle-appcast
 ```
 
-Config lives at `~/.config/lineup/zones.json` (one layout per display, keyed to the monitor). The
-editor writes it for you.
+Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
+four suites.
+
+Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
+(`zones`/`cycler`/`hyperkey`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
+
+### Downgrading from 2.0 to 1.9.x
+
+Because 2.0 never touches `zones.json`, rolling back to a 1.9.x build (or older) just works: 1.9.x
+reads `zones.json` exactly as 2.0 left it, since 2.0 never wrote to it in the first place. Anything
+edited only in 2.0 — Zones changes made after the one-time import, plus all Cycler and Hyperkey
+settings — lives in `config.json` and does **not** carry back to 1.9.x; that data simply sits unread
+until (if ever) 2.0 is reinstalled.
 
 ## Notarized release (Developer ID)
+
+**2.0.0 ships to existing Lineup users as an automatic Sparkle update, not a fresh install.**
+Shipping it requires signing with the exact **same Developer ID identity** used for 1.x releases.
+A different identity changes the app's codesign designated requirement, and macOS then treats it
+as a different app for Accessibility purposes — every existing user would have to re-grant
+Accessibility by hand after the update, with no warning first. Before cutting a 2.0.0 release,
+confirm the signing identity matches 1.x (see `RELEASING.md`'s `BUILD_CERTIFICATE_BASE64` secret
+and the `security find-identity` step in `.github/workflows/release.yml`).
 
 With an Apple Developer account, a **Developer ID Application** certificate in the keychain
 makes `build-app.sh` sign with it automatically (hardened runtime + secure timestamp), which
