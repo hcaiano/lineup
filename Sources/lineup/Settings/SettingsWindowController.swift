@@ -68,8 +68,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.collectionBehavior = [.moveToActiveSpace]
         window.delegate = self
         let controller = NSHostingController(rootView: SettingsRootView(store: store))
+        // `sizingOptions = []` is what stops SwiftUI's ideal height from resizing the window — but
+        // it also switches OFF the minimum size AppKit would have taken from the root view, so the
+        // `frame(minWidth:minHeight:)` in SettingsRootView never reached the window and the user
+        // could drag it down to a sliver. Set the floor on the window itself.
         if #available(macOS 13.0, *) { controller.sizingOptions = [] }
         window.contentViewController = controller
+        window.contentMinSize = NSSize(width: 760, height: 520)
         window.setContentSize(NSSize(width: 820, height: 560))
         window.center()
         return window
@@ -110,28 +115,41 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // Deferred: this arrives from inside the recorder's key handling, and running a modal
         // sheet from there would re-enter the event path that is still unwinding.
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = failures.count == 1
-                ? "A shortcut couldn’t be restored"
-                : "\(failures.count) shortcuts couldn’t be restored"
-            alert.informativeText = """
-                Another app claimed \(failures.count == 1 ? "it" : "them") while you were recording. \
-                \(failures.count == 1 ? "It won’t" : "They won’t") fire until you quit that app or \
-                pick a different combination.
+            self?.showRestoreAlert(failures)
+        }
+    }
 
-                \(self.failureLines(failures).joined(separator: "\n"))
-                """
-            alert.addButton(withTitle: "OK")
-            let finish: (NSApplication.ModalResponse) -> Void = { [weak self] _ in
-                self?.restoreAlertShowing = false
+    private func showRestoreAlert(_ failures: [SettingsStore.RestoreFailure]) {
+        // A pane's own conflict prompt (Zones runs `NSAlert.runModal()`) spins a NESTED modal
+        // loop, and the block queued above runs inside it — a sheet begun now lands on a window
+        // the modal has disabled, so it can neither be read nor dismissed. Wait the modal out.
+        // `restoreAlertShowing` stays true meanwhile, so nothing else queues a second copy.
+        guard NSApp.modalWindow == nil else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.showRestoreAlert(failures)
             }
-            if let window = self.window, window.isVisible {
-                alert.beginSheetModal(for: window, completionHandler: finish)
-            } else {
-                finish(alert.runModal())
-            }
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = failures.count == 1
+            ? "A shortcut couldn’t be restored"
+            : "\(failures.count) shortcuts couldn’t be restored"
+        alert.informativeText = """
+            Another app claimed \(failures.count == 1 ? "it" : "them") while you were recording. \
+            \(failures.count == 1 ? "It won’t" : "They won’t") fire until you quit that app or \
+            pick a different combination.
+
+            \(failureLines(failures).joined(separator: "\n"))
+            """
+        alert.addButton(withTitle: "OK")
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] _ in
+            self?.restoreAlertShowing = false
+        }
+        if let window, window.isVisible {
+            alert.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(alert.runModal())
         }
     }
 

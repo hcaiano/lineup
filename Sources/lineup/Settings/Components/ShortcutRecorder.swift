@@ -59,7 +59,10 @@ final class ShortcutRecorder: ObservableObject {
     /// The field currently capturing, or `nil`. Published so panes re-render on start/stop.
     @Published private(set) var activeID: AnyHashable?
 
-    private unowned let store: SettingsStore
+    /// Weak, not `unowned`: the recorder is a `@StateObject` and SwiftUI can keep it alive for a
+    /// beat after the window (and its store) has gone. An `unowned` read then traps; an optional
+    /// one simply has nothing left to suspend, which is the correct answer.
+    private weak var store: SettingsStore?
     private var monitor: Any?
     private var handler: ((Capture) -> Void)?
     private var options = Options.combo
@@ -92,14 +95,22 @@ final class ShortcutRecorder: ObservableObject {
         }
     }
 
-    /// Start capturing for `id`, cancelling any capture already in flight.
+    /// Start capturing for `id`, re-targeting any capture already in flight.
+    ///
+    /// Re-targeting is deliberately NOT cancel-then-begin. Clicking recorder A and then recorder B
+    /// is one continuous recording session as far as the registry is concerned, and resuming it in
+    /// between meant a full Carbon round-trip on every click — plus, if another app had grabbed a
+    /// combo in that instant, a restore-failure alert that killed the capture the user had just
+    /// started. Only the monitor and the handler are torn down; the suspension keeps its depth.
     func begin(_ id: some Hashable, options: Options = .combo,
                onCapture: @escaping (Capture) -> Void) {
-        cancel()
+        teardown()
         activeID = AnyHashable(id)
         self.options = options
         handler = onCapture
-        store.beginRecording(self) { [weak self] in self?.teardown() }
+        // A no-op (beyond replacing the cancel block) when this recorder is already registered,
+        // so the suspension is not double-counted.
+        store?.beginRecording(self) { [weak self] in self?.teardown() }
         let mask: NSEvent.EventTypeMask = options.allowsModifierOnly ? [.keyDown, .flagsChanged]
                                                                      : [.keyDown]
         monitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
@@ -114,7 +125,7 @@ final class ShortcutRecorder: ObservableObject {
     func cancel() {
         guard activeID != nil else { return }
         teardown()
-        store.endRecording(self)
+        store?.endRecording(self)
     }
 
     // MARK: - Capture
@@ -124,7 +135,7 @@ final class ShortcutRecorder: ObservableObject {
         teardown()
         // Hand the hotkeys back BEFORE the pane reacts: a conflict alert runs a modal loop, and
         // 1.x deliberately restored the registry first so shortcuts stayed live behind it.
-        store.endRecording(self)
+        store?.endRecording(self)
         handler?(capture)
     }
 

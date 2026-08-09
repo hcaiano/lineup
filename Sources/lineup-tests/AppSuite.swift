@@ -35,6 +35,7 @@ func runAppTests() throws {
     try runParityFixTests()
     try runConfigCorrectnessTests()
     try runToolWriteDisciplineTests()
+    try runUIStateContractTests()
 }
 
 // MARK: - Envelope
@@ -1911,6 +1912,123 @@ private func runToolWriteDisciplineTests() throws {
     check(shell.contains("canPersist: store.canWrite"),
           "the shell will not show a note it cannot record as seen")
 
+}
+
+// MARK: - Settings UI state contracts (review batch 2)
+
+/// The Settings window, the recorder and the panes, scanned for the same reason.
+private func runUIStateContractTests() throws {
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        guard let text = files.first(where: { $0.path == path })?.text else {
+            check(false, "\(path) exists")
+            return ""
+        }
+        return text
+    }
+    let cyclerPane = source("Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift")
+    let zonesTool = source("Sources/lineup/Tools/Zones/ZonesTool.swift")
+    let settingsStore = source("Sources/lineup/Settings/SettingsStore.swift")
+    let recorder = source("Sources/lineup/Settings/Components/ShortcutRecorder.swift")
+
+    // ---- 12. The window has a real minimum size ----
+    let controller = source("Sources/lineup/Settings/SettingsWindowController.swift")
+    check(controller.contains("window.contentMinSize = NSSize(width: 760, height: 520)"),
+          "sizingOptions = [] disables AppKit's minimum, so the window sets its own")
+
+    // ---- 13. The recorder does not hold the store unowned ----
+    check(recorder.contains("private weak var store: SettingsStore?"),
+          "the recorder holds its store weakly")
+    check(!recorder.contains("private unowned let store"), "no unowned store reference is left")
+    check(recorder.components(separatedBy: "store?.").count - 1 >= 3,
+          "every store call is optional-chained")
+
+    // ---- 14. Drag-to-snap cannot flip when it cannot be saved ----
+    let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
+    if let start = zonesPane.range(of: "SettingsRow(title: \"Drag to snap\"") {
+        check(zonesPane[start.lowerBound...].prefix(900).contains(".disabled(!model.canWrite)"),
+              "the drag-snap toggle is disabled with the rest of the pane")
+    } else {
+        check(false, "the Zones pane has a Drag to snap row")
+    }
+    if let start = zonesTool.range(of: "private func setDragSnapEnabled(") {
+        check(zonesTool[start.lowerBound...].prefix(300).contains("guard canWrite else { return }"),
+              "the tool refuses the drag-snap edit too, so the menu row cannot lie either")
+    } else {
+        check(false, "ZonesTool owns setDragSnapEnabled")
+    }
+    check(zonesTool.contains("drag.isEnabled = canWrite"),
+          "the menu's drag-snap row is disabled while writes are blocked")
+
+    // ---- 15. A failed save is reported even when a sheet is dismissing ----
+    if let start = cyclerPane.range(of: "func apply() -> Bool"),
+       let fail = cyclerPane[start.lowerBound...].range(of: "catch {") {
+        check(cyclerPane[fail.lowerBound...].prefix(700).contains("DispatchQueue.main.async"),
+              "the save-failure alert is published on the next runloop turn, not inside the sheet's transaction")
+    } else {
+        check(false, "the Cycler model reports a failed apply()")
+    }
+
+    // ---- 16. The restore-failure alert waits out an app-modal prompt ----
+    check(controller.contains("guard NSApp.modalWindow == nil else {"),
+          "the restore-failure alert is re-queued while another modal owns the app")
+    check(controller.contains("private func showRestoreAlert("),
+          "the deferred presentation is its own step, so it can re-queue itself")
+
+    // ---- 17. Re-targeting a recorder keeps the suspension ----
+    if let start = recorder.range(of: "func begin(_ id: some Hashable"),
+       let body = Optional(recorder[start.lowerBound...].prefix(700)) {
+        check(body.contains("teardown()") && !body.contains("cancel()"),
+              "begin re-targets without a Carbon resume+suspend round-trip")
+    } else {
+        check(false, "ShortcutRecorder owns begin(_:options:onCapture:)")
+    }
+
+    // ---- 18. A stale pane cannot clear the live pane's cancel hook ----
+    for path in ["Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift",
+                 "Sources/lineup/Tools/Zones/ZonesSettingsPane.swift"] {
+        let text = source(path)
+        check(text.contains("weak var recorder: ShortcutRecorder?"),
+              "\(path)'s model remembers whose cancel hook it holds")
+        check(text.contains("guard model.recorder === recorder else { return }"),
+              "\(path) only clears the hook when it is still its own")
+    }
+
+    // ---- 19. One refresh per sidebar toggle ----
+    if let start = settingsStore.range(of: "func binding(forTool id: ToolID)") {
+        let body = settingsStore[start.lowerBound...].prefix(600)
+        check(body.contains("registry.setEnabled(newValue, for: id)") && !body.contains("self?.refresh()"),
+              "the toggle relies on the registry's own change callback instead of refreshing twice")
+    } else {
+        check(false, "SettingsStore owns binding(forTool:)")
+    }
+
+    // ---- 20. Accessibility labels and honest tool names ----
+    check(source("Sources/lineup/Settings/SettingsRootView.swift")
+            .contains("accessibilityValue(row.isEnabled ? \"On\" : \"Off\")"),
+          "a sidebar row states whether its tool is on")
+    let hyperPane = source("Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift")
+    check(hyperPane.contains(".accessibilityLabel(\"Trigger key\")")
+          && hyperPane.contains(".accessibilityLabel(\"Include Shift\")"),
+          "the Hyperkey controls are named for VoiceOver, which labelsHidden() strips")
+    check(zonesPane.contains(".accessibilityLabel(\"Drag to snap\")"),
+          "the Zones drag-snap toggle is named too")
+    let rawNamers = files.filter { $0.text.contains("owner.rawValue.capitalized") }.map(\.path)
+    check(rawNamers.isEmpty,
+          "a conflict alert names the tool the way the sidebar does (got \(rawNamers))")
+    for path in ["Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift",
+                 "Sources/lineup/Tools/Zones/ZonesSettingsPane.swift"] {
+        check(source(path).contains("settings?.displayName(for: id)"),
+              "\(path) takes its tool names from SettingsStore.displayName(for:)")
+    }
+
+    // ---- 21. Resetting the drag bind ends the capture first ----
+    if let start = zonesPane.range(of: "func resetDragBind()") {
+        check(zonesPane[start.lowerBound...].prefix(420).contains("cancelRecording?()"),
+              "resetDragBind cancels a live capture, like clearShortcut does")
+    } else {
+        check(false, "ZonesSettingsModel owns resetDragBind()")
+    }
 }
 
 /// `AboutFacts` lives in the app target, which this runner does not link. Mirrored the same way
