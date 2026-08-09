@@ -38,10 +38,9 @@ private struct ZonesSettingsPaneBody: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Click a shortcut, then press a key combo. Esc cancels, Delete clears.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
+                // The recorder instructions used to float here, above "Drag to snap", where they
+                // read as a description of drag-snapping. They belong to the shortcut sections,
+                // so they are a caption on the first of them.
                 if !model.canWrite {
                     Label(model.blockedMessage ?? "Editing is disabled.", systemImage: "lock.fill")
                         .font(.callout)
@@ -78,7 +77,9 @@ private struct ZonesSettingsPaneBody: View {
                     }
                 }
 
-                SettingsSectionView("Window") {
+                SettingsSectionView(
+                    "Window",
+                    caption: "Click a shortcut, then press a key combo. Esc cancels, Delete clears.") {
                     ForEach(model.quickShortcutRows) { row in
                         shortcutRow(row)
                     }

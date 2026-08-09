@@ -21,17 +21,30 @@ enum SettingsMetrics {
 ///     }
 struct SettingsSectionView<Content: View>: View {
     private let title: String
+    /// A short line under the header explaining how the section's controls are used. It belongs
+    /// to the header, not to the pane: a bare instruction floating between two sections reads as
+    /// if it describes whichever one the eye lands on first.
+    private let caption: String?
     private let content: Content
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
+    init(_ title: String, caption: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.caption = caption
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                if let caption {
+                    Text(caption)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             VStack(spacing: 0) {
                 content
             }

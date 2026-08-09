@@ -31,6 +31,7 @@ func runAppTests() throws {
     try runShellSourceScanTests()
     try runSettingsWindowTests()
     try runIntegrationTests()
+    try runOnboardingTests()
 }
 
 // MARK: - Envelope
@@ -417,7 +418,8 @@ private func runLegacyImportTests() throws {
         check(hyper?.includeShift == false, "split: includeShift survives the split")
         check(hyper?.enabled == true, "split: HyperKeySettings.enabled matches the tool flag at import")
 
-        check(!cfg.general.showMenuBarIcon, "split: showMenuBarIcon becomes an app-wide general setting")
+        check(!cfg.general.showMenuBarIcon,
+              "split: a Cycler-ONLY migrant's hidden-icon preference becomes the app-wide setting")
         check(cfg.general.didImportLegacyCycler, "didImportLegacyCycler is set")
         check(cfg.isEnabled(.zones) == true, "a cycler-only import still turns Zones on")
 
@@ -430,6 +432,39 @@ private func runLegacyImportTests() throws {
                                   now: "T", resolveLegacyScreen: neverResolve)
         check(!r2.importedCycler, "a second cycler import run is a no-op")
         check(canonical(again) == canonical(cfg), "a second cycler import leaves the envelope unchanged")
+    }
+
+    // ---- showMenuBarIcon: adopted from a Cycler-only migrant, IGNORED for a 1.x upgrade ----
+    //
+    // In standalone Cycler the flag hid Cycler's own second menu-bar icon. In 2.0 there is one
+    // icon for the whole suite, so adopting a `false` on a machine that also ran Lineup 1.x would
+    // silently remove the only way into the app, mid-auto-update, for a user who never asked.
+    try withTempDir("import-menubar-icon") { dir in
+        let hiddenIcon = #"{"bindings":[{"keyCode":18,"modifiers":6400,"bundleIdentifier":"com.apple.Safari"}],"showMenuBarIcon":false}"#
+
+        var migrant = LineupAppConfig()
+        _ = LegacyImport.run(into: &migrant, zonesURL: missing,
+                             cyclerBindingsURL: try writeCyclerFile(dir, hiddenIcon),
+                             now: "T", hasLineupHistory: false, resolveLegacyScreen: neverResolve)
+        check(!migrant.general.showMenuBarIcon,
+              "a Cycler-only migrant who hid the icon keeps it hidden")
+
+        var upgrade = LineupAppConfig()
+        _ = LegacyImport.run(into: &upgrade, zonesURL: missing,
+                             cyclerBindingsURL: try writeCyclerFile(dir, hiddenIcon),
+                             now: "T", hasLineupHistory: true, resolveLegacyScreen: neverResolve)
+        check(upgrade.general.showMenuBarIcon,
+              "a Lineup 1.x user keeps the suite's menu-bar icon, whatever Cycler's own flag said")
+        check(upgrade.isEnabled(.cycler) == true,
+              "ignoring the icon flag does not affect the rest of the Cycler import")
+
+        // The other direction is never surprising: a visible icon stays visible either way.
+        let shownIcon = #"{"bindings":[],"showMenuBarIcon":true}"#
+        var shown = LineupAppConfig()
+        _ = LegacyImport.run(into: &shown, zonesURL: missing,
+                             cyclerBindingsURL: try writeCyclerFile(dir, shownIcon),
+                             now: "T", hasLineupHistory: true, resolveLegacyScreen: neverResolve)
+        check(shown.general.showMenuBarIcon, "a visible icon stays visible for a 1.x upgrade too")
     }
 
     // ---- cycler with empty bindings: section written, tool OFF ----
@@ -983,6 +1018,290 @@ private func runIntegrationTests() throws {
           "the Zones shortcut rows use it")
     check(SettingsMetricsMirror.shortcutRowHeight < SettingsMetricsMirror.rowHeight,
           "a shortcut row is denser than a stock settings row")
+}
+
+// MARK: - Onboarding, upgrade UX and import wiring (Phase 8)
+
+/// The three audiences the plan separates, the windows they do and do not get, and the launch
+/// wiring that must not regress: no permission is requested at launch, the import runs before the
+/// tools start, and an existing user is never re-onboarded.
+private func runOnboardingTests() throws {
+    // ---- Audience detection ----
+    check(Onboarding.audience(hasConfig: false, hasLegacyZones: false, didOnboard: false) == .brandNew,
+          "no config, no zones.json, never onboarded -> brand new")
+    check(Onboarding.audience(hasConfig: false, hasLegacyZones: true, didOnboard: false) == .upgradingFrom1x,
+          "a 1.x zones.json with no config.json -> upgrading from 1.x")
+    check(Onboarding.audience(hasConfig: false, hasLegacyZones: false, didOnboard: true) == .upgradingFrom1x,
+          "lineup.didOnboard alone (a 1.x user who never saved a layout) -> upgrading from 1.x")
+    check(Onboarding.audience(hasConfig: true, hasLegacyZones: true, didOnboard: true) == .returning,
+          "config.json present -> returning, whatever the legacy state")
+    check(Onboarding.audience(hasConfig: true, hasLegacyZones: false, didOnboard: false) == .returning,
+          "config.json present is sufficient for returning")
+
+    // ---- Welcome: brand-new users only, and only once ----
+    check(Onboarding.shouldShowWelcome(audience: .brandNew, didOnboard: false),
+          "a brand-new user sees Welcome")
+    check(!Onboarding.shouldShowWelcome(audience: .brandNew, didOnboard: true),
+          "an onboarded user never sees Welcome again")
+    check(!Onboarding.shouldShowWelcome(audience: .upgradingFrom1x, didOnboard: false),
+          "a 1.x upgrade never sees Welcome, even with didOnboard unset")
+    check(!Onboarding.shouldShowWelcome(audience: .returning, didOnboard: false),
+          "a returning 2.0 user never sees Welcome")
+
+    // ---- What's New: existing users only, once, and never alongside Welcome ----
+    check(Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: false,
+                                        showingWelcome: false),
+          "a 1.x upgrade sees What's New")
+    check(!Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: true,
+                                         showingWelcome: false),
+          "What's New is shown once — didShowWhatsNew2 retires it")
+    check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowWhatsNew2: false,
+                                         showingWelcome: true),
+          "a brand-new user gets Welcome INSTEAD of What's New, never both")
+    check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowWhatsNew2: false,
+                                         showingWelcome: false),
+          "a brand-new user never gets What's New even if Welcome was suppressed")
+    check(Onboarding.shouldShowWhatsNew(audience: .returning, didShowWhatsNew2: false,
+                                        showingWelcome: false),
+          "a 2.0 user who has not seen the note yet still gets it")
+
+    // ---- The Cycler import confirmation line ----
+    func summary(_ bindings: Int, hyperEnabled: Bool, imported: Bool = true) -> String? {
+        var r = LegacyImport.Report()
+        r.importedCycler = imported
+        r.importedBindingCount = bindings
+        r.importedHyperkey = imported
+        r.hyperkeyWasEnabled = hyperEnabled
+        return Onboarding.cyclerImportSummary(r)
+    }
+    check(summary(6, hyperEnabled: true) == "Imported 6 Cycler shortcuts and your Hyper Key setup.",
+          "the confirmation names both the shortcut count and the hyper key")
+    check(summary(6, hyperEnabled: false) == "Imported 6 Cycler shortcuts.",
+          "a disabled legacy hyper key is not claimed")
+    check(summary(1, hyperEnabled: false) == "Imported 1 Cycler shortcut.",
+          "one shortcut is singular")
+    check(summary(0, hyperEnabled: true) == "Imported your Hyper Key setup from Cycler.",
+          "a hyper-key-only Cycler config still gets a confirmation")
+    check(summary(0, hyperEnabled: false) == nil,
+          "an empty bindings.json produces no confirmation line")
+    check(summary(3, hyperEnabled: true, imported: false) == nil,
+          "no confirmation when the Cycler import did not run")
+    check(Onboarding.cyclerImportSummary(LegacyImport.Report()) == nil,
+          "an empty report produces no confirmation line")
+
+    // ---- The shell's own import guard: both flags set means never look again ----
+    try withTempDir("import-wiring") { dir in
+        let configURL = dir.appendingPathComponent("config.json")
+        let zonesURL = try writeZonesFile(dir, schema3Zones)
+        let store = LineupAppConfigStore(url: configURL)
+        check(store.load() == .fresh, "no config.json before the first 2.0 launch")
+
+        var report = LegacyImport.Report()
+        try store.update { config in
+            report = LegacyImport.run(into: &config, zonesURL: zonesURL,
+                                      cyclerBindingsURL: dir.appendingPathComponent("none.json"),
+                                      now: "T", resolveLegacyScreen: neverResolve)
+        }
+        check(report.importedZones, "the wired import reads the 1.x zones.json")
+        check(store.config.general.didImportLegacyZones && store.config.general.didImportLegacyCycler,
+              "both import flags are persisted after the first launch")
+        check(store.config.isEnabled(.zones) == true, "the imported Zones section is enabled")
+        check(FileManager.default.fileExists(atPath: configURL.path),
+              "the import creates config.json")
+
+        // The shell's guard: with both flags set it does not call LegacyImport at all.
+        let general = store.config.general
+        check(general.didImportLegacyZones && general.didImportLegacyCycler,
+              "the second launch's guard condition is satisfied, so no import runs")
+
+        // ...and even if it did, the run is a no-op.
+        let before = canonical(store.config)
+        var again = store.config
+        _ = LegacyImport.run(into: &again, zonesURL: zonesURL,
+                             cyclerBindingsURL: dir.appendingPathComponent("none.json"),
+                             now: "T2", resolveLegacyScreen: neverResolve)
+        check(canonical(again) == before, "a second import run leaves the envelope byte-identical")
+    }
+
+    // ---- A deferred Zones import leaves the retry armed ----
+    try withTempDir("import-wiring-deferred") { dir in
+        let zonesURL = try writeZonesFile(dir, legacyColumns)
+        let store = LineupAppConfigStore(url: dir.appendingPathComponent("config.json"))
+        _ = store.load()
+        var report = LegacyImport.Report()
+        try store.update { config in
+            report = LegacyImport.run(into: &config, zonesURL: zonesURL,
+                                      cyclerBindingsURL: dir.appendingPathComponent("none.json"),
+                                      now: "T", resolveLegacyScreen: neverResolve)
+        }
+        check(report.zonesDeferred, "an absent display defers the wired import")
+        check(!store.config.general.didImportLegacyZones,
+              "the deferred import stays pending, so the screen-change retry can complete it")
+        check(store.config.general.didImportLegacyCycler,
+              "the Cycler flag is independent and still settles")
+
+        // The retry, once the display is back.
+        try store.update { config in
+            report = LegacyImport.run(into: &config, zonesURL: zonesURL,
+                                      cyclerBindingsURL: dir.appendingPathComponent("none.json"),
+                                      now: "T2", resolveLegacyScreen: { _ in wideScreen })
+        }
+        check(report.importedZones && !report.zonesDeferred,
+              "the retry lands the layout once its display reconnects")
+        check(store.config.general.didImportLegacyZones, "the retry sets the flag")
+        check(try store.config.settings(LineupConfig.self, for: .zones)?.screens["uuid-wide"] != nil,
+              "the retry writes the migrated layout onto the reconnected display")
+    }
+
+    // ---- Source scans: the launch path ----
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        guard let text = files.first(where: { $0.path == path })?.text else {
+            check(false, "\(path) exists")
+            return ""
+        }
+        return text
+    }
+    let shell = source("Sources/lineup/App/AppShell.swift")
+
+    // NO permission request may sit on a launch path. Input Monitoring in particular is the one
+    // genuinely new permission for an existing Lineup user, and it must stay opt-in: it is only
+    // requested when Hyperkey is actually switched on.
+    let listenAccessFiles = files.filter { $0.text.contains("CGRequestListenEventAccess") }.map(\.path)
+    check(listenAccessFiles == ["Sources/lineup/App/PermissionCenter.swift",
+                                "Sources/lineup/Tools/Hyperkey/HyperKeyController.swift"],
+          "Input Monitoring is requested only by PermissionCenter and HyperKeyController (got \(listenAccessFiles))")
+    for path in ["Sources/lineup/App/AppShell.swift",
+                 "Sources/lineup/App/WelcomeWindow.swift",
+                 "Sources/lineup/App/WhatsNewWindow.swift",
+                 "Sources/lineup/App/OnboardingKit.swift"] {
+        let text = source(path)
+        check(!text.contains("CGRequestListenEventAccess") && !text.contains("requestInputMonitoring"),
+              "\(path) never requests Input Monitoring")
+        check(!text.contains("CGPreflightListenEventAccess"),
+              "\(path) does not even preflight Input Monitoring")
+    }
+    // Accessibility is requested from exactly one place: the Welcome window's Grant button.
+    let axRequestFiles = files.filter { $0.text.contains("PermissionCenter.shared.requestAccessibility()") }
+        .map(\.path)
+    check(axRequestFiles == ["Sources/lineup/App/AppShell.swift"],
+          "Accessibility is requested only from the shell's Welcome path (got \(axRequestFiles))")
+    if let grant = shell.range(of: "PermissionCenter.shared.requestAccessibility()"),
+       let welcome = shell.range(of: "private func showWelcome()") {
+        check(welcome.lowerBound < grant.lowerBound,
+              "the only Accessibility request is inside showWelcome()")
+    } else {
+        check(false, "the shell requests Accessibility from showWelcome()")
+    }
+    check(!source("Sources/lineup/App/WhatsNewWindow.swift").contains("PermissionCenter"),
+          "the What's New window asks an existing user for nothing")
+
+    // The import must run BEFORE any tool starts, or a tool reads an empty section, runs on
+    // defaults, and has to be told to reload.
+    if let importCall = shell.range(of: "runLegacyImport()"),
+       let register = shell.range(of: "registry.register(ZonesTool())"),
+       let start = shell.range(of: "registry.startEnabledTools()") {
+        check(importCall.lowerBound < register.lowerBound && register.lowerBound < start.lowerBound,
+              "the legacy import runs before the tools are registered and started")
+    } else {
+        check(false, "the shell runs the legacy import and then starts the tools")
+    }
+    let importCallers = files.filter { $0.text.contains("LegacyImport.run(") }.map(\.path)
+    check(importCallers == ["Sources/lineup/App/AppShell.swift"],
+          "the app has exactly one LegacyImport caller (got \(importCallers))")
+    check(shell.contains("hasLineupHistory: hasLineupHistory"),
+          "the import is told whether this machine also ran Lineup 1.x")
+    check(shell.contains("hasLineupHistory = hasLegacyZones"),
+          "1.x history is decided from zones.json and the didOnboard default, not from the audience")
+
+    // Gating goes through the tested pure logic, not through an inline condition.
+    for call in ["Onboarding.audience(", "Onboarding.shouldShowWelcome(", "Onboarding.shouldShowWhatsNew("] {
+        check(shell.contains(call), "the shell gates onboarding through \(call)")
+    }
+    check(shell.contains("$0.general.didShowWhatsNew2 = true"),
+          "dismissing What's New persists didShowWhatsNew2")
+
+    // The 1.x UserDefaults keys are untouched — an existing user must not be re-onboarded or
+    // re-taught the drag-snap edge hint.
+    check(shell.contains("\"lineup.didOnboard\""), "the shell keeps the 1.x didOnboard key")
+    check(source("Sources/lineup/Tools/Zones/DragSnap.swift").contains("\"lineup.seenEdgeHint\""),
+          "the 1.x seenEdgeHint key is unchanged")
+
+    // The deferred-display retry, and the standalone-Cycler warnings.
+    check(shell.contains("didChangeScreenParametersNotification"),
+          "the shell retries a deferred import on a screen change")
+    check(shell.contains("Saved layout waiting for its display"),
+          "a deferred import surfaces 1.x's 'waiting for its display' wording as a shell warning")
+    check(shell.contains("SingleInstance.standaloneCyclerIsRunning()"),
+          "a running standalone Cycler is a persistent shell warning")
+    check(shell.contains("Onboarding.cyclerUninstallBanner"),
+          "the shell warning reuses the one uninstall wording")
+    check(shell.contains("urlForApplication(withBundleIdentifier: SingleInstance.legacyCyclerBundleID)")
+          && shell.contains("activateFileViewerSelecting"),
+          "Reveal in Finder is offered only when Cycler.app actually resolves")
+    check(Onboarding.cyclerUninstallBanner.contains("Quit and remove Cycler.app")
+          && Onboarding.cyclerUninstallBanner.contains("win the race"),
+          "the uninstall banner keeps the plan's wording")
+
+    // The onboarding windows sell the suite with the shared tool tiles.
+    for path in ["Sources/lineup/App/WelcomeWindow.swift",
+                 "Sources/lineup/App/WhatsNewWindow.swift"] {
+        check(source(path).contains("ToolTileRow()"),
+              "\(path) shows the three tool tiles")
+    }
+    check(source("Sources/lineup/App/OnboardingKit.swift").contains("ToolIcon(id: tool.id"),
+          "the tiles reuse the Settings ToolIcon rather than inventing a second icon set")
+    let whatsNew = source("Sources/lineup/App/WhatsNewWindow.swift")
+    check(whatsNew.contains("Your window snapping is now the Zones tool"),
+          "What's New leads with the rename")
+    check(whatsNew.contains("Open Settings") && whatsNew.contains("Not now"),
+          "What's New offers Open Settings / Not now")
+    let welcome = source("Sources/lineup/App/WelcomeWindow.swift")
+    check(welcome.contains("OnboardingCopy.accessibilityBody")
+          && welcome.contains("OnboardingCopy.inputMonitoringNote"),
+          "Welcome explains Accessibility and names Input Monitoring as later-only")
+    check(OnboardingCopyMirror.inputMonitoringNote.contains("only when you turn Hyperkey on"),
+          "the Input Monitoring note says it is only asked for on Hyperkey enable")
+    check(source("Sources/lineup/App/OnboardingKit.swift")
+            .contains("\"\(OnboardingCopyMirror.inputMonitoringNote)\""),
+          "the mirrored Input Monitoring note is the one the app actually shows")
+
+    // ---- Settings panes: the design-review polish ----
+    let cyclerPane = source("Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift")
+    let addButtons = cyclerPane.components(separatedBy: "\"Add Shortcut\"").count - 1
+    check(addButtons == 2,
+          "the Cycler pane declares the Add control twice — empty state and list footer — and shows exactly one at a time (got \(addButtons))")
+    if let empty = cyclerPane.range(of: "if model.rows.isEmpty {"),
+       let footer = cyclerPane.range(of: "Add ⇧ to a shortcut to cycle backwards.") {
+        check(empty.lowerBound < footer.lowerBound,
+              "the list footer is on the non-empty branch, below the empty state")
+    } else {
+        check(false, "the Cycler pane branches on an empty binding list")
+    }
+    check(!cyclerPane.contains("private var header: some View"),
+          "the Cycler pane's loose instruction paragraph is gone — the hero summary carries it")
+    check(!cyclerPane.contains("Use one app to cycle its windows, or add several apps to cycle between them. Add"),
+          "the tripled guidance sentence is not repeated in the pane body")
+
+    let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
+    check(zonesPane.contains("caption: \"Click a shortcut, then press a key combo."),
+          "the recorder instructions are a caption on the shortcut section, not a floating line")
+    if let caption = zonesPane.range(of: "caption: \"Click a shortcut"),
+       let dragSection = zonesPane.range(of: "SettingsSectionView(\"Drag to snap\")") {
+        check(dragSection.lowerBound < caption.lowerBound,
+              "the recorder caption sits below the drag-snap section, where the recorders are")
+    } else {
+        check(false, "the Zones pane keeps its drag-snap section")
+    }
+    check(source("Sources/lineup/Settings/Components/SettingsSection.swift")
+            .contains("init(_ title: String, caption: String? = nil"),
+          "SettingsSectionView supports a header caption")
+}
+
+/// The onboarding copy lives in the app target, which this runner does not link. Mirrored the
+/// same way `ShortcutKitCaps` is, with the scan above pinning the real definition.
+private enum OnboardingCopyMirror {
+    static let inputMonitoringNote = "Input Monitoring is asked for only when you turn Hyperkey on."
 }
 
 /// `ShortcutKit` and `SettingsMetrics` live in the app target, which this runner does not link.

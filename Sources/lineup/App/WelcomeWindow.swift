@@ -1,100 +1,164 @@
 import AppKit
+import AppCore
+import SwiftUI
 
-/// First-launch welcome. Shown once, BEFORE the system Accessibility prompt, so a new user
-/// understands what Lineup is and why it needs permission instead of being dropped cold into a
-/// scary OS dialog for an app whose window they never saw (Lineup is a menu-bar agent). Native
-/// chrome on purpose: it should read like a standard macOS first-run sheet.
+/// First-launch welcome, for BRAND-NEW users only (`Onboarding.shouldShowWelcome`).
+///
+/// It runs before the system Accessibility prompt so a new user understands what Lineup is and
+/// why it needs permission, instead of being dropped cold into an OS dialog for an app whose
+/// window they never saw — Lineup is a menu-bar agent with no window of its own.
+///
+/// Rewritten for 2.0: the product is now three tools, so the window has to say what each one does
+/// and which of them are off by default, and it must be explicit that Input Monitoring is NOT
+/// being asked for here. An existing 1.x user never sees this window (they see What's New).
+@MainActor
 final class WelcomeWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
+    private let importContext: OnboardingImportContext
     private let onGrant: () -> Void
     private let onClose: () -> Void
 
-    /// `onGrant` runs the permission request; `onClose` fires once when the window is dismissed
+    /// `onGrant` runs the Accessibility request; `onClose` fires once when the window is dismissed
     /// by any means (Grant, Not now, or the close button) so the caller can mark onboarding done.
-    init(onGrant: @escaping () -> Void, onClose: @escaping () -> Void) {
+    init(importContext: OnboardingImportContext = .none,
+         onGrant: @escaping () -> Void,
+         onClose: @escaping () -> Void) {
+        self.importContext = importContext
         self.onGrant = onGrant
         self.onClose = onClose
         super.init()
     }
 
-    /// The welcome content as a standalone view (used for offscreen preview rendering).
-    static func makeEmbeddedContent(size: NSSize) -> NSView {
-        WelcomeWindowController(onGrant: {}, onClose: {}).makeContent(size: size)
+    /// The welcome content as a standalone, already-sized view (offscreen preview rendering).
+    static func makeEmbeddedContent() -> NSView {
+        let host = NSHostingView(rootView: WelcomeView(
+            importContext: OnboardingImportContext(
+                cyclerSummary: "Imported 6 Cycler shortcuts and your Hyper Key setup.",
+                revealCycler: {}, showUninstallBanner: true),
+            onGrant: {}, onLater: {})
+                .frame(width: Self.width)
+                .fixedSize(horizontal: false, vertical: true))
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        return host
     }
 
-    func show() {
-        let size = NSSize(width: 460, height: 388)
-        let win = NSWindow(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false)
-        win.title = "Welcome to Lineup"
-        win.isReleasedWhenClosed = false
-        win.delegate = self
-        win.contentView = makeContent(size: size)
-        win.center()
-        window = win
+    private static let width: CGFloat = 520
 
+    func show() {
+        let (win, _) = OnboardingWindow.make(title: "Welcome to \(Product.name)", width: Self.width) {
+            WelcomeView(importContext: importContext,
+                        onGrant: { [weak self] in self?.grantTapped() },
+                        onLater: { [weak self] in self?.window?.close() })
+        }
+        win.delegate = self
+        window = win
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
     }
 
-    private func makeContent(size: NSSize) -> NSView {
-        let view = NSView(frame: NSRect(origin: .zero, size: size))
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-
-        let icon = NSImageView(frame: NSRect(x: size.width / 2 - 44, y: size.height - 124, width: 88, height: 88))
-        icon.image = appIcon()
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        view.addSubview(icon)
-
-        let title = NSTextField(labelWithString: "Welcome to Lineup")
-        title.frame = NSRect(x: 30, y: size.height - 168, width: size.width - 60, height: 30)
-        title.font = .systemFont(ofSize: 22, weight: .semibold)
-        title.textColor = .labelColor
-        title.alignment = .center
-        view.addSubview(title)
-
-        // Sit the description a clear gap below the title — it used to butt right up against it.
-        let body = NSTextField(wrappingLabelWithString:
-            "Lineup lives in your menu bar, at the top of your screen. To move and resize your windows it needs one permission, Accessibility. That is the only thing it asks for, and it never collects your data.")
-        body.frame = NSRect(x: 44, y: 104, width: size.width - 88, height: 96)
-        body.font = .systemFont(ofSize: 13)
-        body.textColor = .secondaryLabelColor
-        body.alignment = .center
-        view.addSubview(body)
-
-        let later = NSButton(title: "Not now", target: self, action: #selector(laterTapped))
-        later.bezelStyle = .rounded
-        later.frame = NSRect(x: 30, y: 28, width: 120, height: 32)
-        later.setAccessibilityLabel("Continue without granting Accessibility yet")
-        view.addSubview(later)
-
-        let grant = NSButton(title: "Grant Access", target: self, action: #selector(grantTapped))
-        grant.bezelStyle = .rounded
-        grant.keyEquivalent = "\r"
-        grant.contentTintColor = Brand.blue   // one blue: the brand accent, not the system accent
-        grant.frame = NSRect(x: size.width - 30 - 150, y: 28, width: 150, height: 32)
-        view.addSubview(grant)
-
-        return view
+    private func grantTapped() {
+        onGrant()
+        window?.close()
     }
 
-    @objc private func grantTapped() { onGrant(); window?.close() }
-    @objc private func laterTapped() { window?.close() }
-
-    // Single dismissal hook: whichever way the window closes, onboarding is recorded once.
+    /// Single dismissal hook: whichever way the window closes, onboarding is recorded once.
     func windowWillClose(_ notification: Notification) {
         window = nil
         onClose()
     }
+}
 
-    private func appIcon() -> NSImage {
-        if let icon = NSImage(named: "AppIcon") { return icon }
+private struct WelcomeView: View {
+    let importContext: OnboardingImportContext
+    let onGrant: () -> Void
+    let onLater: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 16) {
+                VStack(spacing: 8) {
+                    Image(nsImage: AppIconImage.shared)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 72, height: 72)
+                        .accessibilityHidden(true)
+                    Text("Welcome to \(Product.name)")
+                        .font(.system(size: 22, weight: .semibold))
+                    Text("Three tools for your windows and your keyboard, in one menu-bar app.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                ToolTileRow()
+
+                Divider()
+
+                // The permission ask, in the window rather than in a bare OS sheet.
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color(nsColor: Brand.blue))
+                        .padding(.top, 1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(OnboardingCopy.accessibilityBody)
+                            .font(.system(size: 12))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(OnboardingCopy.inputMonitoringNote)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let summary = importContext.cyclerSummary {
+                    OnboardingBanner(symbol: "checkmark.circle.fill",
+                                     tint: Color(nsColor: Brand.cyclerAccent),
+                                     text: summary)
+                }
+                if importContext.showUninstallBanner {
+                    OnboardingBanner(symbol: "exclamationmark.triangle.fill",
+                                     tint: .orange,
+                                     text: Onboarding.cyclerUninstallBanner,
+                                     actionTitle: importContext.revealCycler == nil
+                                        ? nil : "Reveal Cycler in Finder",
+                                     action: importContext.revealCycler)
+                }
+            }
+            .padding(.horizontal, 26)
+            .padding(.top, 24)
+            .padding(.bottom, 20)
+
+            Divider()
+
+            HStack {
+                Button("Not now", action: onLater)
+                    .accessibilityLabel("Continue without granting Accessibility yet")
+                Spacer()
+                Button("Grant Access", action: onGrant)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 26)
+            .padding(.vertical, 16)
+        }
+        // A real window paints this for us; an offscreen preview render has no window, and
+        // without it the whole thing composites as light text on white.
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// The running app's own icon: the bundle icon in a real `.app`, the generic executable icon
+/// under `swift run`. Loaded once — both onboarding windows want it.
+enum AppIconImage {
+    static let shared: NSImage = {
+        if let named = NSImage(named: "AppIcon") { return named }
         let path = Bundle.main.bundlePath
         if path.hasSuffix(".app") { return NSWorkspace.shared.icon(forFile: path) }
         return NSApplication.shared.applicationIconImage
-    }
+            ?? NSImage(named: NSImage.applicationIconName)
+            ?? NSImage()
+    }()
 }

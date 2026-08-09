@@ -285,7 +285,6 @@ private struct CyclerSettingsPaneBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
             Divider()
 
             if let message = model.loadErrorMessage {
@@ -294,6 +293,10 @@ private struct CyclerSettingsPaneBody: View {
                 banner(message, systemImage: "info.circle.fill", tint: .secondary)
             }
 
+            // Exactly ONE add control on screen at any time: the empty state's own button when
+            // there is nothing to add to, the toolbar under the list once there is. Both at once
+            // (the earlier layout showed a centred one and a stray one bottom-left) reads as two
+            // different actions.
             if model.rows.isEmpty {
                 CyclerEmptyState(enabled: model.canEdit) { model.showAddShortcutPicker() }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -305,18 +308,22 @@ private struct CyclerSettingsPaneBody: View {
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
-            }
 
-            Divider()
-            HStack {
-                Button { model.showAddShortcutPicker() } label: {
-                    Label("Add Shortcut", systemImage: "plus")
+                Divider()
+                HStack(spacing: 12) {
+                    Button { model.showAddShortcutPicker() } label: {
+                        Label("Add Shortcut", systemImage: "plus")
+                    }
+                    .disabled(!model.canEdit)
+                    // The only guidance the pane header's summary does not already give.
+                    Text("Add ⇧ to a shortcut to cycle backwards.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                .controlSize(.large)
-                .disabled(!model.canEdit)
-                Spacer()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
             }
-            .padding(16)
         }
         .navigationTitle("Cycler")
         .onChange(of: model.pendingRecordRowID) { rowID in
@@ -337,17 +344,10 @@ private struct CyclerSettingsPaneBody: View {
         }
     }
 
-    /// Instructions only. The tool's title, icon and enable switch are the shell's `ToolPane`
-    /// header — a second title here would read as two stacked headers.
-    private var header: some View {
-        Text("Use one app to cycle its windows, or add several apps to cycle between them. Add ⇧ to a shortcut to cycle backwards.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    // No instruction paragraph here on purpose. The same guidance was reaching the user three
+    // times over — the `ToolPane` hero summary, a paragraph at the top of this pane, and the
+    // empty state. The hero summary and the empty state are kept; what is left over (the reverse
+    // shortcut) is a footer under the list, where it is only shown once there are shortcuts.
 
     private func banner(_ text: String, systemImage: String, tint: Color) -> some View {
         Label(text, systemImage: systemImage)

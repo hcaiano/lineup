@@ -82,6 +82,17 @@ final class ToolRegistry {
         onSettingsChange?()
     }
 
+    /// Stop and start a running tool so it re-reads its section. The one caller is the shell,
+    /// when a DEFERRED legacy import finally lands and the tool is still running on defaults;
+    /// a stopped tool is left stopped, since it will read the new section when it next starts.
+    func restart(_ id: ToolID) {
+        guard let tool = tool(id), tool.isRunning else { return }
+        tool.stop()
+        start(tool)
+        onChange?()
+        onSettingsChange?()
+    }
+
     /// Release everything, in reverse registration order. Used by termination.
     func stopAll() {
         for tool in tools.reversed() where tool.isRunning { tool.stop() }

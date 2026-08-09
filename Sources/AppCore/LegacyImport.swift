@@ -9,6 +9,19 @@ import ZonesCore
 /// `~/.config/cycler/bindings.json` are never written, renamed, backed up, or deleted.
 /// `zones.json` in particular is the rollback safety net — a user who downgrades to Lineup 1.x
 /// must find a valid schema-3 file exactly where they left it.
+///
+/// Field mapping:
+///
+/// | Legacy | New |
+/// |---|---|
+/// | `zones.json` (whole file) | `tools.zones.settings`, `tools.zones.enabled = true` |
+/// | `bindings.json → bindings` | `tools.cycler.settings.bindings` (coalesced first) |
+/// | `bindings.json → hyperKey` | `tools.hyperkey.settings` + `tools.hyperkey.enabled` |
+/// | `bindings.json → showMenuBarIcon` | `general.showMenuBarIcon`, **only for a Cycler-only migrant** |
+///
+/// That last row is a deliberate departure from a straight copy: in standalone Cycler the flag hid
+/// *Cycler's own* second menu-bar icon, whereas in 2.0 there is one icon for the whole suite. See
+/// `importCycler`.
 public enum LegacyImport {
     public struct Report: Equatable {
         public var importedZones = false
@@ -30,18 +43,24 @@ public enum LegacyImport {
     /// Idempotent, per-source: the two `didImport*` flags are independent, so a failed Cycler
     /// import never blocks the Zones import or vice versa.
     ///
-    /// - Parameter resolveLegacyScreen: maps a pre-schema-3 `ColumnConfig` onto the display its
-    ///   seams were drawn on, or `nil` to DEFER. Same closure `LineupConfig.loadOrMigrate` takes.
+    /// - Parameters:
+    ///   - hasLineupHistory: this machine also has Lineup 1.x traces (`zones.json`, or the
+    ///     `lineup.didOnboard` default). It decides ONE thing: whether standalone Cycler's
+    ///     `showMenuBarIcon` is adopted — see `importCycler`.
+    ///   - resolveLegacyScreen: maps a pre-schema-3 `ColumnConfig` onto the display its
+    ///     seams were drawn on, or `nil` to DEFER. Same closure `LineupConfig.loadOrMigrate` takes.
     @discardableResult
     public static func run(into config: inout LineupAppConfig,
                            zonesURL: URL,
                            cyclerBindingsURL: URL,
                            now: String,
+                           hasLineupHistory: Bool = false,
                            resolveLegacyScreen: (ColumnConfig) -> ScreenInfo?) -> Report {
         var report = Report()
         importZones(into: &config, url: zonesURL, now: now,
                     resolveLegacyScreen: resolveLegacyScreen, report: &report)
-        importCycler(into: &config, url: cyclerBindingsURL, report: &report)
+        importCycler(into: &config, url: cyclerBindingsURL,
+                     hasLineupHistory: hasLineupHistory, report: &report)
         return report
     }
 
@@ -91,6 +110,7 @@ public enum LegacyImport {
 
     private static func importCycler(into config: inout LineupAppConfig,
                                      url: URL,
+                                     hasLineupHistory: Bool,
                                      report: inout Report) {
         guard !config.general.didImportLegacyCycler else { return }
         guard FileManager.default.fileExists(atPath: url.path) else {
@@ -111,7 +131,17 @@ public enum LegacyImport {
             try config.setSettings(legacy.hyperKey, for: .hyperkey)
             config.setEnabled(legacy.hyperKey.enabled, for: .hyperkey)
 
-            config.general.showMenuBarIcon = legacy.showMenuBarIcon
+            // `showMenuBarIcon` is the one field where the naive migration is WRONG for the
+            // commonest case. In standalone Cycler it hid Cycler's OWN extra menu-bar icon, next
+            // to Lineup's. In 2.0 there is a single icon for the whole suite, so adopting a
+            // Cycler `false` on a machine that also ran Lineup 1.x would silently remove the only
+            // way into the app — for a user who never asked for that, mid-auto-update.
+            //
+            // So it is adopted only from a Cycler-ONLY migrant, who demonstrably chose to live
+            // without a menu-bar icon and has no Lineup icon to lose.
+            if !hasLineupHistory {
+                config.general.showMenuBarIcon = legacy.showMenuBarIcon
+            }
             config.general.didImportLegacyCycler = true
 
             report.importedCycler = true
