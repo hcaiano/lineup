@@ -13,6 +13,12 @@ import ZonesCore
 /// Uses a global mouse monitor (mouse events need no extra permission beyond the
 /// Accessibility grant the app already requires to move windows). Reads modifiers from the
 /// mouse event and, for key-based binds, asks CoreGraphics whether that key is held.
+///
+/// `@MainActor` since the 2.0 merge: every AppKit and AX call below already had to be on the
+/// main thread, and the Zones tool that owns this controller is main-actor isolated. The event
+/// monitor and timer callbacks are delivered on the main run loop, which `MainActor.assumeIsolated`
+/// states for the compiler (the same shape Cycler already used).
+@MainActor
 final class DragSnapController {
     private var monitor: Any?
     private let configProvider: () -> LineupConfig
@@ -57,7 +63,9 @@ final class DragSnapController {
         monitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
         ) { [weak self] event in
-            self?.handle(event)
+            // Global monitors are delivered on the main run loop; the closure type just isn't
+            // isolated, so state it.
+            MainActor.assumeIsolated { self?.handle(event) }
         }
     }
 
@@ -246,10 +254,12 @@ final class DragSnapController {
             hintShown = false
             lingerTimer?.invalidate()
             lingerTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
-                guard let self, self.armed, self.lingerZone == zone else { return }
-                self.hintShown = true
-                if let target = self.lastTargetRect, target == zone {
-                    self.highlight?.show(at: target, hint: HighlightWindow.halfHint)
+                MainActor.assumeIsolated {
+                    guard let self, self.armed, self.lingerZone == zone else { return }
+                    self.hintShown = true
+                    if let target = self.lastTargetRect, target == zone {
+                        self.highlight?.show(at: target, hint: HighlightWindow.halfHint)
+                    }
                 }
             }
         }
@@ -301,6 +311,7 @@ final class DragSnapController {
 
 /// Translucent, click-through block highlight. The window frame IS the highlighted target;
 /// an optional one-line hint teaches the half-snap when the user lingers.
+@MainActor
 private final class HighlightWindow: NSWindow {
     static let halfHint = "Edges fill half, corners a quarter"
 

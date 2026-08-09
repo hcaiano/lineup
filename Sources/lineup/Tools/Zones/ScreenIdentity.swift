@@ -4,6 +4,10 @@ import ZonesCore
 /// Builds a stable `ScreenInfo` for a live `NSScreen`. Primary key is the display's
 /// hardware UUID (`CGDisplayCreateUUIDFromDisplayID`); when that's unavailable
 /// (virtual/headless), a best-effort composite with a live display tie-breaker is used.
+///
+/// `@MainActor` since the 2.0 merge: it reads `NSScreen`, and every caller (the Zones tool, the
+/// drag controller, the layout editor) is main-actor isolated.
+@MainActor
 enum ScreenIdentity {
     static func info(for screen: NSScreen) -> ScreenInfo {
         let displayID = self.displayID(for: screen)

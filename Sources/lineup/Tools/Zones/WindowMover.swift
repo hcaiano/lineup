@@ -8,6 +8,11 @@ import ZonesCore
 /// once and only re-seeded after the window moves externally; re-snapping (cycling widths,
 /// hopping zones) just updates where we last put it. In-memory only, capped, no IDs — the
 /// AXUIElement itself is the key (CFEqual compares the underlying element).
+///
+/// `@MainActor` since the 2.0 merge: it is only ever touched from the main thread (hotkey
+/// actions, the drag monitor) and it retains `AXUIElement`s, which `ZonesTool.stop()` has to be
+/// able to drop deterministically — see `reset()`.
+@MainActor
 final class SnapMemory {
     static let shared = SnapMemory()
     private struct Entry {
@@ -58,6 +63,13 @@ final class SnapMemory {
         entries.removeAll { CFEqual($0.window, window) }
     }
 
+    /// Drop every remembered window. Called from `ZonesTool.stop()`: a disabled tool must not
+    /// keep other apps' `AXUIElement`s alive, and a later re-enable must not resurrect restore
+    /// data for windows the user has moved since.
+    func reset() {
+        entries.removeAll()
+    }
+
     private static func approx(_ a: CGRect, _ b: CGRect, tol: CGFloat = 4) -> Bool {
         abs(a.minX - b.minX) <= tol && abs(a.minY - b.minY) <= tol &&
         abs(a.width - b.width) <= tol && abs(a.height - b.height) <= tol
@@ -66,6 +78,10 @@ final class SnapMemory {
 
 /// Moves/resizes the frontmost window of the frontmost app via the Accessibility API.
 /// All public input is Cocoa-space; the single AX coordinate flip happens here.
+///
+/// `@MainActor` since the 2.0 merge: AX messaging and `NSScreen` reads must happen on the main
+/// thread, and both callers (the Zones hotkey actions and the drag monitor) are isolated there.
+@MainActor
 enum WindowMover {
 
     /// Snap the focused window via a quick-action id ("full"/"left"/.../"rightHalf"),
