@@ -157,7 +157,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // Cap the list: a pathological case (a rival app grabbing a whole modifier layer) should
         // not produce an alert taller than the screen.
         let shown = failures.prefix(6).map { failure in
-            "• \(ShortcutKit.display(keyCode: failure.keyCode, modifiers: failure.modifiers)) — \(self.store.displayName(for: failure.owner))"
+            "• \(ShortcutKit.display(keyCode: failure.keyCode, modifiers: failure.modifiers)) (\(self.store.displayName(for: failure.owner)))"
         }
         guard failures.count > shown.count else { return shown }
         return shown + ["• …and \(failures.count - shown.count) more"]

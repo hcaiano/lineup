@@ -102,7 +102,7 @@ private struct WhatsNewView: View {
 
                 if let summary = importContext.cyclerSummary {
                     OnboardingBanner(symbol: "checkmark.circle.fill",
-                                     tint: Color(nsColor: Brand.cyclerAccent),
+                                     tint: OnboardingBanner.successTint,
                                      text: summary)
                 }
                 if importContext.showUninstallBanner {
@@ -125,6 +125,8 @@ private struct WhatsNewView: View {
                 Spacer()
                 Button("Open Settings", action: onOpenSettings)
                     .keyboardShortcut(.defaultAction)
+                    // The window's one recommended action; "Not now" stays a plain button.
+                    .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 16)

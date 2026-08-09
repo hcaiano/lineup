@@ -83,7 +83,7 @@ final class ToolRegistry {
         } catch {
             log.error("could not persist \(id.rawValue, privacy: .public) enabled=\(enabled): \(error, privacy: .public)")
             lastEnableError = store.blockedMessage
-                ?? "\(tool.displayName) couldn’t be turned \(enabled ? "on" : "off") — your settings file couldn’t be saved."
+                ?? "\(tool.displayName) couldn’t be turned \(enabled ? "on" : "off"). Your settings file couldn’t be saved."
             onChange?()
             onSettingsChange?()
             return

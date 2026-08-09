@@ -92,7 +92,7 @@ final class LayoutEditorOverlayController {
         // Inline save-failure banner (hidden). An NSAlert would render behind the overlay.
         let err = panel(NSRect(x: screenSize.width / 2 - 300, y: 150, width: 600, height: 40))
         err.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.92).cgColor // warning, never red
-        let errLabel = NSTextField(labelWithString: "Couldn’t save — your changes are still here. Try Save again.")
+        let errLabel = NSTextField(labelWithString: "Couldn’t save. Your changes are still here, so try Save again.")
         errLabel.frame = NSRect(x: 12, y: 9, width: 576, height: 22)
         errLabel.alignment = .center; errLabel.textColor = .white; errLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         err.addSubview(errLabel); err.isHidden = true

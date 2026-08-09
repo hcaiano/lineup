@@ -32,7 +32,7 @@ final class HyperKeyController {
         "Secure Input is active; if this persists, quit and reopen your password app. Hyper Key will retry automatically"
     /// Set on the standalone Cycler.app guard (see `HyperkeyTool.apply()`); its own tap and its
     /// own Caps Lock remap would fight ours.
-    static let standaloneCyclerBlockedMessage = "Cycler is running — quit it to use Hyperkey here"
+    static let standaloneCyclerBlockedMessage = "Cycler is running. Quit it to use Hyperkey here"
     private static let syntheticEventMarker: Int64 = 0x4C4E_4850 // "LNHP" — Lineup's own events
     private static let hidutilQueue = DispatchQueue(label: Product.bundleID + ".hidutil")
     /// `clearOnExit` and `installedAtexit` are read and written from BOTH the main thread and

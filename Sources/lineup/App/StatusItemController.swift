@@ -52,7 +52,7 @@ final class StatusItemController: NSObject {
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.image = Brand.menuBarLogo()
-            item.button?.toolTip = "\(Product.name) — window snapping, app cycling, hyper key"
+            item.button?.toolTip = "\(Product.name): window snapping, app cycling, hyper key"
             statusItem = item
         }
         statusItem?.menu = buildMenu()

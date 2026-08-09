@@ -116,7 +116,7 @@ private struct WelcomeView: View {
 
                 if let summary = importContext.cyclerSummary {
                     OnboardingBanner(symbol: "checkmark.circle.fill",
-                                     tint: Color(nsColor: Brand.cyclerAccent),
+                                     tint: OnboardingBanner.successTint,
                                      text: summary)
                 }
                 if importContext.showUninstallBanner {
@@ -140,6 +140,9 @@ private struct WelcomeView: View {
                 Spacer()
                 Button("Grant Access", action: onGrant)
                     .keyboardShortcut(.defaultAction)
+                    // The window's one recommended action. Two identically bordered buttons made
+                    // "Not now" and "Grant Access" look like equal choices.
+                    .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 16)

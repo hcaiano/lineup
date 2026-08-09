@@ -78,7 +78,7 @@ public enum Onboarding {
     /// hold its own Caps Lock remap, so leaving it installed is not merely redundant — whichever
     /// process registered first wins, and it is usually the login item that has been there longer.
     public static let cyclerUninstallBanner =
-        "Quit and remove Cycler.app — Lineup now does this. Its shortcuts will otherwise win the race."
+        "Quit and remove Cycler.app. Lineup now does this, and Cycler's shortcuts will otherwise win the race."
 
     /// Shown while standalone Cycler is actually RUNNING, where the conflict is live rather than
     /// merely possible.

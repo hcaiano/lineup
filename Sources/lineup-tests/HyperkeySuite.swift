@@ -374,7 +374,7 @@ private func runHyperkeySourceScanTests() throws {
           "apply() takes enabled from the tool's running state, never from the blob")
 
     // ---- The standalone-Cycler guard (plan §5.2(b)) ----
-    check(controller.contains(#"static let standaloneCyclerBlockedMessage = "Cycler is running — quit it to use Hyperkey here""#),
+    check(controller.contains(#"static let standaloneCyclerBlockedMessage = "Cycler is running. Quit it to use Hyperkey here""#),
           "the standalone-Cycler block carries the specified message")
     check(tool.contains("SingleInstance.standaloneCyclerIsRunning() != nil"),
           "HyperkeyTool checks for a running standalone Cycler before each apply()")

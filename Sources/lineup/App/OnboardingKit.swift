@@ -76,6 +76,11 @@ struct ToolTileRow: View {
 
 /// A tinted note: the Cycler import confirmation, or the uninstall banner with its Reveal action.
 struct OnboardingBanner: View {
+    /// "Your shortcuts came across" is good news, and it is shown directly above a warning. Drawn
+    /// in Cycler's red-orange accent the two banners were the same temperature, and the successful
+    /// import read as a second problem.
+    static let successTint = Color.green
+
     let symbol: String
     let tint: Color
     let text: String

@@ -43,7 +43,7 @@ public final class LineupAppConfigStore {
         case .ok:
             return nil
         case .unreadable:
-            return "Settings couldn’t be read. Your file was left untouched — changes won’t be saved."
+            return "Settings couldn’t be read. Your file was left untouched, so changes won’t be saved."
         case .unsupportedSchema(let v):
             return "Settings were written by a newer version of Lineup (format \(v)). "
                 + "Changes won’t be saved until you update."
