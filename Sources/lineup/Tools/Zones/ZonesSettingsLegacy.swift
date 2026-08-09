@@ -1,3 +1,11 @@
+// TEMPORARY — Lineup 1.x's Settings window, kept VERBATIM (only the top-level type names are
+// prefixed, to avoid clashing with the 2.0 shell's Settings) as the source material for:
+//   * Phase 7a — Settings/Components/{SettingsSectionView, SettingsRow, RecorderButton,
+//     CircleClearButton}
+//   * Phase 4  — Tools/Zones/ZonesSettingsPane.swift (ShortcutsSettingsView + the drag-snap rows)
+//   * Phase 3  — the permission row and About content, already reimplemented in Settings/
+// It is NOT reachable from the 2.0 shell. Delete this file once Phase 4 and 7a have landed.
+
 import AppKit
 import ApplicationServices
 import ZonesCore
@@ -5,7 +13,7 @@ import Sparkle
 import SwiftUI
 
 /// Hooks the Settings window needs from the app.
-struct SettingsContext {
+struct ZonesLegacySettingsContext {
     var config: () -> LineupConfig
     var canWrite: () -> Bool                             // false when config writes are blocked
     var blockedMessage: () -> String?                    // why editing is disabled, if so
@@ -23,14 +31,14 @@ struct SettingsContext {
 }
 
 /// Native SwiftUI settings hosted from the existing AppKit menu-bar app.
-final class SettingsWindowController: NSObject, NSWindowDelegate {
+final class ZonesLegacySettingsWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
-    private let model: SettingsModel
+    private let model: ZonesLegacySettingsModel
     var onClose: (() -> Void)?
 
-    init(context: SettingsContext) {
-        self.model = SettingsModel(context: context)
-        let root = SettingsRootView(model: model)
+    init(context: ZonesLegacySettingsContext) {
+        self.model = ZonesLegacySettingsModel(context: context)
+        let root = ZonesLegacySettingsRootView(model: model)
         let hosting = NSHostingView(rootView: root)
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 620, height: 500),
@@ -78,8 +86,8 @@ private struct ShortcutRow: Identifiable {
 
 private let settingsContentWidth: CGFloat = 540
 
-private final class SettingsModel: ObservableObject {
-    private let ctx: SettingsContext
+private final class ZonesLegacySettingsModel: ObservableObject {
+    private let ctx: ZonesLegacySettingsContext
     private var monitor: Any?
     private var modifierOnlyTimer: Timer?
     private var pendingModifierOnly: Int?
@@ -95,7 +103,7 @@ private final class SettingsModel: ObservableObject {
     @Published var recordingAction: String?
     @Published var isRecordingDrag = false
 
-    init(context: SettingsContext) {
+    init(context: ZonesLegacySettingsContext) {
         self.ctx = context
         refresh()
     }
@@ -332,8 +340,8 @@ private final class SettingsModel: ObservableObject {
     }
 }
 
-private struct SettingsRootView: View {
-    @ObservedObject var model: SettingsModel
+private struct ZonesLegacySettingsRootView: View {
+    @ObservedObject var model: ZonesLegacySettingsModel
 
     var body: some View {
         TabView(selection: $model.selectedTab) {
@@ -356,13 +364,13 @@ private struct SettingsRootView: View {
 }
 
 private struct GeneralSettingsView: View {
-    @ObservedObject var model: SettingsModel
+    @ObservedObject var model: ZonesLegacySettingsModel
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                SettingsSectionView("Permissions") {
-                    SettingsRow(
+                ZonesLegacySettingsSectionView("Permissions") {
+                    ZonesLegacySettingsRow(
                         title: "Accessibility",
                         detail: "Required so Lineup can move and resize windows.") {
                         HStack(spacing: 10) {
@@ -381,8 +389,8 @@ private struct GeneralSettingsView: View {
                     }
                 }
 
-                SettingsSectionView("Behavior") {
-                    SettingsRow(
+                ZonesLegacySettingsSectionView("Behavior") {
+                    ZonesLegacySettingsRow(
                         title: "Drag to snap",
                         detail: "Hold the drag bind while dragging a window.") {
                         Toggle("", isOn: Binding(
@@ -392,7 +400,7 @@ private struct GeneralSettingsView: View {
                         .toggleStyle(.switch)
                     }
 
-                    SettingsRow(
+                    ZonesLegacySettingsRow(
                         title: "Drag bind",
                         detail: "Click to record a key or modifier combo.") {
                         HStack(spacing: 8) {
@@ -414,7 +422,7 @@ private struct GeneralSettingsView: View {
                         }
                     }
 
-                    SettingsRow(
+                    ZonesLegacySettingsRow(
                         title: "Launch at login",
                         detail: "Start Lineup automatically when you sign in.") {
                         Toggle("", isOn: Binding(
@@ -426,7 +434,7 @@ private struct GeneralSettingsView: View {
                 }
 
                 if !model.canWrite {
-                    SettingsSectionView("Configuration") {
+                    ZonesLegacySettingsSectionView("Configuration") {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.secondary)
@@ -446,7 +454,7 @@ private struct GeneralSettingsView: View {
     }
 }
 
-private struct SettingsSectionView<Content: View>: View {
+private struct ZonesLegacySettingsSectionView<Content: View>: View {
     private let title: String
     private let content: Content
 
@@ -467,7 +475,7 @@ private struct SettingsSectionView<Content: View>: View {
     }
 }
 
-private struct SettingsRow<Content: View>: View {
+private struct ZonesLegacySettingsRow<Content: View>: View {
     var title: String
     var detail: String?
     var content: Content
@@ -503,7 +511,7 @@ private struct SettingsRow<Content: View>: View {
 }
 
 private struct ShortcutsSettingsView: View {
-    @ObservedObject var model: SettingsModel
+    @ObservedObject var model: ZonesLegacySettingsModel
 
     var body: some View {
         ScrollView {
@@ -518,13 +526,13 @@ private struct ShortcutsSettingsView: View {
                         .foregroundStyle(.orange)
                 }
 
-                SettingsSectionView("Window") {
+                ZonesLegacySettingsSectionView("Window") {
                     ForEach(model.quickShortcutRows) { row in
                         ShortcutSettingsRow(row: row, model: model)
                     }
                 }
 
-                SettingsSectionView("Zones") {
+                ZonesLegacySettingsSectionView("Zones") {
                     ForEach(model.zoneShortcutRows) { row in
                         ShortcutSettingsRow(row: row, model: model)
                     }
@@ -540,7 +548,7 @@ private struct ShortcutsSettingsView: View {
 
 private struct ShortcutSettingsRow: View {
     let row: ShortcutRow
-    @ObservedObject var model: SettingsModel
+    @ObservedObject var model: ZonesLegacySettingsModel
 
     var body: some View {
         VStack(spacing: 0) {

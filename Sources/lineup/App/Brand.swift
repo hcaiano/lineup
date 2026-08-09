@@ -1,10 +1,28 @@
 import AppKit
 
-/// Single source of brand visuals: the fixed brand blue (so the product reads as one brand
+/// Single source of brand visuals: the fixed brand colours (so the product reads as one brand
 /// regardless of the user's system accent) and the menu-bar logo.
+///
+/// The menu-bar mark stays **Lineup's** pane-grid glyph — unchanged for every existing 1.x user,
+/// who is getting 2.0 as a silent auto-update and should not find a different icon in their menu
+/// bar. Cycler's "C" mark and its `trimmedToContent` bundle-image loader are not carried over;
+/// the per-tool identity lives in the accents and the SF Symbols instead.
 enum Brand {
-    /// #2F6BFF
+    /// #2F6BFF — the app accent, and the Zones tool's accent.
     static let blue = NSColor(srgbRed: 0.184, green: 0.420, blue: 1.0, alpha: 1)
+
+    /// Zones' accent is the app accent: window snapping is what Lineup has always been.
+    static let zonesBlue = blue
+
+    /// #F2580E — Cycler's warm orange, sampled from the standalone app's icon gradient. Deep
+    /// enough that white text stays legible on a filled row (the cycle HUD's selection).
+    static let cyclerAccent = NSColor(srgbRed: 0.949, green: 0.345, blue: 0.055, alpha: 1)
+
+    /// #FA3C28 — the red end of that gradient, for accents that want the hotter hue.
+    static let cyclerAccentHot = NSColor(srgbRed: 0.980, green: 0.235, blue: 0.157, alpha: 1)
+
+    /// Hyperkey's accent: violet, distinct from both of the above.
+    static let hyperkeyAccent = NSColor(srgbRed: 0.502, green: 0.353, blue: 0.937, alpha: 1)
 
     /// Monochrome **template** menu-bar mark: the app-icon motif (a tall pane on the left, a
     /// right column split into two stacked cells) drawn as three solid rounded zones. Template

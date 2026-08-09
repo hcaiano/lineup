@@ -27,6 +27,8 @@ func runAppTests() throws {
     try runEnvelopeTests()
     try runStoreTests()
     try runLegacyImportTests()
+    try runIdentityTests()
+    try runShellSourceScanTests()
 }
 
 // MARK: - Envelope
@@ -515,4 +517,137 @@ private func runLegacyImportTests() throws {
         check(cfg.isEnabled(.hyperkey) == true, "both: Hyperkey on")
         check(cfg.tools.count == 3, "both: exactly three sections are created")
     }
+}
+
+// MARK: - Identity + source scans
+//
+// The app target is not linked into this runner (it is an executable), so shell invariants are
+// asserted by scanning the source tree. That is deliberate: these are single-owner rules whose
+// whole point is "this string/call appears in exactly one place", which is a text property.
+
+private func sourceFiles() -> [(path: String, text: String)] {
+    let root = "Sources"
+    guard let en = FileManager.default.enumerator(atPath: root) else { return [] }
+    var out: [(String, String)] = []
+    for case let rel as String in en where rel.hasSuffix(".swift") {
+        // The test target is excluded: these invariants are about the SHIPPING sources, and the
+        // scans themselves necessarily contain the strings they look for.
+        if rel.hasPrefix("lineup-tests/") { continue }
+        let path = "\(root)/\(rel)"
+        if let text = try? String(contentsOfFile: path, encoding: .utf8) { out.append((path, text)) }
+    }
+    return out.sorted { $0.0 < $1.0 }
+}
+
+private func shellScript(_ path: String, key: String) -> String? {
+    guard let s = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+    for raw in s.split(separator: "\n") {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        guard line.hasPrefix("\(key)=") else { continue }
+        return String(line.dropFirst(key.count + 1))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+    }
+    return nil
+}
+
+private func plistString(_ key: String) -> String? {
+    guard let s = try? String(contentsOfFile: "Resources/Info.plist", encoding: .utf8) else { return nil }
+    guard let keyRange = s.range(of: "<key>\(key)</key>") else { return nil }
+    let rest = s[keyRange.upperBound...]
+    guard let open = rest.range(of: "<string>"), let close = rest.range(of: "</string>") else { return nil }
+    return String(rest[open.upperBound..<close.lowerBound])
+}
+
+private func runIdentityTests() throws {
+    // Product is the single Swift-side home for identity. The bundle ID is the TCC and Sparkle
+    // anchor: if it (or the signing identity) ever moves, every existing user silently loses
+    // their Accessibility grant on the next auto-update.
+    check(Product.bundleID == "com.caiano.lineup", "Product.bundleID is unchanged from Lineup 1.x")
+    check(Product.name == "Lineup", "Product.name is Lineup")
+    check(Product.executableName == "lineup", "Product.executableName is lineup")
+    check(Product.logSubsystem == Product.bundleID, "the log subsystem is the bundle id")
+    check(Product.feedURLString == "https://lineup.caiano.com/appcast.xml", "the Sparkle feed is unchanged")
+    check(Product.hotkeySignatureString == "LNUP", "the Carbon hotkey signature is unchanged")
+    check(Product.selfSignedIdentity == "Lineup Self-Signed", "the self-signed identity name is unchanged")
+
+    check(plistString("CFBundleIdentifier") == Product.bundleID,
+          "identity: Info.plist CFBundleIdentifier matches Product.bundleID")
+    check(plistString("SUFeedURL") == Product.feedURLString,
+          "identity: Info.plist SUFeedURL matches Product.feedURLString")
+    check(shellScript("Scripts/build-app.sh", key: "BUNDLE_ID") == Product.bundleID,
+          "identity: build-app.sh BUNDLE_ID matches Product.bundleID")
+    check(shellScript("Scripts/setup-signing.sh", key: "BUNDLE_ID") == Product.bundleID,
+          "identity: setup-signing.sh BUNDLE_ID matches Product.bundleID (stable designated requirement)")
+    check(shellScript("Scripts/build-app.sh", key: "APP_NAME") == Product.name,
+          "identity: build-app.sh APP_NAME matches Product.name")
+    check(shellScript("Scripts/build-app.sh", key: "EXEC_NAME") == Product.executableName,
+          "identity: build-app.sh EXEC_NAME matches Product.executableName")
+    check(shellScript("Scripts/build-app.sh", key: "SIGN_IDENTITY") == Product.selfSignedIdentity,
+          "identity: build-app.sh SIGN_IDENTITY matches Product.selfSignedIdentity")
+    check(shellScript("Scripts/setup-signing.sh", key: "IDENTITY") == Product.selfSignedIdentity,
+          "identity: setup-signing.sh IDENTITY matches Product.selfSignedIdentity")
+
+    // The Carbon namespace, derived the way HotkeyManager derives it.
+    let derived = Product.hotkeySignatureString.utf8.prefix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+    let literal = (UInt32(UInt8(ascii: "L")) << 24) | (UInt32(UInt8(ascii: "N")) << 16)
+        | (UInt32(UInt8(ascii: "U")) << 8) | UInt32(UInt8(ascii: "P"))
+    check(derived == literal, "the FourCharCode derived from Product.hotkeySignatureString is 'LNUP'")
+    check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
+
+    check(plistString("CFBundleShortVersionString") == "2.0.0", "Info.plist ships 2.0.0")
+    check(plistString("CFBundleVersion") == "17", "Info.plist ships build 17")
+}
+
+private func runShellSourceScanTests() throws {
+    let files = sourceFiles()
+    check(!files.isEmpty, "source scan finds Swift files")
+
+    // Two SPUStandardUpdaterControllers in one process is unsupported by Sparkle. Cycler's
+    // Updater.swift is deliberately never copied.
+    let updaterOccurrences = files.reduce(0) { $0 + $1.text.components(separatedBy: "SPUStandardUpdaterController(").count - 1 }
+    check(updaterOccurrences == 1,
+          "exactly one SPUStandardUpdaterController( in Sources/ (got \(updaterOccurrences))")
+
+    // ActivationCoordinator is the SOLE owner of the activation policy: otherwise closing
+    // Settings drops the app to .accessory mid layout-edit.
+    let policyFiles = files.filter { $0.text.contains("setActivationPolicy") }.map(\.path)
+    check(policyFiles == ["Sources/lineup/App/ActivationCoordinator.swift"],
+          "setActivationPolicy appears only in ActivationCoordinator.swift (got \(policyFiles))")
+
+    // The Carbon signature has exactly one home.
+    let signatureFiles = files.filter { $0.text.contains("hotkeySignatureString") }.map(\.path)
+    check(signatureFiles == ["Sources/AppCore/Product.swift", "Sources/lineup/App/HotkeyManager.swift"],
+          "the hotkey signature is defined in Product and used only by HotkeyManager (got \(signatureFiles))")
+
+    // The merged ShortcutKit must be the UNION of both apps' key tables. There were no
+    // ShortcutKit assertions in either original runner (it lives in the app target, which this
+    // runner does not link), so these are scans of the merged file rather than ported checks.
+    guard let shortcutKit = files.first(where: { $0.path.hasSuffix("App/ShortcutKit.swift") })?.text else {
+        check(false, "App/ShortcutKit.swift exists")
+        return
+    }
+    check(shortcutKit.contains("case kVK_Escape: return \"Esc\""),
+          "merged ShortcutKit keeps Cycler's Esc key name")
+    check(shortcutKit.contains("case kVK_ANSI_LeftBracket: return \"[\""),
+          "merged ShortcutKit keeps Lineup's [ key name")
+    check(shortcutKit.contains("case kVK_ANSI_RightBracket: return \"]\""),
+          "merged ShortcutKit keeps Lineup's ] key name")
+    check(!shortcutKit.contains("kVK_ANSI_LeftBracket: \"[\""),
+          "merged ShortcutKit does not duplicate [ into the ANSI table")
+    check(shortcutKit.contains("static let hyper: UInt32"),
+          "merged ShortcutKit makes UInt32 the canonical modifier mask")
+    check(shortcutKit.contains("static let hyperInt = Int(hyper)"),
+          "merged ShortcutKit bridges the mask to the Int-typed Zones model")
+    check(shortcutKit.contains("static func display(keyCode: Int, modifiers: UInt32)")
+          && shortcutKit.contains("static func display(keyCode: Int, modifiers: Int)"),
+          "merged ShortcutKit exposes both display overloads")
+    check(shortcutKit.contains("static let quickActions") && shortcutKit.contains("static let zoneRows")
+          && shortcutKit.contains("dragSnapModifierChoices"),
+          "merged ShortcutKit keeps Lineup's quick actions, zone rows and drag-snap helpers")
+
+    // The 2.0 config file is new; zones.json is the rollback safety net and must never be
+    // written, renamed or deleted. Nothing outside Product may name it.
+    let zonesPathFiles = files.filter { $0.text.contains("\"zones.json\"") }.map(\.path)
+    check(zonesPathFiles == ["Sources/AppCore/Product.swift"],
+          "the legacy zones.json path is named only by Product (got \(zonesPathFiles))")
 }

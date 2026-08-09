@@ -4,9 +4,17 @@ import ZonesCore
 
 /// App-side glue for the pure `Shortcuts` model: default bindings (Carbon key constants),
 /// Cocoa↔Carbon modifier conversion, and human-readable combo strings.
+///
+/// Merged from Lineup's and Cycler's versions. `UInt32` is canonical — it is what Carbon's
+/// `RegisterEventHotKey` and `AppBinding.modifiers` use. `ZonesCore.ShortcutBinding.modifiers`
+/// stays `Int`, so the `Int` variants below are the boundary bridges, exactly as the 1.x code
+/// already converted at the call site.
 enum ShortcutKit {
-    /// Hyperkey = ⌃⌥⇧⌘ as a Carbon modifier mask.
-    static let hyper = Int(controlKey) | Int(optionKey) | Int(shiftKey) | Int(cmdKey)
+    /// Hyperkey = ⌃⌥⇧⌘ as a Carbon modifier mask. Canonical form.
+    static let hyper: UInt32 =
+        UInt32(controlKey) | UInt32(optionKey) | UInt32(shiftKey) | UInt32(cmdKey)
+    /// The same mask for the `Int`-typed Zones shortcut model.
+    static let hyperInt = Int(hyper)
     static let defaultDragSnapModifiers = DragSnapModifierMask.default
     static let dragSnapModifierChoices: [(modifiers: Int, label: String)] = [
         (DragSnapModifierMask.shift, "Shift"),
@@ -44,22 +52,28 @@ enum ShortcutKit {
     /// Hyper+1…9). Users opt zones in via the recorder.
     static var defaults: Shortcuts {
         var s = Shortcuts()
-        s = s.setting(action: "full", keyCode: kVK_UpArrow, modifiers: hyper)
-        s = s.setting(action: "center", keyCode: kVK_DownArrow, modifiers: hyper)
-        s = s.setting(action: "left", keyCode: kVK_LeftArrow, modifiers: hyper)
-        s = s.setting(action: "right", keyCode: kVK_RightArrow, modifiers: hyper)
-        s = s.setting(action: "leftHalf", keyCode: kVK_ANSI_LeftBracket, modifiers: hyper)
-        s = s.setting(action: "rightHalf", keyCode: kVK_ANSI_RightBracket, modifiers: hyper)
-        s = s.setting(action: "restore", keyCode: kVK_Delete, modifiers: hyper) // "delete the snap"
+        s = s.setting(action: "full", keyCode: kVK_UpArrow, modifiers: hyperInt)
+        s = s.setting(action: "center", keyCode: kVK_DownArrow, modifiers: hyperInt)
+        s = s.setting(action: "left", keyCode: kVK_LeftArrow, modifiers: hyperInt)
+        s = s.setting(action: "right", keyCode: kVK_RightArrow, modifiers: hyperInt)
+        s = s.setting(action: "leftHalf", keyCode: kVK_ANSI_LeftBracket, modifiers: hyperInt)
+        s = s.setting(action: "rightHalf", keyCode: kVK_ANSI_RightBracket, modifiers: hyperInt)
+        s = s.setting(action: "restore", keyCode: kVK_Delete, modifiers: hyperInt) // "delete the snap"
         return s
     }
 
+    /// `Int` form, for the Zones shortcut model and the drag-snap masks.
     static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> Int {
-        var m = 0
-        if flags.contains(.command) { m |= Int(cmdKey) }
-        if flags.contains(.option) { m |= Int(optionKey) }
-        if flags.contains(.control) { m |= Int(controlKey) }
-        if flags.contains(.shift) { m |= Int(shiftKey) }
+        Int(carbonModifierMask(from: flags))
+    }
+
+    /// Canonical form, for Carbon registration and `AppBinding.modifiers`.
+    static func carbonModifierMask(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var m: UInt32 = 0
+        if flags.contains(.command) { m |= UInt32(cmdKey) }
+        if flags.contains(.option) { m |= UInt32(optionKey) }
+        if flags.contains(.control) { m |= UInt32(controlKey) }
+        if flags.contains(.shift) { m |= UInt32(shiftKey) }
         return m
     }
 
@@ -89,14 +103,21 @@ enum ShortcutKit {
     }
 
     static func display(keyCode: Int, modifiers: Int) -> String {
+        display(keyCode: keyCode, modifiers: UInt32(bitPattern: Int32(truncatingIfNeeded: modifiers)))
+    }
+
+    /// Canonical form — what Cycler's bindings and the Carbon registry use.
+    static func display(keyCode: Int, modifiers: UInt32) -> String {
         var s = ""
-        if modifiers & Int(controlKey) != 0 { s += "⌃" }
-        if modifiers & Int(optionKey) != 0 { s += "⌥" }
-        if modifiers & Int(shiftKey) != 0 { s += "⇧" }
-        if modifiers & Int(cmdKey) != 0 { s += "⌘" }
+        if modifiers & UInt32(controlKey) != 0 { s += "⌃" }
+        if modifiers & UInt32(optionKey) != 0 { s += "⌥" }
+        if modifiers & UInt32(shiftKey) != 0 { s += "⇧" }
+        if modifiers & UInt32(cmdKey) != 0 { s += "⌘" }
         return s + keyName(keyCode)
     }
 
+    /// Union of both apps' key tables. Cycler contributed `Esc`; the `[`/`]` entries were in
+    /// both and are kept here only (not duplicated into `ansiNames`).
     static func keyName(_ kc: Int) -> String {
         switch kc {
         case kVK_UpArrow: return "↑"
@@ -109,6 +130,7 @@ enum ShortcutKit {
         case kVK_Return: return "↩"
         case kVK_Tab: return "⇥"
         case kVK_Delete: return "⌫"
+        case kVK_Escape: return "Esc"
         default:
             if let name = ShortcutKit.ansiNames[kc] { return name }
             return "key \(kc)"
