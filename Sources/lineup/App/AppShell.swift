@@ -69,7 +69,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
         statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
         statusItem.onShowAbout = { AboutWindowController.show() }
 
-        // Tools are registered here in phases 4-6. Nothing yet, by design.
+        // Tools are registered here in phases 4-6. Order is the menu and sidebar order.
+        registry.register(ZonesTool())
         registry.startEnabledTools()
         statusItem.refresh()
 

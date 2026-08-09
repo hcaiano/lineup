@@ -1142,4 +1142,153 @@ func runZonesTests() throws {
         check(bundleIDInScript("Scripts/setup-signing.sh") == plistID, "bundle-id consistency: setup-signing.sh matches the plist (stable designated requirement)")
     }
 
+    try runZonesToolTests()
+}
+
+// MARK: - The Zones TOOL (phase 4)
+//
+// The app target is an executable and isn't linked into this runner, so the tool's lifecycle
+// invariants are asserted by scanning its source. That is the same technique AppSuite uses for
+// the shell's single-owner rules, and it is aimed at exactly the things a future edit could
+// silently drop: the five resources `stop()` has to give back, the write-then-assign ordering
+// that keeps a failed save from corrupting live state, and the routing of hotkeys and the
+// recording suspension through the shell's scopes instead of the singletons.
+
+private let zonesToolPath = "Sources/lineup/Tools/Zones/ZonesTool.swift"
+private let zonesPanePath = "Sources/lineup/Tools/Zones/ZonesSettingsPane.swift"
+
+private func zonesFile(_ path: String) -> String? {
+    try? String(contentsOfFile: path, encoding: .utf8)
+}
+
+/// The body of a method, from its `func` line to the matching 4-space-indented closing brace.
+private func zonesFuncBody(_ name: String, in text: String) -> String? {
+    guard let start = text.range(of: "func \(name)") else { return nil }
+    let rest = text[start.upperBound...]
+    guard let end = rest.range(of: "\n    }") else { return nil }
+    return String(rest[..<end.lowerBound])
+}
+
+private func runZonesToolTests() throws {
+    // ---- File layout ----
+    let toolText = zonesFile(zonesToolPath)
+    let paneText = zonesFile(zonesPanePath)
+    check(toolText != nil, "Tools/Zones/ZonesTool.swift exists")
+    check(paneText != nil, "Tools/Zones/ZonesSettingsPane.swift exists")
+    check(!FileManager.default.fileExists(atPath: "Sources/lineup/Tools/Zones/ZonesSettingsLegacy.swift"),
+          "the parked 1.x Settings window is deleted now that the Zones pane exists")
+    for moved in ["DragSnap", "LayoutEditorOverlay", "ScreenIdentity", "WindowMover"] {
+        check(FileManager.default.fileExists(atPath: "Sources/lineup/Tools/Zones/\(moved).swift"),
+              "\(moved).swift lives under Tools/Zones")
+        check(!FileManager.default.fileExists(atPath: "Sources/lineup/\(moved).swift"),
+              "\(moved).swift no longer sits at the app-target root")
+    }
+
+    guard let tool = toolText, let pane = paneText else { return }
+    let dragSnap = zonesFile("Sources/lineup/Tools/Zones/DragSnap.swift") ?? ""
+    let editor = zonesFile("Sources/lineup/Tools/Zones/LayoutEditorOverlay.swift") ?? ""
+    let mover = zonesFile("Sources/lineup/Tools/Zones/WindowMover.swift") ?? ""
+    let identity = zonesFile("Sources/lineup/Tools/Zones/ScreenIdentity.swift") ?? ""
+
+    // ---- @MainActor pass (the merge's isolation contract) ----
+    check(dragSnap.contains("@MainActor\nfinal class DragSnapController"), "DragSnapController is @MainActor")
+    check(dragSnap.contains("MainActor.assumeIsolated"),
+          "the drag monitor and linger timer state their main-actor isolation")
+    check(editor.contains("@MainActor\nfinal class LayoutEditorOverlayController"),
+          "LayoutEditorOverlayController is @MainActor")
+    check(editor.contains("@MainActor\nfinal class EditorWindow"), "EditorWindow is @MainActor")
+    check(mover.contains("@MainActor\nfinal class SnapMemory"), "SnapMemory is @MainActor")
+    check(mover.contains("@MainActor\nenum WindowMover"), "WindowMover is @MainActor")
+    check(identity.contains("@MainActor\nenum ScreenIdentity"), "ScreenIdentity is @MainActor")
+
+    // ---- The two new teardown affordances ----
+    check(mover.contains("func reset()"), "SnapMemory gains reset() so stop() can drop retained AXUIElements")
+    check(editor.contains("func forceClose()"), "the layout editor gains forceClose()")
+    if let forceClose = zonesFuncBody("forceClose()", in: editor) {
+        check(!forceClose.contains("commit("),
+              "forceClose() dismisses WITHOUT committing an unconfirmed draft")
+    } else {
+        check(false, "forceClose() body is readable")
+    }
+
+    // ---- stop() releases every resource start() acquired ----
+    if let stop = zonesFuncBody("stop()", in: tool) {
+        check(stop.contains("hotkeys.unregisterAll()"), "stop() unregisters the tool's hotkeys")
+        check(stop.contains("hotkeyTokens.removeAll()"), "stop() drops the hotkey tokens")
+        check(stop.contains("dragSnap.stop()"), "stop() removes the global mouse monitor and linger timer")
+        check(stop.contains("editorOverlay?.forceClose()") && stop.contains("editorOverlay = nil"),
+              "stop() force-closes the layout editor windows")
+        check(stop.contains("removeObserver(screenObserver)") && stop.contains("self.screenObserver = nil"),
+              "stop() removes the screen-parameters observer")
+        check(stop.contains("SnapMemory.shared.reset()"), "stop() drops the remembered windows")
+        check(stop.contains("cycleState = nil"), "stop() clears the in-progress cycle")
+        check(stop.contains("isRunning = false"), "stop() marks the tool stopped")
+    } else {
+        check(false, "ZonesTool.stop() body is readable")
+    }
+    check(tool.contains("screenObserver = NotificationCenter.default.addObserver"),
+          "start() is the only place the screen observer is installed")
+
+    // ---- Persistence: write FIRST, assign only on success, and always behind canWrite ----
+    for persist in ["applyLayouts", "applyShortcuts", "persistDragSnapEnabled", "applyDragSnapTrigger"] {
+        guard let body = zonesFuncBody("\(persist)(", in: tool) else {
+            check(false, "\(persist) body is readable")
+            continue
+        }
+        check(body.contains("guard canWrite"), "\(persist) is gated on canWrite")
+        let save = body.range(of: "try services.config.save(updated)")
+        let assign = body.range(of: "config = updated")
+        check(save != nil && assign != nil && save!.lowerBound < assign!.lowerBound,
+              "\(persist) writes through the config scope BEFORE assigning live state")
+    }
+    check(!tool.contains("config.write(to:"),
+          "the tool never writes zones.json itself — the store owns the file")
+
+    // ---- Hotkeys go through the tool's scope, never the singleton ----
+    check(!tool.contains("HotkeyManager.shared") && !pane.contains("HotkeyManager.shared"),
+          "Zones never reaches for HotkeyManager.shared (that is what makes stop() safe)")
+    check(tool.contains("UInt32(binding.modifiers)"),
+          "the Int->UInt32 modifier conversion happens at the registration boundary")
+    check(tool.contains("case .failure(let failure)") && tool.contains("failure.displayReason"),
+          "a refused registration is recorded with its reason instead of being silently dropped")
+
+    // ---- Registration + tool contract ----
+    let shell = zonesFile("Sources/lineup/App/AppShell.swift") ?? ""
+    check(shell.contains("registry.register(ZonesTool())"), "AppShell registers the Zones tool")
+    check(tool.contains("let defaultEnabled = true"), "Zones is on by default (1.x's incumbent behaviour)")
+    check(tool.contains("let requiredPermissions: Set<Permission> = [.accessibility]"),
+          "Zones declares its Accessibility requirement")
+
+    // ---- Menu + warnings ----
+    check(tool.contains("ToolMenu.item(\"Edit Layout…\""), "the menu contributes Edit Layout…")
+    check(tool.contains("-drag to snap") && tool.contains("drag.state = isDragSnapOn ? .on : .off"),
+          "the menu contributes the drag-to-snap toggle with its live state")
+    check(tool.contains("actionTitle: \"Retry shortcuts\""), "blocked shortcuts offer a retry")
+    check(tool.contains("actionTitle: \"Reset Zones settings…\""), "an unreadable section offers a reset")
+
+    // ---- Section-level config discipline ----
+    check(tool.contains("loaded.schemaVersion <= LineupConfig.currentSchema"),
+          "a section written by a newer Lineup is refused rather than silently rewritten")
+    check(tool.contains("try loaded.validate()"), "a section with an invalid layout is refused")
+    do {
+        // Why the gate above is needed: unlike loadOrMigrate, plain decoding does NOT police the
+        // schema, so a downgraded user's newer section would otherwise load and be written back.
+        let newer = LineupConfig(schemaVersion: LineupConfig.currentSchema + 1)
+        let round = try JSONDecoder().decode(LineupConfig.self, from: JSONEncoder().encode(newer))
+        check(round.schemaVersion == LineupConfig.currentSchema + 1,
+              "a newer-schema config decodes fine on its own, so the tool must gate it")
+    }
+
+    // ---- Settings pane: shared components, one recorder, no direct suspension ----
+    for component in ["RecorderButton(", "CircleClearButton(", "SettingsSectionView(",
+                      "SettingsRow(", "SettingsMetrics.contentWidth"] {
+        check(pane.contains(component), "the Zones pane uses the shared \(component.replacingOccurrences(of: "(", with: ""))")
+    }
+    check(pane.contains("@StateObject private var recorder: ShortcutRecorder"),
+          "the pane owns exactly one ShortcutRecorder")
+    check(pane.contains("options: .combo") && pane.contains("options: .comboOrModifiers"),
+          "shortcut rows capture combos; the drag bind also accepts modifiers on their own")
+    check(pane.contains("case .clear"), "Delete is handled through the recorder's .clear capture")
+    check(pane.contains(".onDisappear { recorder.cancel() }"),
+          "leaving the pane cancels any capture, so the registry is never left suspended")
 }

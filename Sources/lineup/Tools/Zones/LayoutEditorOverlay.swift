@@ -5,6 +5,9 @@ import ZonesCore
 /// showing that display's own layout (no picker to get confused by). Hover a zone to reveal labeled
 /// split/merge controls, drag the grip handles to resize, and Save (bottom-center, reachable even on
 /// a very wide screen). Esc/Cancel discards. Commits all changed displays atomically on Save.
+///
+/// `@MainActor` since the 2.0 merge — it is pure AppKit, owned by the main-actor `ZonesTool`.
+@MainActor
 final class LayoutEditorOverlayController {
     private var windows: [EditorWindow] = []
     private var canvases: [EditorCanvas] = []
@@ -133,6 +136,17 @@ final class LayoutEditorOverlayController {
 
     @objc private func cancelTapped() { close() }
 
+    /// Dismiss from OUTSIDE the overlay, without committing.
+    ///
+    /// The user's exits (Save / Cancel / Esc) go through `doneTapped`/`cancelTapped`, and the
+    /// teardown they share is `close()`, which is private. `ZonesTool.stop()` needs that same
+    /// teardown — turning Zones off, or quitting, must not leave a full-screen editor window on
+    /// every display — but must NOT run the commit path: a draft the user never confirmed is
+    /// discarded, exactly as Cancel would. Safe to call twice (the window list is emptied).
+    func forceClose() {
+        close()
+    }
+
     private func close() {
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll(); canvases.removeAll(); errorBanners.removeAll()
@@ -144,6 +158,7 @@ final class LayoutEditorOverlayController {
     }
 }
 
+@MainActor
 final class EditorWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
