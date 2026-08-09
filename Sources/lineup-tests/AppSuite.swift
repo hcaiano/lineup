@@ -2234,6 +2234,10 @@ private func runVisualDesignTests() throws {
     let caps = source("Sources/lineup/Settings/Components/KeyCapRow.swift")
     check(!caps.contains("enum Size") && !caps.contains("var size: Size"),
           "key caps render at ONE size, in both recorder controls")
+    check(caps.contains("@Environment(\\.isEnabled)")
+            && caps.contains("isEnabled ? Color.primary : Color.secondary"),
+          "key caps dim with their control: an explicit colour is not dimmed by .disabled(), and a "
+            + "write-blocked pane showed live-looking shortcuts under a banner saying otherwise")
     check(source("Sources/lineup/Settings/Components/ShortcutField.swift").contains("KeyCapRow(display: text)"),
           "Cycler's field uses the same caps Zones' button does")
     let zonesPaneSource = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")

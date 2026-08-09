@@ -13,6 +13,11 @@ struct KeyCapRow: View {
     /// A rendered display string, e.g. `⌃⌥⇧⌘←`. Split by `ShortcutKit.keyCaps`.
     var display: String
 
+    /// An explicit colour cannot be dimmed by `.disabled(_:)` the way an inherited one is, and a
+    /// pane whose writes are blocked disables every recorder in it: without this the shortcut rows
+    /// went on looking live under a banner saying nothing could be saved.
+    @Environment(\.isEnabled) private var isEnabled
+
     private let font = Font.system(size: 12, weight: .medium)
     private let minWidth: CGFloat = 20
     private let height: CGFloat = 20
@@ -26,13 +31,13 @@ struct KeyCapRow: View {
                     // `Color.primary`, not `.primary`: inside a bordered Button's label the
                     // hierarchical style can resolve to the button's tint, and a recording
                     // control tints. Key caps are neutral in every state.
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
                     .lineLimit(1)
                     .padding(.horizontal, horizontalPadding)
                     .frame(minWidth: minWidth, minHeight: height)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.primary.opacity(0.07)))
+                            .fill(Color.primary.opacity(isEnabled ? 0.07 : 0.04)))
                     .overlay(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
