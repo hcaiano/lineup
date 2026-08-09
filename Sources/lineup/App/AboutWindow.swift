@@ -22,10 +22,45 @@ enum AboutFacts {
     static let copyright = "© 2026 Henrique Caiano. All rights reserved."
 }
 
+/// A layer-backed view whose colours FOLLOW the effective appearance.
+///
+/// `NSColor.cgColor` resolves against whatever appearance happens to be current at that moment, so
+/// assigning `layer.backgroundColor` once freezes the colour at creation time: an About window
+/// left open across a Dark Mode switch (or the automatic sunset one) kept its light card and its
+/// light border on a dark window. Resolving in `updateLayer`, under this view's own appearance,
+/// is what makes the switch land.
+private final class AppearanceLayerView: NSView {
+    var fill: NSColor = .clear { didSet { needsDisplay = true } }
+    var border: NSColor? { didSet { needsDisplay = true } }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = fill.cgColor
+            layer?.borderColor = border?.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 /// The menu bar's About window. Shows exactly what Settings › About shows — brand mark, version,
 /// build date, the product site — because a user can reach both and they must not disagree.
 ///
 /// No source-repository link and no open-source licence line: this branch is private.
+@MainActor
 final class AboutWindowController: NSObject, NSWindowDelegate {
     private static let shared = AboutWindowController()
 
@@ -34,6 +69,11 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
     static let naturalSize = NSSize(width: 420, height: 344)
 
     private var window: NSWindow?
+
+    /// This window needs real app focus like Settings, Welcome and What's New do, so it takes the
+    /// same ref-counted `.regular` activation. Without it, About opened from the menu bar on an
+    /// agent-only app came up behind whatever was frontmost.
+    private static let activationReason = "about"
 
     static func show() {
         shared.showWindow()
@@ -47,6 +87,8 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
 
     private func showWindow() {
         if let window {
+            // Retain is a set insert, so re-showing an open window cannot unbalance the count.
+            ActivationCoordinator.shared.retain(Self.activationReason)
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
@@ -65,18 +107,19 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         win.center()
         window = win
 
+        ActivationCoordinator.shared.retain(Self.activationReason)
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
         window = nil
+        ActivationCoordinator.shared.release(Self.activationReason)
     }
 
     private func makeContent(size: NSSize) -> NSView {
-        let view = NSView(frame: NSRect(origin: .zero, size: size))
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let view = AppearanceLayerView(frame: NSRect(origin: .zero, size: size))
+        view.fill = .windowBackgroundColor
 
         let icon = NSImageView(frame: NSRect(x: size.width / 2 - 42, y: size.height - 108, width: 84, height: 84))
         icon.image = appIcon()
@@ -99,11 +142,10 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         }
 
         // One row now the repository link is gone; the card is sized to it, not left half empty.
-        let card = NSView(frame: NSRect(x: 42, y: size.height - 262, width: size.width - 84, height: 48))
-        card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        let card = AppearanceLayerView(frame: NSRect(x: 42, y: size.height - 262, width: size.width - 84, height: 48))
+        card.fill = .controlBackgroundColor
+        card.border = .separatorColor
         card.layer?.cornerRadius = 10
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
         card.layer?.borderWidth = 1
         view.addSubview(card)
 

@@ -208,18 +208,29 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     private func retryDeferredImport() {
         guard importReport.zonesDeferred else { return }
+        // A store that can no longer be written to (the envelope was rejected in the meantime)
+        // makes `runLegacyImport()` a guaranteed no-op, so stop watching rather than re-run it on
+        // every display change for the rest of the session. The shell warning stays up, and the
+        // import runs at the next launch once the config is fixed.
+        guard store.canWrite else {
+            removeDeferredImportObserver()
+            return
+        }
         runLegacyImport()
         guard !importReport.zonesDeferred else { return }   // still absent; keep waiting
-        if let deferredImportObserver {
-            NotificationCenter.default.removeObserver(deferredImportObserver)
-            self.deferredImportObserver = nil
-        }
+        removeDeferredImportObserver()
         // Restart Zones so it re-reads the section it was running defaults for. Deterministic,
         // and rare enough (once, when a missing display returns) that re-registering its hotkeys
         // costs nothing.
         registry.restart(.zones)
         statusItem.refresh()
         settings?.refresh()
+    }
+
+    private func removeDeferredImportObserver() {
+        guard let deferredImportObserver else { return }
+        NotificationCenter.default.removeObserver(deferredImportObserver)
+        self.deferredImportObserver = nil
     }
 
     // MARK: - Warnings
@@ -328,7 +339,12 @@ final class AppShell: NSObject, NSApplicationDelegate {
     @objc private func applicationBecameActive() {
         // Returning from System Settings is the moment a new grant becomes visible to us.
         PermissionCenter.shared.recheck()
-        if !store.config.general.showMenuBarIcon { openSettings() }
+        // Only when there is NO Settings window yet. This fires on every activation — including
+        // the one Settings itself causes, and the one that follows dismissing an alert — so
+        // reopening unconditionally de-minimized the window the user had just minimized and
+        // fought whatever sheet was on it. `applicationShouldHandleReopen` covers the Dock and
+        // Spotlight route back in for a hidden menu-bar icon.
+        if !store.config.general.showMenuBarIcon, settings == nil { openSettings() }
     }
 
     // MARK: - Welcome / What's New

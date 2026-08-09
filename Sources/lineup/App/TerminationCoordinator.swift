@@ -3,7 +3,14 @@ import AppCore
 import Darwin
 import os
 
-/// Runs every tool's teardown exactly once, on every exit path the process can control.
+/// Runs every tool's teardown exactly once, on the exit paths the process can actually observe:
+/// `applicationWillTerminate` (Quit, a Sparkle relaunch, a logout) and SIGINT/SIGTERM/SIGHUP,
+/// whichever comes first.
+///
+/// It cannot cover SIGKILL, Force Quit or a crash — nothing can. What survives those is the
+/// Caps Lock `hidutil` mapping, which is why its ownership is persisted: the next launch finds
+/// the flag and clears the mapping, and `CapsLockHandoff` can offer to restore Caps Lock when
+/// the owner never comes back at all.
 ///
 /// Standalone Cycler installed its own SIGINT/SIGTERM/SIGHUP handler that stopped the hyper-key
 /// controller and then `exit(128+sig)`'d — which, in a three-tool app, would skip Zones' and

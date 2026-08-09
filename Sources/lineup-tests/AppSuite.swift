@@ -847,6 +847,28 @@ private func runSettingsWindowTests() throws {
         check(body.contains("showMenuBarIcon") && body.contains("openSettings()"),
               "reopen shows Settings when the menu-bar icon is hidden")
     }
+    // didBecomeActive fires on EVERY activation — including the ones Settings itself and a
+    // dismissed alert cause — so reopening unconditionally de-minimized the window the user had
+    // just minimized and fought whatever sheet was on it. The reopen handler above is the route
+    // back in; this one only has to cover "there is no window at all".
+    if let start = shell.range(of: "@objc private func applicationBecameActive") {
+        let body = shell[start.lowerBound...].prefix(700)
+        check(body.contains("settings == nil"),
+              "becoming active only opens Settings when no Settings window exists")
+    } else {
+        check(false, "AppShell owns applicationBecameActive")
+    }
+
+    // A store that can no longer be written to makes the deferred Zones import a guaranteed
+    // no-op, so the display observer that retries it has to come off rather than re-run forever.
+    if let start = shell.range(of: "private func retryDeferredImport") {
+        let body = shell[start.lowerBound...].prefix(900)
+        check(body.contains("guard store.canWrite else {") && body.contains("removeDeferredImportObserver()"),
+              "the deferred-import observer is removed when the store cannot be written to")
+    } else {
+        check(false, "AppShell owns retryDeferredImport")
+    }
+
     if let start = shell.range(of: "private func setShowMenuBarIcon") {
         let body = shell[start.lowerBound...].prefix(300)
         check(body.contains("statusItem.refresh()"),
@@ -1475,6 +1497,26 @@ private func runParityFixTests() throws {
           "the build date the window always had is now on the Settings pane too")
     check(aboutWindow.contains("func versionLine()") && aboutPane.contains("CFBundleVersion"),
           "both Abouts show version and build")
+
+    // ---- The About WINDOW takes the same ref-counted activation every other window does ----
+    // Without it, an agent-only app shows About behind whatever is frontmost, and the window has
+    // no Dock icon to get back to.
+    check(aboutWindow.contains("ActivationCoordinator.shared.retain(Self.activationReason)")
+          && aboutWindow.contains("ActivationCoordinator.shared.release(Self.activationReason)"),
+          "the About window retains and releases the activation policy like Settings and Welcome")
+    check(aboutWindow.components(separatedBy: "func windowWillClose").last?
+        .contains("release(Self.activationReason)") == true,
+          "About releases its activation claim when the window closes")
+    // Layer colours resolved once at creation froze the card in whatever appearance was current;
+    // an About window open across a Dark Mode switch kept a light card on a dark window.
+    check(aboutWindow.contains("override func updateLayer()")
+          && aboutWindow.contains("effectiveAppearance.performAsCurrentDrawingAppearance"),
+          "About resolves its layer colours under the view's own effective appearance")
+    check(aboutWindow.contains("override func viewDidChangeEffectiveAppearance()"),
+          "About redraws those colours when the appearance changes")
+    check(!aboutWindow.contains("layer?.backgroundColor = NSColor")
+          && !aboutWindow.contains("layer?.borderColor = NSColor"),
+          "no About layer colour is assigned from a one-shot NSColor.cgColor")
 
     // ---- B3: Settings opens on the Space the user is on ----
     check(source("Sources/lineup/Settings/SettingsWindowController.swift")
