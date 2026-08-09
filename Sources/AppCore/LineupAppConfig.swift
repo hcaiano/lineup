@@ -44,9 +44,15 @@ public struct LineupAppConfig: Codable, Equatable {
 
     public func section(for id: ToolID) -> ToolSection? { tools[id.rawValue] }
 
-    /// `nil` when the tool has no section yet — the caller falls back to its own defaults.
+    /// `nil` when the tool has no settings yet — the caller falls back to its own defaults.
+    ///
+    /// An EMPTY blob counts as "no settings yet", not as a decode failure. A section can exist
+    /// carrying only its `enabled` flag: `setEnabled` on a missing section creates it that way,
+    /// which is exactly what the registry does at first launch when it seeds a tool's default
+    /// enablement. Handing `{}` to a tool's decoder would throw, and the tool would report its
+    /// settings as unreadable and block editing — on a brand-new install with nothing wrong.
     public func settings<T: Decodable>(_ type: T.Type, for id: ToolID) throws -> T? {
-        guard let section = tools[id.rawValue] else { return nil }
+        guard let section = tools[id.rawValue], section.settings != .object([:]) else { return nil }
         return try section.settings.decoded(type)
     }
 

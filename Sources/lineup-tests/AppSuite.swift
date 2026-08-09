@@ -843,6 +843,36 @@ private func runIntegrationTests() throws {
         check(cfg.isEnabled(.zones) == true,
               "a seeded enabled flag survives the first settings write")
     }
+    // ---- A seeded-but-empty section reads as "no settings yet", never as a corrupt blob ----
+    //
+    // Seeding creates `{"enabled": true, "settings": {}}`. If `{}` were handed to the tool's
+    // decoder it would throw, and a brand-new install would open with "Zones settings couldn't be
+    // read" and editing disabled.
+    do {
+        var cfg = LineupAppConfig()
+        cfg.setEnabled(true, for: .zones)
+        check(cfg.section(for: .zones)?.settings == .object([:]),
+              "seeding a missing section leaves an empty settings blob")
+        check(try cfg.settings(LineupConfig.self, for: .zones) == nil,
+              "an empty blob decodes as nil (defaults), not as an error")
+        check(try cfg.settings(CyclerToolSettings.self, for: .cycler) == nil,
+              "a missing section is still nil")
+        cfg.setEnabled(false, for: .cycler)
+        check(try cfg.settings(CyclerToolSettings.self, for: .cycler) == nil,
+              "a seeded cycler section reads as no-settings-yet")
+        cfg.setEnabled(false, for: .hyperkey)
+        check(try cfg.settings(HyperKeySettings.self, for: .hyperkey) == nil,
+              "a seeded hyperkey section reads as no-settings-yet")
+        // A real blob still decodes, and a genuinely broken one still throws.
+        try cfg.setSettings(CyclerToolSettings(bindings: []), for: .cycler)
+        check(try cfg.settings(CyclerToolSettings.self, for: .cycler) == CyclerToolSettings(bindings: []),
+              "a real empty-bindings blob is distinct from an empty section")
+        cfg.tools["zones"] = ToolSection(enabled: true, settings: .string("nonsense"))
+        var threw = false
+        do { _ = try cfg.settings(LineupConfig.self, for: .zones) } catch { threw = true }
+        check(threw, "a genuinely undecodable blob still throws")
+    }
+
     try withTempDir("registry-seed") { dir in
         // The same sequence through the store, which is what actually runs at launch.
         let store = LineupAppConfigStore(url: dir.appendingPathComponent("config.json"))
