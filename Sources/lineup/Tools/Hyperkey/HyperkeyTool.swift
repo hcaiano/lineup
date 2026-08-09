@@ -32,16 +32,10 @@ final class HyperkeyTool: Tool {
 
     private let controller = HyperKeyController()
     private var log = Logger(subsystem: Product.logSubsystem, category: "hyperkey-tool")
-    /// Kept after `stop()` on purpose: the Settings pane is rendered even when the tool is off, so
-    /// a trigger change made while disabled still has somewhere to persist to.
+    /// Handed over at REGISTRATION and kept for the whole process lifetime, `stop()` included: the
+    /// pane is rendered even when the tool is off, and picking a trigger before turning Hyperkey on
+    /// is the normal order — that edit has to persist immediately, with no tool ever started.
     private var services: ToolServices?
-    /// Edits made from the pane before this tool has EVER been started in this launch. `Tool` is
-    /// frozen and the shell only mints a `ToolConfigScope` in `start()`, so there is nowhere to
-    /// persist to yet; the edit is held here and written the moment the tool starts. The pane must
-    /// stay editable while the tool is off (picking a trigger before turning Hyperkey on is the
-    /// normal order), and losing an unused trigger choice at quit is the cheapest possible cost.
-    /// If the shell ever hands tools a config scope at registration time, delete this.
-    private var pendingSettings: HyperKeySettings?
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     /// `stop()` must not persist `enabled = false` when the whole app is quitting — only when the
     /// USER turned the tool off. `AppShell.applicationWillTerminate` runs the termination cleanups
@@ -59,13 +53,18 @@ final class HyperkeyTool: Tool {
 
     // MARK: - Lifecycle
 
+    /// Registration, not start: take the config scope and read the section, so the pane shows and
+    /// saves the real trigger while Hyperkey is off. Acquires no tap, no mapping, no observers.
+    func attach(_ services: ToolServices) {
+        self.services = services
+        settings = (try? services.config.load(HyperKeySettings.self)) ?? .disabled
+        paneModel.refresh()
+    }
+
     func start(_ services: ToolServices) {
         guard !isRunning else { return }
         self.services = services
         isTerminating = false
-        settings = pendingSettings
-            ?? ((try? services.config.load(HyperKeySettings.self)) ?? .disabled)
-        pendingSettings = nil
 
         // Before the first apply(): a Caps Lock remap left by a previous standalone-Cycler install
         // must become ours, or we would use it and never clean it up (plan §5.2).
@@ -168,10 +167,7 @@ final class HyperkeyTool: Tool {
     /// Mirrors the tool flag into the blob and persists. Never called from the quit path.
     private func save() {
         settings.enabled = isRunning
-        guard let services else {
-            pendingSettings = settings // never started: flush on the first start()
-            return
-        }
+        guard let services else { return } // not registered: nothing can be persisted
         guard services.config.canWrite else {
             log.error("hyperkey settings not saved: \(services.config.blockedMessage ?? "writes blocked", privacy: .public)")
             return

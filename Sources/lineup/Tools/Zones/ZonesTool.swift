@@ -64,6 +64,13 @@ final class ZonesTool: Tool {
 
     // MARK: - Lifecycle
 
+    /// Registration, not start: take the config scope and read the section, so the pane shows and
+    /// saves real settings even if Zones is never switched on. Acquires nothing.
+    func attach(_ services: ToolServices) {
+        self.services = services
+        reloadConfig()
+    }
+
     func start(_ services: ToolServices) {
         guard !isRunning else { return }
         self.services = services
@@ -415,12 +422,9 @@ final class ZonesTool: Tool {
         // not allowed. The pane refreshes itself in `onAppear`.
         let model = settingsModel ?? makeSettingsModel()
         settingsModel = model
-        guard let store = ZonesSettingsPane.hostSettingsStore() else {
-            // Only reachable if the pane is rendered outside the Settings window, which nothing
-            // does today. Recording needs the window's store to suspend every tool's hotkeys.
-            return AnyView(ZonesSettingsUnavailableView())
-        }
-        return AnyView(ZonesSettingsPane(model: model, settings: store))
+        // The recorder's `SettingsStore` arrives through the environment, injected by
+        // `SettingsStore.pane(for:)`.
+        return AnyView(ZonesSettingsPane(model: model))
     }
 
     private func makeSettingsModel() -> ZonesSettingsModel {

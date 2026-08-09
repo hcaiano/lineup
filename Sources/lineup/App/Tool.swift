@@ -75,6 +75,12 @@ struct HotkeyScope {
     func foreignCombos() -> [(owner: ToolID, keyCode: Int, modifiers: UInt32)] {
         HotkeyManager.shared.registeredCombos().filter { $0.owner != owner }
     }
+
+    /// True while a Settings recorder holds the whole registry suspended. A tool that retries a
+    /// failed registration must wait this out: while suspended, `register` records the row without
+    /// installing it, so every retry would "succeed" and hide a real conflict. Exposed here so no
+    /// tool has to reach for `HotkeyManager.shared` directly.
+    var isSuspended: Bool { HotkeyManager.shared.isSuspended }
 }
 
 /// A tool's window onto `config.json`. Reads and writes only its own section; siblings and
@@ -155,6 +161,15 @@ protocol Tool: AnyObject {
     var defaultEnabled: Bool { get }
 
     var isRunning: Bool { get }
+
+    /// Handed the tool's services at REGISTRATION time, before anything is started and whether or
+    /// not the tool is ever enabled. This is what lets a disabled tool's pane read and persist its
+    /// own config section: the pane is rendered even when the tool is off, and a config scope that
+    /// only appeared in `start()` would leave a never-started tool with nowhere to write.
+    ///
+    /// Acquires NO resources — no hotkeys, taps, monitors, timers or observers. Those belong to
+    /// `start()`, which receives the same `ToolServices` instance.
+    func attach(_ services: ToolServices)
 
     /// Acquire every resource: hotkeys, event taps, monitors, timers, observers.
     func start(_ services: ToolServices)

@@ -106,6 +106,32 @@ enum ShortcutKit {
         display(keyCode: keyCode, modifiers: UInt32(bitPattern: Int32(truncatingIfNeeded: modifiers)))
     }
 
+    /// The modifier glyphs `display(keyCode:modifiers:)` emits, in the order it emits them.
+    static let modifierGlyphs: [Character] = ["⌃", "⌥", "⇧", "⌘"]
+
+    /// Splits a display string into one token per key cap, for `KeyCapRow`.
+    ///
+    /// Works on the STRING rather than on a `(keyCode, modifiers)` pair on purpose: both recorder
+    /// controls already receive a rendered display string (from three different producers —
+    /// `display`, `modifierDisplay` and `dragSnapDisplay`), and one splitter keeps every one of
+    /// them rendering identically. `⌃⌥⇧⌘←` → `["⌃","⌥","⇧","⌘","←"]`; the drag bind's worded form
+    /// `Control-Option` → `["Control","Option"]`.
+    static func keyCaps(_ display: String) -> [String] {
+        guard !display.isEmpty else { return [] }
+        var caps: [String] = []
+        var rest = Substring(display)
+        while let first = rest.first, modifierGlyphs.contains(first) {
+            caps.append(String(first))
+            rest = rest.dropFirst()
+        }
+        guard !rest.isEmpty else { return caps }
+        if caps.isEmpty, rest.contains("-") {
+            return rest.split(separator: "-").map(String.init)
+        }
+        caps.append(String(rest))
+        return caps
+    }
+
     /// Canonical form — what Cycler's bindings and the Carbon registry use.
     static func display(keyCode: Int, modifiers: UInt32) -> String {
         var s = ""

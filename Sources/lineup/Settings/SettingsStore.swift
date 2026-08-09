@@ -109,11 +109,17 @@ final class SettingsStore: ObservableObject {
         case .tool(let id):
             // The shell draws every tool's header and enable switch (see `ToolPane`); the tool
             // supplies only its own controls.
+            //
+            // The store is injected into the environment here, and that is the ONLY way a tool
+            // pane gets one: `Tool.makeSettingsPane()` takes no arguments, and a pane that went
+            // looking for the window itself would be reaching around the shell for the object that
+            // owns the global recording suspension.
             if let tool = registry.tool(id) {
                 ToolPane(id: id, title: tool.displayName, summary: tool.summary,
                          isOn: binding(forTool: id)) {
                     tool.makeSettingsPane()
                 }
+                .environmentObject(self)
             } else {
                 PlaceholderPane(title: displayName(for: id))
             }

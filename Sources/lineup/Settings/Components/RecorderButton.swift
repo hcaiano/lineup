@@ -16,10 +16,7 @@ struct RecorderButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(labelText)
-                .font(.system(size: 13, weight: text.isEmpty ? .regular : .medium))
-                .foregroundStyle(isRecording || !text.isEmpty ? .primary : .secondary)
-                .lineLimit(1)
+            label
                 .frame(width: 164)
         }
         .buttonStyle(.bordered)
@@ -30,9 +27,24 @@ struct RecorderButton: View {
         .accessibilityValue(isRecording ? "Recording" : (text.isEmpty ? "Not set" : text))
     }
 
-    private var labelText: String {
-        if isRecording { return "Press keys..." }
-        return text.isEmpty ? emptyText : text
+    /// An assigned shortcut renders as key caps; the two placeholder states stay plain text —
+    /// "Click to set" is prose, not a key.
+    @ViewBuilder
+    private var label: some View {
+        if isRecording {
+            placeholder("Press keys...")
+        } else if text.isEmpty {
+            placeholder(emptyText)
+        } else {
+            KeyCapRow(display: text)
+        }
+    }
+
+    private func placeholder(_ string: String) -> some View {
+        Text(string)
+            .font(.system(size: 13))
+            .foregroundStyle(isRecording ? .primary : .secondary)
+            .lineLimit(1)
     }
 }
 

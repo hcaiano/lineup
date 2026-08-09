@@ -10,7 +10,19 @@ import ZonesCore
 /// Capture goes through one `ShortcutRecorder`, which routes the global hotkey suspension through
 /// `SettingsStore` — that is what lets a recorder here receive a combo any of the three tools
 /// owns, and hand every one of them back afterwards. The pane never touches `HotkeyManager`.
+/// The window's `SettingsStore` arrives through the environment (injected by
+/// `SettingsStore.pane(for:)`). It has to be read here and passed down by value, because the
+/// recorder is a `@StateObject` and an `@EnvironmentObject` is not available during `init`.
 struct ZonesSettingsPane: View {
+    @ObservedObject var model: ZonesSettingsModel
+    @EnvironmentObject private var settings: SettingsStore
+
+    var body: some View {
+        ZonesSettingsPaneBody(model: model, settings: settings)
+    }
+}
+
+private struct ZonesSettingsPaneBody: View {
     @ObservedObject var model: ZonesSettingsModel
     @StateObject private var recorder: ShortcutRecorder
 
@@ -114,8 +126,10 @@ struct ZonesSettingsPane: View {
                     disabled: !model.canWrite || model.shortcutDisplay(for: row.id).isEmpty,
                     action: { model.clearShortcut(row.id) })
             }
-            .frame(minHeight: 38)
-            .padding(.vertical, 4)
+            // Denser than a stock SettingsRow: thirteen of these stack up (4 quick actions + 9
+            // zones), and at the default row height the list stops fitting in one look.
+            .frame(minHeight: SettingsMetrics.shortcutRowHeight)
+            .padding(.vertical, 3)
 
             Divider()
         }
@@ -136,40 +150,6 @@ struct ZonesSettingsPane: View {
         recorder.toggle(Self.dragBindID, options: .comboOrModifiers) { capture in
             model.applyDragBind(capture)
         }
-    }
-
-    // MARK: - Host lookup
-
-    /// TEMPORARY BRIDGE. `Tool.makeSettingsPane()` (frozen in Phase 3) takes no arguments, so a
-    /// pane has no way to reach the `SettingsStore` that owns the global recording suspension.
-    /// Until the Settings shell injects it (one `.environmentObject(self)` in
-    /// `SettingsStore.pane(for:)` plus an `@EnvironmentObject` here), find the open Settings
-    /// window and take its store. There is exactly one, and it exists before any pane renders.
-    @MainActor
-    static func hostSettingsStore() -> SettingsStore? {
-        for window in NSApp.windows {
-            if let controller = window.delegate as? SettingsWindowController { return controller.store }
-        }
-        return nil
-    }
-}
-
-/// Shown only if the pane is rendered outside the Settings window (nothing does today): without
-/// the window's store, recording could not suspend the other tools' hotkeys, and a captured combo
-/// would fire an action instead of being recorded.
-struct ZonesSettingsUnavailableView: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("Zones")
-                .font(.system(size: 15, weight: .semibold))
-            Text("Open Settings from the menu bar to edit Zones shortcuts.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

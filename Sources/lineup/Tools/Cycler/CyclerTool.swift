@@ -44,6 +44,14 @@ final class CyclerTool: Tool {
 
     // MARK: - Lifecycle
 
+    /// Registration, not start: take the config scope and read the bindings, so the pane is fully
+    /// usable — and persistable — while Cycler is off. Acquires no hotkeys and no observers.
+    func attach(_ services: ToolServices) {
+        self.services = services
+        loadSettings()
+        settingsModel.reload()
+    }
+
     func start(_ services: ToolServices) {
         guard !isRunning else { return }
         self.services = services
@@ -89,8 +97,8 @@ final class CyclerTool: Tool {
         }
     }
 
-    /// Whether the pane can persist edits at all. False before the tool has ever been started in
-    /// this session (no `ToolServices` yet) or when the store has blocked writes.
+    /// Whether the pane can persist edits at all. The config scope arrives at registration, so this
+    /// stays true while Cycler is switched OFF — only a write-blocked store turns it false.
     var canPersist: Bool { services?.config.canWrite ?? false }
 
     var configBlockedMessage: String? { services?.config.blockedMessage }
@@ -215,7 +223,7 @@ final class CyclerTool: Tool {
         // While a Settings recorder holds the registry suspended, register() records rows without
         // installing them, so every retry would "succeed" and hide a real conflict. Wait it out;
         // SettingsStore reports whatever fails to come back when the capture ends.
-        guard !failedHotkeys.isEmpty, isRunning, !HotkeyManager.shared.isSuspended else {
+        guard !failedHotkeys.isEmpty, isRunning, !(services?.hotkeys.isSuspended ?? false) else {
             updateFailedHotkeyRetryTimer()
             return
         }
@@ -276,21 +284,9 @@ final class CyclerTool: Tool {
     // MARK: - Settings
 
     func makeSettingsPane() -> AnyView {
-        // The recorder needs the window's SettingsStore, which is the sole owner of the global
-        // hotkey suspension. `Tool.makeSettingsPane()` takes no arguments (frozen in Phase 3), so
-        // find it through the window that is rendering us. INTEGRATION: replace this with the
-        // store handed in by Phase 7b if the contract is ever widened.
-        guard let store = Self.hostingSettingsStore() else {
-            return AnyView(PlaceholderPane(title: displayName))
-        }
-        return AnyView(CyclerSettingsPane(model: settingsModel, settingsStore: store))
-    }
-
-    private static func hostingSettingsStore() -> SettingsStore? {
-        for window in NSApp.windows {
-            if let controller = window.delegate as? SettingsWindowController { return controller.store }
-        }
-        return nil
+        // The recorder needs the window's `SettingsStore` (the sole owner of the global hotkey
+        // suspension). It arrives through the environment — `SettingsStore.pane(for:)` injects it.
+        AnyView(CyclerSettingsPane(model: settingsModel))
     }
 
     // MARK: - Labels

@@ -80,16 +80,13 @@ final class CyclerSettingsModel: ObservableObject {
         Set(rows.flatMap { row in row.apps.map(\.bundleIdentifier) })
     }
 
-    /// True when edits can actually be persisted: the tool has been started at least once (so it
-    /// holds a `ToolServices`) and the store is not in a write-blocked state.
+    /// True when edits can actually be persisted. The tool holds its `ToolServices` from
+    /// registration, so shortcuts stay editable while Cycler is switched off — only a write-blocked
+    /// store turns this false.
     var canEdit: Bool { tool.canPersist }
 
     /// Why editing is off, if it is.
-    var blockedMessage: String? {
-        if let message = tool.configBlockedMessage { return message }
-        if !tool.canPersist { return "Turn Cycler on to add and edit shortcuts." }
-        return nil
-    }
+    var blockedMessage: String? { tool.configBlockedMessage }
 
     var loadErrorMessage: String? { tool.sectionLoadError }
 
@@ -264,14 +261,26 @@ final class CyclerSettingsModel: ObservableObject {
 
 // MARK: - Pane
 
+/// The window's `SettingsStore` arrives through the environment (injected by
+/// `SettingsStore.pane(for:)`). It has to be read here and passed down by value, because the
+/// recorder is a `@StateObject` and an `@EnvironmentObject` is not available during `init`.
 struct CyclerSettingsPane: View {
+    @ObservedObject var model: CyclerSettingsModel
+    @EnvironmentObject private var settings: SettingsStore
+
+    var body: some View {
+        CyclerSettingsPaneBody(model: model, settings: settings)
+    }
+}
+
+private struct CyclerSettingsPaneBody: View {
     @ObservedObject var model: CyclerSettingsModel
     /// One recorder for the whole pane; `activeID` is the row `UUID` capturing right now.
     @StateObject private var recorder: ShortcutRecorder
 
-    init(model: CyclerSettingsModel, settingsStore: SettingsStore) {
+    init(model: CyclerSettingsModel, settings: SettingsStore) {
         self.model = model
-        _recorder = StateObject(wrappedValue: ShortcutRecorder(store: settingsStore))
+        _recorder = StateObject(wrappedValue: ShortcutRecorder(store: settings))
     }
 
     var body: some View {
@@ -328,18 +337,16 @@ struct CyclerSettingsPane: View {
         }
     }
 
+    /// Instructions only. The tool's title, icon and enable switch are the shell's `ToolPane`
+    /// header — a second title here would read as two stacked headers.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Shortcuts").font(.system(size: 22, weight: .bold))
-            Text("Use one app to cycle its windows, or add several apps to cycle between them. Add ⇧ to a shortcut to cycle backwards.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Text("Use one app to cycle its windows, or add several apps to cycle between them. Add ⇧ to a shortcut to cycle backwards.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func banner(_ text: String, systemImage: String, tint: Color) -> some View {

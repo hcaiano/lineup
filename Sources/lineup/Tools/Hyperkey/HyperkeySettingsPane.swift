@@ -77,8 +77,8 @@ final class HyperkeyPaneModel: ObservableObject {
 /// no reason to show: the Input Monitoring permission row, the leftover-mapping recovery button,
 /// and the cross-tool hint (plan §6.4).
 ///
-/// There is no "Enable Hyper Key" toggle here on purpose — the sidebar row's switch is the single
-/// authoritative control, and a second one would be two sources of truth for the same flag. The
+/// There is no title and no "Enable Hyper Key" toggle here on purpose — the shell's `ToolPane`
+/// draws both, and a second copy of either would be two sources of truth for the same thing. The
 /// pane stays editable while the tool is off so a trigger can be chosen before turning it on.
 struct HyperkeySettingsPane: View {
     @ObservedObject var model: HyperkeyPaneModel
@@ -86,8 +86,6 @@ struct HyperkeySettingsPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                header
-
                 SettingsSectionView("Hyper key") {
                     SettingsRow(title: "Trigger key",
                                 detail: "Hold this key to send a Hyper modifier to every app.") {
@@ -167,28 +165,6 @@ struct HyperkeySettingsPane: View {
     }
 
     // MARK: - Chrome
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "capslock")
-                    .foregroundStyle(Color(nsColor: Brand.hyperkeyAccent))
-                Text("Hyperkey")
-                    .font(.headline)
-                if !model.isRunning {
-                    Text("Off")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Text(model.isRunning
-                 ? "One key, held, becomes a system-wide modifier no app uses by itself."
-                 : "Turn Hyperkey on with the switch beside it in the sidebar. You can pick the trigger first.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
 
     /// Plan §6.4 — the one genuinely load-bearing cross-tool message in the suite: Zones' defaults
     /// and most Cycler bindings are ⌃⌥⇧⌘, and with Hyperkey off the user needs a hyper source from

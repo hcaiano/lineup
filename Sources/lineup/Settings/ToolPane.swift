@@ -32,8 +32,20 @@ struct ToolPane<Content: View>: View {
 
     private var header: some View {
         VStack(spacing: 8) {
+            // The switch is centred on the ICON row, not pinned to the scroll area's corner.
+            // Anchored to the corner it reads as a stray control floating over the pane; on the
+            // icon's centre line it reads as part of the header — the same relationship Raycast's
+            // top-right toggle has with its extension header.
             ToolIcon(id: id, size: 72)
                 .padding(.bottom, 2)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .trailing) {
+                    Toggle("", isOn: $isOn)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel("Enable \(title)")
+                        .help(isOn ? "Turn \(title) off" : "Turn \(title) on")
+                }
             Text(title)
                 .font(.system(size: 22, weight: .bold))
             Text(summary)
@@ -41,19 +53,11 @@ struct ToolPane<Content: View>: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 440) // a one-line summary shouldn't span the whole detail area
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 26)
         .padding(.bottom, 22)
-        .padding(.horizontal, 72) // never let a long summary run under the switch
-        .overlay(alignment: .topTrailing) {
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .accessibilityLabel("Enable \(title)")
-                .help(isOn ? "Turn \(title) off" : "Turn \(title) on")
-                .padding(.top, 22)
-                .padding(.trailing, 22)
-        }
+        .padding(.horizontal, 22)
     }
 }

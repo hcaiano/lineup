@@ -5,6 +5,12 @@ import SwiftUI
 enum SettingsMetrics {
     /// Width of a pane's content column inside the detail area.
     static let contentWidth: CGFloat = 540
+    /// Height of a plain label + control row (`SettingsRow`), which usually carries a detail line.
+    static let rowHeight: CGFloat = 44
+    /// Height of a shortcut row. Deliberately denser than `rowHeight`: a shortcut row is one label
+    /// and one recorder with no detail line, and Zones shows thirteen of them at once — at the
+    /// default height the list needs scrolling for content that should fit in one look.
+    static let shortcutRowHeight: CGFloat = 28
 }
 
 /// A titled group of rows. Lineup 1.x's section header + hairline-separated row stack, extracted
@@ -62,7 +68,7 @@ struct SettingsRow<Content: View>: View {
                 Spacer(minLength: 24)
                 content
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: SettingsMetrics.rowHeight)
             .padding(.vertical, 6)
 
             Divider()

@@ -30,6 +30,7 @@ func runAppTests() throws {
     try runIdentityTests()
     try runShellSourceScanTests()
     try runSettingsWindowTests()
+    try runIntegrationTests()
 }
 
 // MARK: - Envelope
@@ -718,8 +719,11 @@ private func runSettingsWindowTests() throws {
 
     let pane = source("Sources/lineup/Settings/ToolPane.swift")
     check(pane.contains("ToolIcon(id: id, size: 72)"), "the pane header shows a 72pt tool icon")
-    check(pane.contains("toggleStyle(.switch)") && pane.contains("alignment: .topTrailing"),
-          "the enable switch sits at the top right of the pane header")
+    // The switch is an overlay on the ICON row, not on the header block: pinned to the block's
+    // corner it floats over the scroll area instead of reading as part of the header.
+    check(pane.contains("toggleStyle(.switch)") && pane.contains("alignment: .trailing")
+            && !pane.contains("alignment: .topTrailing"),
+          "the enable switch is aligned with the pane header's icon row")
     check(pane.contains("Text(summary)"), "the pane header shows the tool's one-line summary")
 
     // ---- Per-tool icons, and the resource plumbing they depend on ----
@@ -810,4 +814,167 @@ private func runSettingsWindowTests() throws {
     } else {
         check(false, "AppShell owns setShowMenuBarIcon")
     }
+}
+
+// MARK: - Integration (merge of phases 4-7b)
+
+/// The cross-cutting rules that only became assertable once the four tool branches were merged.
+/// Two of them are behavioural (the config-flag seeding hazard); the rest are source scans, for
+/// the same reason as the shell scans above — these types live in the app target.
+private func runIntegrationTests() throws {
+    // ---- The self-disable hazard: setSettings can only CREATE a section as disabled ----
+    //
+    // `setSettings` deliberately never invents an enabled state, so a tool whose section does not
+    // exist yet (a fresh install running on `defaultEnabled`) would be written to disk as
+    // `enabled: false` by its first settings edit — and Zones, which defaults to ON, would come
+    // back OFF at the next launch. `ToolRegistry.startEnabledTools()` seeds the flag first.
+    do {
+        var cfg = LineupAppConfig()
+        check(cfg.isEnabled(.zones) == nil, "a fresh envelope has no zones section")
+        try cfg.setSettings(LineupConfig(), for: .zones)
+        check(cfg.isEnabled(.zones) == false,
+              "setSettings creates a MISSING section as disabled — this is the hazard the registry seeds around")
+    }
+    do {
+        // Seeded first (what startEnabledTools does), a settings write preserves the flag.
+        var cfg = LineupAppConfig()
+        cfg.setEnabled(true, for: .zones) // Zones' defaultEnabled
+        try cfg.setSettings(LineupConfig(), for: .zones)
+        check(cfg.isEnabled(.zones) == true,
+              "a seeded enabled flag survives the first settings write")
+    }
+    try withTempDir("registry-seed") { dir in
+        // The same sequence through the store, which is what actually runs at launch.
+        let store = LineupAppConfigStore(url: dir.appendingPathComponent("config.json"))
+        check(store.load() == .fresh, "fresh install has no config.json")
+        check(store.config.isEnabled(.zones) == nil, "no zones section on a fresh install")
+        check(store.canWrite, "a fresh store accepts writes")
+        try store.setEnabled(true, for: .zones)      // the seeding step
+        try store.setSettings(LineupConfig(), for: .zones)  // the first shortcut edit
+        let reread = LineupAppConfigStore(url: dir.appendingPathComponent("config.json"))
+        _ = reread.load()
+        check(reread.config.isEnabled(.zones) == true,
+              "after seeding, editing a Zones shortcut leaves Zones enabled at the next launch")
+    }
+
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        files.first { $0.path == path }?.text ?? ""
+    }
+
+    // ---- Services at registration, not at start ----
+    let registry = source("Sources/lineup/App/ToolRegistry.swift")
+    check(registry.contains("tool.attach(services)"),
+          "the registry hands a tool its services at register()")
+    if let start = registry.range(of: "func startEnabledTools()") {
+        let body = registry[start.lowerBound...].prefix(700)
+        check(body.contains("isEnabled(tool.id) == nil") && body.contains("setEnabled(tool.defaultEnabled"),
+              "startEnabledTools seeds a missing section with the tool's defaultEnabled")
+        check(body.contains("store.canWrite"),
+              "seeding respects a write-blocked store")
+    } else {
+        check(false, "ToolRegistry owns startEnabledTools()")
+    }
+    let tool = source("Sources/lineup/App/Tool.swift")
+    check(tool.contains("func attach(_ services: ToolServices)"),
+          "the Tool contract has an attach step")
+    for path in ["Sources/lineup/Tools/Zones/ZonesTool.swift",
+                 "Sources/lineup/Tools/Cycler/CyclerTool.swift",
+                 "Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift"] {
+        check(source(path).contains("func attach(_ services: ToolServices)"),
+              "\(path) takes its services at registration, so its pane works while the tool is off")
+    }
+    // The workaround attach() replaces.
+    check(!source("Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift").contains("pendingSettings"),
+          "HyperkeyTool no longer defers edits made while it has never started")
+
+    // ---- SettingsStore injection: no pane may hunt for the window ----
+    let settingsStore = source("Sources/lineup/Settings/SettingsStore.swift")
+    check(settingsStore.contains(".environmentObject(self)"),
+          "SettingsStore.pane(for:) injects itself into a tool pane's environment")
+    let windowHunters = files.filter {
+        $0.text.contains("window.delegate as? SettingsWindowController")
+    }.map(\.path)
+    check(windowHunters.isEmpty,
+          "no pane reaches through NSApp.windows for the Settings store (got \(windowHunters))")
+    for path in ["Sources/lineup/Tools/Zones/ZonesSettingsPane.swift",
+                 "Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift"] {
+        check(source(path).contains("@EnvironmentObject private var settings: SettingsStore"),
+              "\(path) takes the store from the environment")
+    }
+
+    // ---- isSuspended belongs to the scope, not to the singleton ----
+    check(tool.contains("var isSuspended: Bool { HotkeyManager.shared.isSuspended }"),
+          "HotkeyScope exposes isSuspended")
+    let suspendReaders = files.filter { $0.text.contains("HotkeyManager.shared.isSuspended") }.map(\.path)
+    check(suspendReaders == ["Sources/lineup/App/Tool.swift"],
+          "only HotkeyScope reads HotkeyManager.shared.isSuspended (got \(suspendReaders))")
+
+    // ---- No doubled headers: the shell's ToolPane is the only tool title + enable switch ----
+    for path in ["Sources/lineup/Tools/Zones/ZonesSettingsPane.swift",
+                 "Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift",
+                 "Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift"] {
+        let text = source(path)
+        check(!text.contains("size: 22, weight: .bold"),
+              "\(path) draws no hero-sized title of its own")
+        check(!text.contains("Toggle(\"\", isOn: $isOn)"),
+              "\(path) draws no enable switch of its own")
+    }
+
+    // ---- Key caps: ONE renderer, used by both recorder styles ----
+    let shortcutKit = source("Sources/lineup/App/ShortcutKit.swift")
+    check(shortcutKit.contains("static func keyCaps("),
+          "ShortcutKit splits a display string into key caps")
+    check(ShortcutKitCaps.split("⌃⌥⇧⌘←") == ["⌃", "⌥", "⇧", "⌘", "←"],
+          "a hyper combo splits into four modifier caps and the key")
+    check(ShortcutKitCaps.split("⌘Space") == ["⌘", "Space"],
+          "a multi-character key name stays one cap")
+    check(ShortcutKitCaps.split("Control-Option") == ["Control", "Option"],
+          "the drag bind's worded modifier form splits on the separator")
+    check(ShortcutKitCaps.split("") == [], "an unassigned shortcut renders no caps")
+    check(source("Sources/lineup/Settings/Components/KeyCapRow.swift").contains("ShortcutKit.keyCaps"),
+          "KeyCapRow renders the caps ShortcutKit produced")
+    for path in ["Sources/lineup/Settings/Components/RecorderButton.swift",
+                 "Sources/lineup/Settings/Components/ShortcutField.swift"] {
+        check(source(path).contains("KeyCapRow("),
+              "\(path) shows an assigned shortcut as key caps")
+    }
+
+    // ---- Shortcut rows are denser than the default row ----
+    let metrics = source("Sources/lineup/Settings/Components/SettingsSection.swift")
+    check(metrics.contains("static let shortcutRowHeight"),
+          "SettingsMetrics defines a shortcut-row height")
+    check(source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
+            .contains("SettingsMetrics.shortcutRowHeight"),
+          "the Zones shortcut rows use it")
+    check(SettingsMetricsMirror.shortcutRowHeight < SettingsMetricsMirror.rowHeight,
+          "a shortcut row is denser than a stock settings row")
+}
+
+/// `ShortcutKit` and `SettingsMetrics` live in the app target, which this runner does not link.
+/// These mirror the two pieces of pure logic worth asserting on directly; the source scans above
+/// pin them to the real definitions so the mirror cannot drift silently.
+private enum ShortcutKitCaps {
+    static let modifierGlyphs: [Character] = ["⌃", "⌥", "⇧", "⌘"]
+
+    static func split(_ display: String) -> [String] {
+        guard !display.isEmpty else { return [] }
+        var caps: [String] = []
+        var rest = Substring(display)
+        while let first = rest.first, modifierGlyphs.contains(first) {
+            caps.append(String(first))
+            rest = rest.dropFirst()
+        }
+        guard !rest.isEmpty else { return caps }
+        if caps.isEmpty, rest.contains("-") {
+            return rest.split(separator: "-").map(String.init)
+        }
+        caps.append(String(rest))
+        return caps
+    }
+}
+
+private enum SettingsMetricsMirror {
+    static let rowHeight: Double = 44
+    static let shortcutRowHeight: Double = 28
 }

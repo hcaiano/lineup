@@ -18,9 +18,7 @@ struct ShortcutField: View {
 
     var body: some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 13, weight: text.isEmpty ? .regular : .semibold))
-                .foregroundStyle(color)
+            label
                 .frame(width: 150)
                 .padding(.vertical, 5)
         }
@@ -32,13 +30,16 @@ struct ShortcutField: View {
         .accessibilityValue(isRecording ? "Recording" : (text.isEmpty ? "Not set" : text))
     }
 
-    private var label: String {
-        if isRecording { return "Press keys…" }
-        return text.isEmpty ? emptyText : text
-    }
-
-    private var color: Color {
-        if isRecording { return accent }
-        return text.isEmpty ? .secondary : .primary
+    /// Same key caps as the Zones rows (`KeyCapRow`), so a shortcut reads identically in every
+    /// pane; only the surrounding control differs between the two tools.
+    @ViewBuilder
+    private var label: some View {
+        if isRecording {
+            Text("Press keys…").font(.system(size: 13)).foregroundStyle(accent)
+        } else if text.isEmpty {
+            Text(emptyText).font(.system(size: 13)).foregroundStyle(.secondary)
+        } else {
+            KeyCapRow(display: text, size: .large)
+        }
     }
 }
