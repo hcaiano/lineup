@@ -25,6 +25,8 @@ struct ZonesSettingsPane: View {
 private struct ZonesSettingsPaneBody: View {
     @ObservedObject var model: ZonesSettingsModel
     @StateObject private var recorder: ShortcutRecorder
+    /// Held only to name a conflicting tool the way the sidebar does; the pane does not observe it.
+    private let settings: SettingsStore
 
     /// The drag bind's recorder id. Shortcut rows use their action id, so no collision.
     private static let dragBindID = "zones.dragBind"
@@ -32,6 +34,7 @@ private struct ZonesSettingsPaneBody: View {
     @MainActor
     init(model: ZonesSettingsModel, settings: SettingsStore) {
         self.model = model
+        self.settings = settings
         _recorder = StateObject(wrappedValue: ShortcutRecorder(store: settings))
     }
 
@@ -55,6 +58,10 @@ private struct ZonesSettingsPaneBody: View {
                                                  set: { model.setDragSnapOn($0) }))
                             .labelsHidden()
                             .toggleStyle(.switch)
+                            // Every other control on the pane is off while writes are blocked;
+                            // this one flipped, said nothing, and was back at the next launch.
+                            .disabled(!model.canWrite)
+                            .accessibilityLabel("Drag to snap")
                     }
 
                     SettingsRow(title: "Drag bind",
@@ -102,13 +109,23 @@ private struct ZonesSettingsPaneBody: View {
             model.refresh()
             // The model has to be able to end a capture from a non-recorder action (clearing a
             // row), and the recorder is the view's.
+            model.recorder = recorder
             model.cancelRecording = { [weak recorder] in recorder?.cancel() }
+            // Conflict alerts name the owning tool the way the sidebar does.
+            model.toolDisplayName = { [weak settings] id in
+                settings?.displayName(for: id) ?? id.rawValue.capitalized
+            }
         }
         // Switching to another pane must not leave a live capture — and therefore must not leave
         // every tool's hotkeys suspended. The window's own close/blur path is handled by
         // SettingsWindowController -> SettingsStore.stopAllRecording().
         .onDisappear {
             recorder.cancel()
+            // Only if the hook is still OURS. SwiftUI can build a replacement pane before tearing
+            // the old one down, and an unconditional clear left the live pane unable to end a
+            // capture — every tool's hotkeys then stayed suspended until the window blurred.
+            guard model.recorder === recorder else { return }
+            model.recorder = nil
             model.cancelRecording = nil
         }
     }
@@ -201,6 +218,12 @@ final class ZonesSettingsModel: ObservableObject {
     private var boundCombos: [ToolCombo] = []
     /// Cancels the pane's live capture. Set by the pane, which owns the recorder.
     var cancelRecording: (() -> Void)?
+    /// Whose `cancelRecording` this is. A pane instance being torn down must only clear the hook
+    /// when it still belongs to its own recorder.
+    weak var recorder: ShortcutRecorder?
+    /// Names another tool in a conflict alert. Replaced by the pane with the window's
+    /// `SettingsStore.displayName(for:)`; the fallback is only used before the pane appears.
+    var toolDisplayName: (ToolID) -> String = { $0.rawValue.capitalized }
 
     init(context: Context) {
         self.ctx = context
@@ -254,6 +277,10 @@ final class ZonesSettingsModel: ObservableObject {
 
     func resetDragBind() {
         guard canWrite else { return }
+        // Resetting the bind while the bind (or a shortcut row) is capturing would leave the
+        // capture live, and with it every tool's hotkeys suspended — the same reason
+        // `clearShortcut` cancels first.
+        cancelRecording?()
         ctx.setDragTrigger(.default)
         refresh()
     }
@@ -288,7 +315,7 @@ final class ZonesSettingsModel: ObservableObject {
             if let owner = boundCombos.conflictOwner(keyCode: keyCode, modifiers: modifiers,
                                                      excluding: .zones) {
                 showAlert("Shortcut already in use",
-                          "This combo is used by \(owner.rawValue.capitalized). Choose a different "
+                          "This combo is used by \(toolDisplayName(owner)). Choose a different "
                             + "shortcut, or change it in that tool's settings.")
                 return
             }

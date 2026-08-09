@@ -178,7 +178,10 @@ final class ZonesTool: Tool {
     private func resetSection() {
         guard let services else { return }
         do {
-            if let rejected = (try? services.config.load(JSONValue.self)) ?? nil {
+            // Read with `try`, never `try?`: a section we cannot even read back is exactly the
+            // case this reset exists for, and swallowing that error would write fresh settings
+            // over bytes that were never preserved.
+            if let rejected = try services.config.load(JSONValue.self) {
                 let url = Product.configDirectory.appendingPathComponent(
                     "config.zones-rejected-\(LineupAppConfigStore.timestamp()).json")
                 let encoder = JSONEncoder()
@@ -213,10 +216,14 @@ final class ZonesTool: Tool {
     // keeps running on the last known-good config and the user keeps their draft. Do not
     // "simplify" it into an assign-then-write.
 
-    /// Persist edited layouts for one or more screens ATOMICALLY: build one updated config and
-    /// save once (which validates the whole thing). Returns false on failure WITHOUT mutating the
+    /// Persist edited layouts for one or more screens ATOMICALLY: build one updated config,
+    /// validate the WHOLE thing, and save once. Returns false on failure WITHOUT mutating the
     /// live config — so the editor can keep the user's draft and report it, and a multi-screen
     /// save can never partially persist.
+    ///
+    /// The validation is explicit here because the store does not do it: the section is an opaque
+    /// blob to `LineupAppConfigStore`. Refusing an invalid layout at write time is what stops it
+    /// becoming an unreadable section — and a bricked Zones pane — at the next launch.
     @discardableResult
     private func applyLayouts(_ changes: [(screen: ScreenInfo, layout: Node)]) -> Bool {
         guard canWrite, let services else { return false }
@@ -227,6 +234,7 @@ final class ZonesTool: Tool {
             updated = updated.setting(layout: change.layout, for: change.screen, now: now)
         }
         do {
+            try updated.validate()
             try services.config.save(updated)
             config = updated
             usingDefaults = false
@@ -255,9 +263,11 @@ final class ZonesTool: Tool {
     }
 
     /// Persist the modifier-drag toggle so it survives relaunch (a disabled state keeps the
-    /// global mouse monitor uninstalled at the next launch — see `start`). Best-effort: if
-    /// writes are blocked or the save fails, the in-session toggle still holds, we just don't
-    /// persist it.
+    /// global mouse monitor uninstalled at the next launch — see `start`).
+    ///
+    /// Only reached with `canWrite` already true — `setDragSnapEnabled` refuses the whole edit
+    /// otherwise, rather than flipping the switch for this session and quietly losing it. A save
+    /// that fails anyway keeps the live state and is logged.
     private func persistDragSnapEnabled(_ enabled: Bool) {
         guard canWrite, let services else { return }
         var updated = config
@@ -286,7 +296,11 @@ final class ZonesTool: Tool {
         }
     }
 
+    /// Refused outright while writes are blocked: a switch that flips now and is back where it
+    /// started at the next launch is worse than one that visibly does not move. The pane disables
+    /// its toggle and the menu row for the same reason.
     private func setDragSnapEnabled(_ enabled: Bool) {
+        guard canWrite else { return }
         if isRunning {
             if enabled { dragSnap.start() } else { dragSnap.stop() }
         }
@@ -405,6 +419,7 @@ final class ZonesTool: Tool {
             self?.toggleDragSnap()
         }
         drag.state = isDragSnapOn ? .on : .off
+        drag.isEnabled = canWrite // the toggle cannot be persisted, so it must not appear to work
         return [edit, drag]
     }
 

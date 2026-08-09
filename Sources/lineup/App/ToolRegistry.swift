@@ -64,31 +64,57 @@ final class ToolRegistry {
         }
     }
 
-    /// Sidebar toggle / menu toggle. Starts or stops for real, then persists — a failed write
-    /// leaves the tool in the state the user just saw, which is the honest outcome.
+    /// Why the last enable toggle did not take, or `nil`. Read by the Settings window, which is
+    /// the only place a user can flip a tool and expect an explanation.
+    private(set) var lastEnableError: String?
+
+    /// Sidebar toggle / menu toggle. PERSISTS FIRST and only then starts or stops.
+    ///
+    /// The old order (act, then persist, then log a failure) made the switch lie: with the store
+    /// write-blocked the tool really started, the flag never reached disk, and the next launch
+    /// came back with it off. Persisting first means a refused write leaves the tool exactly where
+    /// it was — the switch springs back, because `isEnabled` reads the store — and the reason is
+    /// kept for the UI to show.
     func setEnabled(_ enabled: Bool, for id: ToolID) {
         guard let tool = tool(id) else { return }
+        do {
+            try store.setEnabled(enabled, for: id)
+            lastEnableError = nil
+        } catch {
+            log.error("could not persist \(id.rawValue, privacy: .public) enabled=\(enabled): \(error, privacy: .public)")
+            lastEnableError = store.blockedMessage
+                ?? "\(tool.displayName) couldn’t be turned \(enabled ? "on" : "off") — your settings file couldn’t be saved."
+            onChange?()
+            onSettingsChange?()
+            return
+        }
         if enabled {
             if !tool.isRunning { start(tool) }
         } else {
             if tool.isRunning { tool.stop() }
         }
-        do {
-            try store.setEnabled(enabled, for: id)
-        } catch {
-            log.error("could not persist \(id.rawValue, privacy: .public) enabled=\(enabled): \(error, privacy: .public)")
-        }
         onChange?()
         onSettingsChange?()
     }
 
-    /// Stop and start a running tool so it re-reads its section. The one caller is the shell,
-    /// when a DEFERRED legacy import finally lands and the tool is still running on defaults;
-    /// a stopped tool is left stopped, since it will read the new section when it next starts.
+    func clearEnableError() { lastEnableError = nil }
+
+    /// Make a tool re-read its section. The one caller is the shell, when a DEFERRED legacy import
+    /// finally lands.
+    ///
+    /// A STOPPED tool is re-attached rather than skipped: it keeps its `ToolServices` for the
+    /// whole process lifetime and its pane reads through them, so leaving it alone left stale
+    /// in-memory settings on screen (and being edited) until the next launch. Enablement is
+    /// re-asserted from the persisted flag in the same pass, so the sidebar switch and the running
+    /// state cannot end up disagreeing.
     func restart(_ id: ToolID) {
-        guard let tool = tool(id), tool.isRunning else { return }
-        tool.stop()
-        start(tool)
+        guard let tool = tool(id) else { return }
+        if tool.isRunning { tool.stop() }
+        if isEnabled(id) {
+            start(tool)                                       // start() re-reads the section
+        } else {
+            tool.attach(servicesByTool[id] ?? services(for: id)) // acquires nothing; re-reads only
+        }
         onChange?()
         onSettingsChange?()
     }

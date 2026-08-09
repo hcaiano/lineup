@@ -97,16 +97,50 @@ final class CyclerTool: Tool {
         }
     }
 
-    /// Whether the pane can persist edits at all. The config scope arrives at registration, so this
+    /// Whether the STORE will accept writes. The config scope arrives at registration, so this
     /// stays true while Cycler is switched OFF — only a write-blocked store turns it false.
     var canPersist: Bool { services?.config.canWrite ?? false }
 
+    /// Whether the pane may edit. An unreadable section of our own blocks editing too: `settings`
+    /// is then an EMPTY binding set standing in for bindings we could not read, and the first
+    /// edit would save that emptiness straight over them.
+    var canEdit: Bool { canPersist && sectionLoadError == nil }
+
     var configBlockedMessage: String? { services?.config.blockedMessage }
+
+    /// Recovery from an unreadable section: preserve the rejected blob FIRST and abort if that
+    /// fails — the discipline the store and Zones already use, so bindings that could be salvaged
+    /// by hand are never silently destroyed.
+    func resetSection() {
+        guard let services else { return }
+        do {
+            if let rejected = try services.config.load(JSONValue.self) {
+                let url = Product.configDirectory.appendingPathComponent(
+                    "config.cycler-rejected-\(LineupAppConfigStore.timestamp()).json")
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                try encoder.encode(rejected).write(to: url, options: .atomic) // throws -> abort
+            }
+            let fresh = CyclerToolSettings()
+            try services.config.save(fresh)
+            settings = fresh
+            sectionLoadError = nil
+            reloadHotkeys()
+        } catch {
+            log.error("cycler reset aborted (settings left untouched): \(error, privacy: .public)")
+        }
+        settingsModel.reload()
+        services.refreshMenu()
+        services.refreshSettings()
+    }
 
     /// Persist a new binding set and re-register. Write-then-assign, so a failed save leaves the
     /// live state exactly as the user last saw it working.
     func save(_ newSettings: CyclerToolSettings) throws {
         guard let services else { throw CyclerToolError.notStarted }
+        // An unreadable section left `settings` empty; saving from that state would replace the
+        // user's bindings with nothing. The pane offers the reset instead.
+        guard sectionLoadError == nil else { throw CyclerToolError.sectionUnreadable }
         let coalesced = newSettings.coalescingDuplicateShortcuts()
         try services.config.save(coalesced)
         settings = coalesced
@@ -315,7 +349,9 @@ final class CyclerTool: Tool {
             result.append(ToolWarning(
                 id: "cycler.settings",
                 text: "⚠︎ Cycler shortcuts couldn’t be loaded",
-                detailLines: [sectionLoadError]))
+                detailLines: [sectionLoadError, "Editing is disabled until you reset them."],
+                actionTitle: "Reset Cycler shortcuts…",
+                action: { [weak self] in self?.resetSection() }))
         }
         if !failedHotkeys.isEmpty {
             // Cap the detail at 4 rows: a menu that lists 30 blocked combos is unreadable and
@@ -375,10 +411,16 @@ final class CyclerTool: Tool {
 
 enum CyclerToolError: LocalizedError {
     case notStarted
+    /// OUR section is on disk but does not decode. Writing would destroy the bindings in it.
+    case sectionUnreadable
 
     var errorDescription: String? {
         switch self {
-        case .notStarted: return "Turn Cycler on before changing its shortcuts."
+        case .notStarted:
+            return "Turn Cycler on before changing its shortcuts."
+        case .sectionUnreadable:
+            return "Your Cycler shortcuts couldn’t be read. They were left untouched — reset them "
+                + "to start editing again."
         }
     }
 }

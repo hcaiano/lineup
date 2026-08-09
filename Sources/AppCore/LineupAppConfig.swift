@@ -22,22 +22,39 @@ public struct LineupAppConfig: Codable, Equatable {
     /// here AND an older build round-trips a newer build's unknown sections instead of
     /// deleting them.
     public var tools: [String: ToolSection]
+    /// Top-level keys this build has never heard of, re-emitted verbatim on encode. Unknown TOOL
+    /// sections were always preserved; this does the same for the envelope itself, so an older
+    /// build cannot silently delete a newer one's key by rewriting the file.
+    public var extra: [String: JSONValue]
 
     public init(schemaVersion: Int = LineupAppConfig.currentSchema,
                 general: GeneralConfig = GeneralConfig(),
-                tools: [String: ToolSection] = [:]) {
+                tools: [String: ToolSection] = [:],
+                extra: [String: JSONValue] = [:]) {
         self.schemaVersion = schemaVersion
         self.general = general
         self.tools = tools
+        self.extra = extra
     }
 
     private enum CodingKeys: String, CodingKey { case schemaVersion, general, tools }
+    private static let knownKeys: Set<String> = ["schemaVersion", "general", "tools"]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? LineupAppConfig.currentSchema
         general = try c.decodeIfPresent(GeneralConfig.self, forKey: .general) ?? GeneralConfig()
         tools = try c.decodeIfPresent([String: ToolSection].self, forKey: .tools) ?? [:]
+        extra = try decoder.container(keyedBy: AnyCodingKey.self)
+            .unknownValues(besides: LineupAppConfig.knownKeys)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(schemaVersion, forKey: AnyCodingKey("schemaVersion"))
+        try c.encode(general, forKey: AnyCodingKey("general"))
+        try c.encode(tools, forKey: AnyCodingKey("tools"))
+        try c.encodeExtra(extra)
     }
 
     // MARK: - Section access
@@ -95,20 +112,28 @@ public struct GeneralConfig: Codable, Equatable {
     public var didImportLegacyCycler: Bool
     /// Gates the one-time 1.x -> 2.0 "What's New" window.
     public var didShowWhatsNew2: Bool
+    /// General keys this build has never heard of, re-emitted verbatim on encode — a newer
+    /// build's setting must survive an older build rewriting the file.
+    public var extra: [String: JSONValue]
 
     public init(showMenuBarIcon: Bool = true,
                 didImportLegacyZones: Bool = false,
                 didImportLegacyCycler: Bool = false,
-                didShowWhatsNew2: Bool = false) {
+                didShowWhatsNew2: Bool = false,
+                extra: [String: JSONValue] = [:]) {
         self.showMenuBarIcon = showMenuBarIcon
         self.didImportLegacyZones = didImportLegacyZones
         self.didImportLegacyCycler = didImportLegacyCycler
         self.didShowWhatsNew2 = didShowWhatsNew2
+        self.extra = extra
     }
 
     private enum CodingKeys: String, CodingKey {
         case showMenuBarIcon, didImportLegacyZones, didImportLegacyCycler, didShowWhatsNew2
     }
+    private static let knownKeys: Set<String> = [
+        "showMenuBarIcon", "didImportLegacyZones", "didImportLegacyCycler", "didShowWhatsNew2",
+    ]
 
     // Every key is optional so a file written by an older 2.x build keeps loading.
     public init(from decoder: Decoder) throws {
@@ -117,6 +142,17 @@ public struct GeneralConfig: Codable, Equatable {
         didImportLegacyZones = try c.decodeIfPresent(Bool.self, forKey: .didImportLegacyZones) ?? false
         didImportLegacyCycler = try c.decodeIfPresent(Bool.self, forKey: .didImportLegacyCycler) ?? false
         didShowWhatsNew2 = try c.decodeIfPresent(Bool.self, forKey: .didShowWhatsNew2) ?? false
+        extra = try decoder.container(keyedBy: AnyCodingKey.self)
+            .unknownValues(besides: GeneralConfig.knownKeys)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(showMenuBarIcon, forKey: AnyCodingKey("showMenuBarIcon"))
+        try c.encode(didImportLegacyZones, forKey: AnyCodingKey("didImportLegacyZones"))
+        try c.encode(didImportLegacyCycler, forKey: AnyCodingKey("didImportLegacyCycler"))
+        try c.encode(didShowWhatsNew2, forKey: AnyCodingKey("didShowWhatsNew2"))
+        try c.encodeExtra(extra)
     }
 }
 
@@ -127,17 +163,31 @@ public struct ToolSection: Codable, Equatable {
     /// `schemaVersion`; each tool's blob is versioned by its own model (Zones carries
     /// `LineupConfig`'s schema 3 in here).
     public var settings: JSONValue
+    /// Section keys this build has never heard of (a sibling of `enabled`/`settings` added by a
+    /// newer build), re-emitted verbatim on encode.
+    public var extra: [String: JSONValue]
 
-    public init(enabled: Bool, settings: JSONValue = .object([:])) {
+    public init(enabled: Bool, settings: JSONValue = .object([:]), extra: [String: JSONValue] = [:]) {
         self.enabled = enabled
         self.settings = settings
+        self.extra = extra
     }
 
     private enum CodingKeys: String, CodingKey { case enabled, settings }
+    private static let knownKeys: Set<String> = ["enabled", "settings"]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         settings = try c.decodeIfPresent(JSONValue.self, forKey: .settings) ?? .object([:])
+        extra = try decoder.container(keyedBy: AnyCodingKey.self)
+            .unknownValues(besides: ToolSection.knownKeys)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(enabled, forKey: AnyCodingKey("enabled"))
+        try c.encode(settings, forKey: AnyCodingKey("settings"))
+        try c.encodeExtra(extra)
     }
 }

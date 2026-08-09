@@ -29,6 +29,10 @@ final class HyperkeyTool: Tool {
 
     private(set) var isRunning = false
     private(set) var settings: HyperKeySettings = .disabled
+    /// Set when our own section is on disk but does NOT decode. Envelope-level damage is the
+    /// shell's warning to show; this one is specifically "your Hyperkey settings are unreadable",
+    /// and it blocks every write so the bad blob stays recoverable. Same shape as Cycler's.
+    private(set) var sectionLoadError: String?
 
     private let controller = HyperKeyController()
     private var log = Logger(subsystem: Product.logSubsystem, category: "hyperkey-tool")
@@ -57,8 +61,24 @@ final class HyperkeyTool: Tool {
     /// saves the real trigger while Hyperkey is off. Acquires no tap, no mapping, no observers.
     func attach(_ services: ToolServices) {
         self.services = services
-        settings = (try? services.config.load(HyperKeySettings.self)) ?? .disabled
+        loadSettings()
         paneModel.refresh()
+    }
+
+    /// `try?` here was destructive: an undecodable section became `.disabled` in memory, and the
+    /// very next `mirrorEnabledFlag()` wrote those defaults straight over the user's blob — taking
+    /// a migrant's F18 trigger down to Caps Lock on the way. A read failure now blocks writes
+    /// instead, exactly as Zones and Cycler do with theirs.
+    private func loadSettings() {
+        guard let services else { return }
+        do {
+            settings = try services.config.load(HyperKeySettings.self) ?? .disabled
+            sectionLoadError = nil
+        } catch {
+            log.error("hyperkey settings could not be decoded (left untouched): \(error, privacy: .public)")
+            settings = .disabled
+            sectionLoadError = "\(error)"
+        }
     }
 
     func start(_ services: ToolServices) {
@@ -179,7 +199,9 @@ final class HyperkeyTool: Tool {
     /// Failures are logged, not surfaced: this runs on start/stop, where there is no edit the user
     /// could be told about and nothing they could do differently.
     private func mirrorEnabledFlag() {
-        guard settings.enabled != isRunning else { return }
+        // Never over an unreadable section: this runs on every start and stop, and it is the path
+        // that used to overwrite the user's blob with defaults.
+        guard sectionLoadError == nil, settings.enabled != isRunning else { return }
         do {
             try save()
         } catch {
@@ -193,22 +215,55 @@ final class HyperkeyTool: Tool {
     /// reported — standalone Cycler alerted on a failed hyper-key save, and swallowing it here
     /// left the pane showing a trigger the user did not actually have.
     private func save() throws {
-        settings.enabled = isRunning
         guard let services else { throw HyperkeyToolError.notRegistered }
+        guard sectionLoadError == nil else { throw HyperkeyToolError.sectionUnreadable }
         guard services.config.canWrite else {
             throw HyperkeyToolError.writesBlocked(services.config.blockedMessage)
         }
+        settings.enabled = isRunning
         try services.config.save(settings)
+    }
+
+    /// Recovery from an unreadable section: preserve the rejected blob FIRST and abort if that
+    /// fails — the store's own reset discipline, so a bad section is never silently destroyed.
+    func resetSection() {
+        guard let services else { return }
+        do {
+            if let rejected = try services.config.load(JSONValue.self) {
+                let url = Product.configDirectory.appendingPathComponent(
+                    "config.hyperkey-rejected-\(LineupAppConfigStore.timestamp()).json")
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                try encoder.encode(rejected).write(to: url, options: .atomic) // throws -> abort
+            }
+            sectionLoadError = nil
+            settings = .disabled
+            try save()
+            apply()
+        } catch {
+            sectionLoadError = sectionLoadError ?? "\(error)"
+            log.error("hyperkey reset aborted (settings left untouched): \(error, privacy: .public)")
+        }
+        services.refreshMenu()
+        services.refreshSettings()
+        paneModel.refresh()
     }
 
     // MARK: - Settings edits (from the pane; valid whether or not the tool is running)
 
     /// Whether the pane can persist edits at all. The config scope arrives at registration, so
-    /// this stays true while Hyperkey is switched OFF — only a write-blocked store turns it false.
-    var canPersist: Bool { services?.config.canWrite ?? false }
+    /// this stays true while Hyperkey is switched OFF — a write-blocked store or an unreadable
+    /// section of our own turns it false.
+    var canPersist: Bool { sectionLoadError == nil && (services?.config.canWrite ?? false) }
 
     /// Why editing is off, if it is.
-    var configBlockedMessage: String? { services?.config.blockedMessage }
+    var configBlockedMessage: String? {
+        if sectionLoadError != nil {
+            return "Your Hyperkey settings couldn’t be read. They were left untouched — reset them "
+                + "from the menu to start editing again."
+        }
+        return services?.config.blockedMessage
+    }
 
     /// The last failed save, consumed by the pane so it alerts exactly once.
     private var saveError: String?
@@ -302,6 +357,14 @@ final class HyperkeyTool: Tool {
 
     var warnings: [ToolWarning] {
         var out: [ToolWarning] = []
+        if let sectionLoadError {
+            out.append(ToolWarning(
+                id: "hyperkey.config",
+                text: "⚠︎ Hyperkey settings couldn’t be read",
+                detailLines: [sectionLoadError, "Editing is disabled until you reset them."],
+                actionTitle: "Reset Hyperkey settings…",
+                action: { [weak self] in self?.resetSection() }))
+        }
         if case .blocked = controller.state, let status = controller.menuStatus {
             let needsIM = controller.needsInputMonitoring
             out.append(ToolWarning(
@@ -338,6 +401,8 @@ enum HyperkeyToolError: LocalizedError {
     case notRegistered
     /// The store rejected the file on load and refuses every write until it is fixed.
     case writesBlocked(String?)
+    /// OUR section is on disk but does not decode. Writing would destroy it.
+    case sectionUnreadable
 
     var errorDescription: String? {
         switch self {
@@ -345,6 +410,9 @@ enum HyperkeyToolError: LocalizedError {
             return "Hyperkey isn’t ready yet. Try again in a moment."
         case .writesBlocked(let message):
             return message ?? "Your settings file couldn’t be read, so changes can’t be saved."
+        case .sectionUnreadable:
+            return "Your Hyperkey settings couldn’t be read. They were left untouched — reset "
+                + "them from the menu to start editing again."
         }
     }
 }

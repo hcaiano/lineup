@@ -75,6 +75,12 @@ final class CyclerSettingsModel: ObservableObject {
     private var boundCombos: [ToolCombo] = []
     /// Cancels the pane's live capture. Set by the pane, which owns the recorder.
     var cancelRecording: (() -> Void)?
+    /// Whose `cancelRecording` this is. A pane instance being torn down must only clear the hook
+    /// when it still belongs to its own recorder.
+    weak var recorder: ShortcutRecorder?
+    /// Names another tool in a conflict alert. Replaced by the pane with the window's
+    /// `SettingsStore.displayName(for:)`; the fallback is only used before the pane appears.
+    var toolDisplayName: (ToolID) -> String = { $0.rawValue.capitalized }
 
     init(tool: CyclerTool) {
         self.tool = tool
@@ -86,14 +92,24 @@ final class CyclerSettingsModel: ObservableObject {
     }
 
     /// True when edits can actually be persisted. The tool holds its `ToolServices` from
-    /// registration, so shortcuts stay editable while Cycler is switched off — only a write-blocked
-    /// store turns this false.
-    var canEdit: Bool { tool.canPersist }
+    /// registration, so shortcuts stay editable while Cycler is switched off — a write-blocked
+    /// store, or a section of our own that could not be read, turns this false.
+    var canEdit: Bool { tool.canEdit }
+
+    /// Whether the STORE would accept a write — what the recovery reset needs, even though
+    /// ordinary editing is off while the section is unreadable.
+    var canReset: Bool { tool.canPersist }
 
     /// Why editing is off, if it is.
     var blockedMessage: String? { tool.configBlockedMessage }
 
     var loadErrorMessage: String? { tool.sectionLoadError }
+
+    /// Preserve the unreadable blob and start again from an empty binding set.
+    func resetSection() {
+        cancelRecording?()
+        tool.resetSection()
+    }
 
     /// Re-read the live bindings. Called when the tool reloads its section from the store.
     func reload() {
@@ -205,7 +221,7 @@ final class CyclerSettingsModel: ObservableObject {
                                                      excluding: .cycler) {
                 alert = AlertItem(
                     title: "Shortcut already in use",
-                    message: "This combo is used by \(owner.rawValue.capitalized). Choose a "
+                    message: "This combo is used by \(toolDisplayName(owner)). Choose a "
                         + "different shortcut, or change it in that tool's settings.")
                 return
             }
@@ -237,8 +253,14 @@ final class CyclerSettingsModel: ObservableObject {
             try tool.save(CyclerToolSettings(bindings: rows.compactMap(\.binding)))
             return true
         } catch {
-            alert = AlertItem(title: "Couldn’t save your shortcuts.",
-                              message: error.localizedDescription)
+            let item = AlertItem(title: "Couldn’t save your shortcuts.",
+                                 message: error.localizedDescription)
+            // On the NEXT runloop turn, not now. `add(_:to:)` runs while the app-picker sheet is
+            // dismissing, and an alert published inside that same transaction is dropped — adding
+            // an app to a group with writes blocked produced no feedback at all.
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.alert = item }
+            }
             return false
         }
     }
@@ -310,9 +332,12 @@ private struct CyclerSettingsPaneBody: View {
     @ObservedObject var model: CyclerSettingsModel
     /// One recorder for the whole pane; `activeID` is the row `UUID` capturing right now.
     @StateObject private var recorder: ShortcutRecorder
+    /// Held only to name a conflicting tool the way the sidebar does; the pane does not observe it.
+    private let settings: SettingsStore
 
     init(model: CyclerSettingsModel, settings: SettingsStore) {
         self.model = model
+        self.settings = settings
         _recorder = StateObject(wrappedValue: ShortcutRecorder(store: settings))
     }
 
@@ -320,17 +345,22 @@ private struct CyclerSettingsPaneBody: View {
         VStack(alignment: .leading, spacing: 0) {
             Divider()
 
-            if let message = model.loadErrorMessage {
-                banner(message, systemImage: "exclamationmark.triangle.fill", tint: .orange)
-            } else if let message = model.blockedMessage {
+            // Two INDEPENDENT conditions, not an either/or: an unreadable section and a
+            // write-blocked envelope can both be true, and the store-level banner is the one that
+            // explains why even the reset below is unavailable.
+            if let message = model.blockedMessage {
                 banner(message, systemImage: "info.circle.fill", tint: .secondary)
             }
 
-            // Exactly ONE add control on screen at any time: the empty state's own button when
-            // there is nothing to add to, the toolbar under the list once there is. Both at once
-            // (the earlier layout showed a centred one and a stray one bottom-left) reads as two
-            // different actions.
-            if model.rows.isEmpty {
+            // A section we could not read is NOT an empty binding list. Showing the "No shortcuts
+            // yet" empty state there told the user their shortcuts were gone and offered an Add
+            // button that could not save — say what happened and offer the recovery instead.
+            if let message = model.loadErrorMessage {
+                CyclerLoadErrorState(detail: message, canReset: model.canReset) {
+                    model.resetSection()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.rows.isEmpty {
                 CyclerEmptyState(enabled: model.canEdit) { model.showAddShortcutPicker() }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -362,7 +392,12 @@ private struct CyclerSettingsPaneBody: View {
         .onAppear {
             // The model has to be able to end a capture from a non-recorder action (opening a
             // picker, deleting a row, reloading), and the recorder is the view's.
+            model.recorder = recorder
             model.cancelRecording = { [weak recorder] in recorder?.cancel() }
+            // Conflict alerts name the owning tool the way the sidebar does.
+            model.toolDisplayName = { [weak settings] id in
+                settings?.displayName(for: id) ?? id.rawValue.capitalized
+            }
         }
         .onChange(of: model.pendingRecordRowID) { rowID in
             guard let rowID else { return }
@@ -374,6 +409,11 @@ private struct CyclerSettingsPaneBody: View {
         }
         .onDisappear {
             recorder.cancel()
+            // Only if the hook is still OURS. SwiftUI can build a replacement pane before tearing
+            // the old one down, and an unconditional clear left the live pane unable to end a
+            // capture — every tool's hotkeys then stayed suspended until the window blurred.
+            guard model.recorder === recorder else { return }
+            model.recorder = nil
             model.cancelRecording = nil
         }
         .sheet(item: $model.pickerRequest) { request in
@@ -574,6 +614,43 @@ private struct CyclerGroupAppList: View {
                 .help("Drag to reorder")
             }
         }
+    }
+}
+
+/// Shown INSTEAD of the empty state when the cycler section is on disk but does not decode. The
+/// distinction matters: the empty state says "you have no shortcuts", which is a lie here, and its
+/// Add button could only fail. This says what happened and offers the one action that helps.
+private struct CyclerLoadErrorState: View {
+    let detail: String
+    let canReset: Bool
+    let onReset: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundStyle(.orange)
+            Text("Your shortcuts couldn’t be read")
+                .font(.system(size: 17, weight: .semibold))
+            Text("They were left exactly as they are on disk, so nothing is lost yet. Resetting "
+                 + "keeps a copy of the unreadable file next to your settings and starts again "
+                 + "from an empty list.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .frame(maxWidth: 380)
+            Button(action: onReset) { Label("Reset Shortcuts…", systemImage: "arrow.counterclockwise") }
+                .controlSize(.large)
+                .disabled(!canReset)
+                .padding(.top, 4)
+        }
+        .padding(40)
     }
 }
 

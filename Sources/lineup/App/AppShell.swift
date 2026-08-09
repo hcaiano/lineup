@@ -122,7 +122,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
             showWelcome()
         } else if Onboarding.shouldShowWhatsNew(audience: audience,
                                                 didShowWhatsNew2: store.config.general.didShowWhatsNew2,
-                                                showingWelcome: showingWelcome) {
+                                                showingWelcome: showingWelcome,
+                                                canPersist: store.canWrite) {
             showWhatsNew()
         }
         PermissionCenter.shared.startAccessibilityWatch()
@@ -312,20 +313,26 @@ final class AppShell: NSObject, NSApplicationDelegate {
             registry: registry,
             permissions: PermissionCenter.shared,
             showMenuBarIcon: self.store.config.general.showMenuBarIcon,
-            onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) })
+            // A dead shell can't have changed anything, so report the value back unchanged.
+            onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) ?? show })
         let controller = SettingsWindowController(store: store)
         controller.onClose = { [weak self] in self?.settings = nil }
         settings = controller
         controller.show()
     }
 
-    private func setShowMenuBarIcon(_ show: Bool) {
+    /// - Returns: what is ACTUALLY in force afterwards. `store.update` only commits in memory when
+    ///   the write succeeded, so a refused save returns the old value and Settings puts its switch
+    ///   back rather than showing a preference the user does not have.
+    @discardableResult
+    private func setShowMenuBarIcon(_ show: Bool) -> Bool {
         do {
             try store.update { $0.general.showMenuBarIcon = show }
         } catch {
             log.error("could not persist showMenuBarIcon: \(error, privacy: .public)")
         }
         statusItem.refresh()
+        return store.config.general.showMenuBarIcon
     }
 
     /// With the menu-bar icon hidden there is no way back in, so a Dock/Spotlight reopen has to

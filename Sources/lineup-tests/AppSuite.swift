@@ -33,6 +33,8 @@ func runAppTests() throws {
     try runIntegrationTests()
     try runOnboardingTests()
     try runParityFixTests()
+    try runConfigCorrectnessTests()
+    try runToolWriteDisciplineTests()
 }
 
 // MARK: - Envelope
@@ -49,7 +51,7 @@ private func runEnvelopeTests() throws {
         // A section written by a FUTURE Lineup with a tool this build has never heard of.
         cfg.tools["quicknote"] = ToolSection(enabled: true, settings: .object([
             "note": .string("hi"),
-            "count": .number(3),
+            "count": .int(3),
             "nested": .object(["deep": .array([.bool(true), .null, .string("x")])]),
         ]))
 
@@ -100,7 +102,7 @@ private func runEnvelopeTests() throws {
         try cfg.setSettings(zones, for: .zones)
         check(try cfg.settings(LineupConfig.self, for: .zones) == zones,
               "LineupConfig round-trips through a tool section")
-        check(cfg.section(for: .zones)?.settings["schemaVersion"] == .number(3),
+        check(cfg.section(for: .zones)?.settings["schemaVersion"] == .int(3),
               "the zones section carries LineupConfig's own schema 3 (two-level versioning)")
 
         let cycler = CyclerToolSettings(bindings: [
@@ -149,7 +151,7 @@ private func runEnvelopeTests() throws {
     do {
         let raw = Data(#"{"a":1,"b":[true,null,"s"],"c":{"d":1.5},"e":false}"#.utf8)
         let v = try JSONDecoder().decode(JSONValue.self, from: raw)
-        check(v["a"] == .number(1), "JSONValue decodes an integer as a number")
+        check(v["a"] == .int(1), "JSONValue decodes a whole number as an int, not a lossy double")
         check(v["b"] == .array([.bool(true), .null, .string("s")]), "JSONValue decodes a mixed array")
         check(v["c"]?["d"] == .number(1.5), "JSONValue decodes a nested object")
         check(v["e"] == .bool(false), "JSONValue decodes false as a bool, not a number")
@@ -1102,20 +1104,28 @@ private func runOnboardingTests() throws {
 
     // ---- What's New: existing users only, once, and never alongside Welcome ----
     check(Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: false,
-                                        showingWelcome: false),
+                                        showingWelcome: false, canPersist: true),
           "a 1.x upgrade sees What's New")
     check(!Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: true,
-                                         showingWelcome: false),
+                                         showingWelcome: false, canPersist: true),
           "What's New is shown once — didShowWhatsNew2 retires it")
     check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowWhatsNew2: false,
-                                         showingWelcome: true),
+                                         showingWelcome: true, canPersist: true),
           "a brand-new user gets Welcome INSTEAD of What's New, never both")
     check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowWhatsNew2: false,
-                                         showingWelcome: false),
+                                         showingWelcome: false, canPersist: true),
           "a brand-new user never gets What's New even if Welcome was suppressed")
     check(Onboarding.shouldShowWhatsNew(audience: .returning, didShowWhatsNew2: false,
-                                        showingWelcome: false),
+                                        showingWelcome: false, canPersist: true),
           "a 2.0 user who has not seen the note yet still gets it")
+    // An unreadable config.json reads as `.returning` with the flag false and cannot be written,
+    // so without this gate the window came back at every single launch.
+    check(!Onboarding.shouldShowWhatsNew(audience: .returning, didShowWhatsNew2: false,
+                                         showingWelcome: false, canPersist: false),
+          "a write-blocked store suppresses What's New instead of showing it every launch")
+    check(!Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: false,
+                                         showingWelcome: false, canPersist: false),
+          "a 1.x upgrade with a rejected config.json is not shown a note that cannot be retired")
 
     // ---- The Cycler import confirmation line ----
     func summary(_ bindings: Int, hyperEnabled: Bool, imported: Bool = true) -> String? {
@@ -1522,6 +1532,385 @@ private func runParityFixTests() throws {
     check(source("Sources/lineup/Settings/SettingsWindowController.swift")
             .contains("collectionBehavior = [.moveToActiveSpace]"),
           "the Settings window follows the active Space (it is reused across openings)")
+}
+
+// MARK: - Config + persistence correctness (review batch 2)
+
+/// The write-discipline holes the second review pass found: a late legacy import replacing 2.0
+/// settings, a reset that could not tell "unreadable" from "absent", a rewrite on every no-op
+/// update, and two lossy spots in the envelope's own encoding.
+private func runConfigCorrectnessTests() throws {
+    let missing = URL(fileURLWithPath: "/nonexistent/lineup-tests/nothing.json")
+
+    // ---- 1. A DEFERRED zones import that lands later must not replace 2.0 settings ----
+    try withTempDir("import-late-zones") { dir in
+        let url = try writeZonesFile(dir, legacyColumns)
+        var cfg = LineupAppConfig()
+        var r = LegacyImport.run(into: &cfg, zonesURL: url, cyclerBindingsURL: missing,
+                                 now: "T", resolveLegacyScreen: neverResolve)
+        check(r.zonesDeferred && cfg.section(for: .zones) == nil,
+              "late-zones: the first pass defers and writes nothing")
+
+        // The user configures Zones in 2.0 — and switches it off — while the display is away.
+        var mine = LineupConfig()
+        mine.dragSnapEnabled = false
+        try cfg.setSettings(mine, for: .zones)
+        cfg.setEnabled(false, for: .zones)
+
+        // The display comes back and the import finally resolves.
+        r = LegacyImport.run(into: &cfg, zonesURL: url, cyclerBindingsURL: missing,
+                             now: "T2", resolveLegacyScreen: { _ in wideScreen })
+        check(!r.importedZones, "late-zones: a skipped import does not claim to have imported")
+        check(try cfg.settings(LineupConfig.self, for: .zones) == mine,
+              "late-zones: the user's own 2.0 layout survives the retry")
+        check(cfg.isEnabled(.zones) == false,
+              "late-zones: the retry does not re-enable a tool the user switched off")
+        check(cfg.general.didImportLegacyZones,
+              "late-zones: the flag is set anyway, so the retry stops instead of looping")
+    }
+
+    // A section that only carries the seeded `enabled` flag is NOT the user's settings, so the
+    // deferred import must still land — otherwise `startEnabledTools` seeding would block it.
+    try withTempDir("import-late-zones-seeded") { dir in
+        let url = try writeZonesFile(dir, legacyColumns)
+        var cfg = LineupAppConfig()
+        _ = LegacyImport.run(into: &cfg, zonesURL: url, cyclerBindingsURL: missing,
+                             now: "T", resolveLegacyScreen: neverResolve)
+        cfg.setEnabled(true, for: .zones) // the registry's first-launch seeding
+        let r = LegacyImport.run(into: &cfg, zonesURL: url, cyclerBindingsURL: missing,
+                                 now: "T2", resolveLegacyScreen: { _ in wideScreen })
+        check(r.importedZones, "late-zones: a seeded-but-empty section does not block the import")
+        check(try cfg.settings(LineupConfig.self, for: .zones)?.screens["uuid-wide"] != nil,
+              "late-zones: the migrated layout lands on the reconnected display")
+    }
+
+    // ---- 1b. A corrupt bindings.json that becomes valid later ----
+    try withTempDir("import-late-cycler") { dir in
+        let url = try writeCyclerFile(dir, "{ nope")
+        var cfg = LineupAppConfig()
+        var r = LegacyImport.run(into: &cfg, zonesURL: missing, cyclerBindingsURL: url,
+                                 now: "T", resolveLegacyScreen: neverResolve)
+        check(r.cyclerError != nil && !cfg.general.didImportLegacyCycler,
+              "late-cycler: a corrupt file reports and stays pending")
+
+        // The user sets both tools up in 2.0 and keeps the menu-bar icon.
+        let mine = CyclerToolSettings(bindings: [
+            AppBinding(keyCode: 18, modifiers: sampleHyperMask, bundleIdentifier: "com.apple.Safari"),
+        ])
+        try cfg.setSettings(mine, for: .cycler)
+        cfg.setEnabled(true, for: .cycler)
+        let myHyper = HyperKeySettings(enabled: true, triggerKey: .f12, includeShift: true)
+        try cfg.setSettings(myHyper, for: .hyperkey)
+        cfg.setEnabled(true, for: .hyperkey)
+
+        // …and then the legacy file becomes readable (fixed by hand, or Cycler rewrote it).
+        try Data("""
+        {"bindings":[{"keyCode":20,"modifiers":6912,"bundleIdentifier":"com.google.Chrome"}],
+         "hyperKey":{"enabled":false,"triggerKey":"capsLock","includeShift":false},
+         "showMenuBarIcon":false}
+        """.utf8).write(to: url)
+        r = LegacyImport.run(into: &cfg, zonesURL: missing, cyclerBindingsURL: url,
+                             now: "T2", hasLineupHistory: false, resolveLegacyScreen: neverResolve)
+
+        check(!r.importedCycler,
+              "late-cycler: nothing is claimed when both sections are already the user's")
+        check(try cfg.settings(CyclerToolSettings.self, for: .cycler) == mine,
+              "late-cycler: the user's 2.0 bindings survive")
+        check(try cfg.settings(HyperKeySettings.self, for: .hyperkey) == myHyper,
+              "late-cycler: the user's 2.0 hyper-key trigger survives")
+        check(cfg.general.showMenuBarIcon,
+              "late-cycler: a late import cannot hide the menu-bar icon the user has been using")
+        check(cfg.general.didImportLegacyCycler,
+              "late-cycler: the flag settles so this stops retrying")
+    }
+
+    // Half and half: an untouched hyperkey section still imports even when cycler's is the user's.
+    try withTempDir("import-late-cycler-half") { dir in
+        let url = try writeCyclerFile(dir, """
+        {"bindings":[{"keyCode":20,"modifiers":6912,"bundleIdentifier":"com.google.Chrome"}],
+         "hyperKey":{"enabled":true,"triggerKey":"f12","includeShift":false},
+         "showMenuBarIcon":false}
+        """)
+        var cfg = LineupAppConfig()
+        let mine = CyclerToolSettings(bindings: [
+            AppBinding(keyCode: 18, modifiers: sampleHyperMask, bundleIdentifier: "com.apple.Safari"),
+        ])
+        try cfg.setSettings(mine, for: .cycler)
+        let r = LegacyImport.run(into: &cfg, zonesURL: missing, cyclerBindingsURL: url,
+                                 now: "T", resolveLegacyScreen: neverResolve)
+        check(try cfg.settings(CyclerToolSettings.self, for: .cycler) == mine,
+              "late-cycler: the cycler section is judged on its own")
+        check(try cfg.settings(HyperKeySettings.self, for: .hyperkey)?.triggerKey == .f12,
+              "late-cycler: an untouched hyperkey section still imports")
+        check(r.importedCycler && r.importedHyperkey && r.importedBindingCount == 0,
+              "late-cycler: the report counts only what was actually written")
+        check(cfg.general.showMenuBarIcon,
+              "late-cycler: the icon flag is not adopted once any 2.0 section exists")
+    }
+
+    // ---- 2. reset(): an UNREADABLE file is preserved or the reset aborts ----
+    try withTempDir("store-reset-unreadable") { dir in
+        // A directory where the config should be: it exists, and reading it fails — exactly the
+        // shape `try?` used to swallow, turning "cannot read" into "nothing to preserve".
+        let url = dir.appendingPathComponent("config.json")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let store = LineupAppConfigStore(url: url)
+        check(store.load() == .failed(.unreadable), "an unreadable config.json is rejected")
+        var threw = false
+        do { try store.reset(now: 4242) } catch { threw = true }
+        check(threw, "reset throws rather than writing over bytes it could not preserve")
+        check(!store.canWrite, "an aborted reset leaves writes blocked")
+        var isDir: ObjCBool = false
+        check(FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue,
+              "an aborted reset leaves the unreadable file exactly as it was")
+        check(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("config.rejected-4242.json").path),
+              "an aborted reset writes no rejected copy either")
+    }
+
+    // …and with no file at all, reset is still the plain "start fresh" path.
+    try withTempDir("store-reset-absent") { dir in
+        let store = LineupAppConfigStore(url: dir.appendingPathComponent("config.json"))
+        _ = store.load()
+        try store.reset(now: 7)
+        check(store.canWrite && store.state == .ok, "resetting with no file on disk succeeds")
+        check(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["config.json"],
+              "a reset with nothing to preserve writes no rejected copy")
+    }
+
+    // ---- 11. update() writes only when something actually changed ----
+    try withTempDir("store-noop-update") { dir in
+        let url = dir.appendingPathComponent("config.json")
+        let store = LineupAppConfigStore(url: url)
+        _ = store.load()
+        try store.setEnabled(true, for: .zones)
+
+        // A marker only a real write would replace.
+        let marker = Data("MARKER".utf8)
+        try marker.write(to: url)
+        try store.update { $0.general.showMenuBarIcon = true }   // already true
+        try store.setEnabled(true, for: .zones)                  // already true
+        try store.setSettings(CyclerToolSettings(bindings: []), for: .cycler)
+        try store.setSettings(CyclerToolSettings(bindings: []), for: .cycler) // second time: no-op
+        check(try Data(contentsOf: url) != marker,
+              "a real change still writes (the cycler section was new)")
+
+        try marker.write(to: url)
+        try store.update { $0.general.showMenuBarIcon = true }
+        check(try Data(contentsOf: url) == marker,
+              "an update that changes nothing does not rewrite the file three tools share")
+        try store.update { $0.general.showMenuBarIcon = false }
+        check(try Data(contentsOf: url) != marker, "a change that IS a change still writes")
+    }
+
+    // ---- 10. JSONValue keeps whole numbers whole ----
+    do {
+        let raw = Data(#"{"big":9007199254740993,"small":3,"neg":-42,"real":1.5,"exp":1e3}"#.utf8)
+        let v = try JSONDecoder().decode(JSONValue.self, from: raw)
+        check(v["big"] == .int(9007199254740993),
+              "a 64-bit integer survives decoding (a Double would round it to ...92)")
+        check(v["small"] == .int(3) && v["neg"] == .int(-42), "ordinary integers decode as ints")
+        check(v["real"] == .number(1.5), "a fractional number is still a double")
+        check(v["exp"] == .int(1000),
+              "an exponent form with a whole value normalises to an int (1000 either way on encode)")
+
+        let out = String(decoding: try JSONEncoder().encode(v), as: UTF8.self)
+        check(out.contains("9007199254740993"), "the 64-bit integer is re-emitted exactly")
+        check(!out.contains("9007199254740992"), "it is NOT re-emitted through a Double")
+        check(String(decoding: try JSONEncoder().encode(JSONValue.int(3)), as: UTF8.self) == "3",
+              "an int encodes the way the old Double did, so existing files are byte-identical")
+        check(try JSONDecoder().decode(JSONValue.self, from: try JSONEncoder().encode(v)) == v,
+              "the whole tree round-trips")
+    }
+
+    // ---- 9. Unknown keys survive a rewrite at every level of the envelope ----
+    do {
+        let raw = """
+        {"schemaVersion":1,
+         "futureTopLevel":{"a":[1,2]},
+         "general":{"showMenuBarIcon":false,"futureGeneral":"keep me"},
+         "tools":{"zones":{"enabled":true,"settings":{"schemaVersion":3},"futureSectionKey":7}}}
+        """
+        let cfg = try JSONDecoder().decode(LineupAppConfig.self, from: Data(raw.utf8))
+        check(cfg.extra["futureTopLevel"] != nil, "an unknown top-level key is captured")
+        check(cfg.general.extra["futureGeneral"] == .string("keep me"),
+              "an unknown general key is captured")
+        check(cfg.tools["zones"]?.extra["futureSectionKey"] == .int(7),
+              "an unknown tool-section key is captured")
+        check(cfg.extra["tools"] == nil && cfg.extra["general"] == nil,
+              "known keys are not duplicated into the catch-all")
+
+        let back = try JSONDecoder().decode(LineupAppConfig.self, from: try cfg.encoded())
+        check(back == cfg, "an envelope with unknown keys round-trips")
+        check(back.extra["futureTopLevel"]?["a"] == .array([.int(1), .int(2)]),
+              "the unknown top-level value keeps its shape")
+        check(back.general.extra["futureGeneral"] == .string("keep me"),
+              "the unknown general key survives a rewrite")
+        check(back.tools["zones"]?.extra["futureSectionKey"] == .int(7),
+              "the unknown section key survives a rewrite")
+        check(!back.general.showMenuBarIcon && back.general.didShowWhatsNew2 == false,
+              "the known general keys are unchanged by the catch-all")
+        check(String(decoding: try back.encoded(), as: UTF8.self)
+              == String(decoding: try cfg.encoded(), as: UTF8.self),
+              "a second rewrite is byte-identical")
+
+        // A rewrite through the real store, which is where the loss actually happened.
+        try withTempDir("store-unknown-keys") { dir in
+            let url = dir.appendingPathComponent("config.json")
+            try Data(raw.utf8).write(to: url)
+            let store = LineupAppConfigStore(url: url)
+            check(store.load() == .loaded, "a file with unknown keys still loads")
+            try store.setEnabled(false, for: .cycler)
+            let reread = LineupAppConfigStore(url: url)
+            _ = reread.load()
+            check(reread.config.extra["futureTopLevel"] != nil,
+                  "an unrelated write preserves the unknown top-level key")
+            check(reread.config.general.extra["futureGeneral"] == .string("keep me"),
+                  "an unrelated write preserves the unknown general key")
+            check(reread.config.tools["zones"]?.extra["futureSectionKey"] == .int(7),
+                  "an unrelated write preserves the unknown section key")
+        }
+    }
+
+    // A fresh envelope carries no catch-all, so nothing new appears in a first-launch file.
+    do {
+        let fresh = String(decoding: try LineupAppConfig().encoded(), as: UTF8.self)
+        check(!fresh.contains("extra"), "the catch-all is never written as a key of its own")
+    }
+}
+
+// MARK: - Tool write discipline (review batch 2)
+
+/// The tools and the registry live in the app target, which this runner does not link, so these
+/// are source scans — the same way every other shell rule here is asserted. All of them are one
+/// rule: nothing may write over settings it could not read, and no switch may claim a state that
+/// did not reach disk.
+private func runToolWriteDisciplineTests() throws {
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        guard let text = files.first(where: { $0.path == path })?.text else {
+            check(false, "\(path) exists")
+            return ""
+        }
+        return text
+    }
+
+    // ---- 3. Hyperkey treats an unreadable section the way Cycler and Zones do ----
+    let hyperTool = source("Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift")
+    check(hyperTool.contains("private(set) var sectionLoadError: String?"),
+          "HyperkeyTool records an unreadable section instead of silently using defaults")
+    check(!hyperTool.contains("(try? services.config.load(HyperKeySettings.self))"),
+          "attach no longer swallows a decode failure with try?")
+    if let start = hyperTool.range(of: "private func mirrorEnabledFlag()") {
+        check(hyperTool[start.lowerBound...].prefix(260).contains("sectionLoadError == nil"),
+              "mirrorEnabledFlag refuses to write over an unreadable hyperkey section")
+    } else {
+        check(false, "HyperkeyTool owns mirrorEnabledFlag()")
+    }
+    check(hyperTool.contains("guard sectionLoadError == nil else { throw HyperkeyToolError.sectionUnreadable }"),
+          "every hyperkey save is blocked while the section is unreadable")
+    check(hyperTool.contains("var canPersist: Bool { sectionLoadError == nil"),
+          "the Hyperkey pane is read-only while its section is unreadable")
+    check(hyperTool.contains("func resetSection()") && hyperTool.contains("config.hyperkey-rejected-"),
+          "Hyperkey's reset preserves the rejected blob first, under its own name")
+    check(hyperTool.contains("id: \"hyperkey.config\"") && hyperTool.contains("Reset Hyperkey settings…"),
+          "an unreadable hyperkey section becomes a warning with a recovery action")
+
+    // ---- 4. Cycler: a load error blocks editing, and the pane says so instead of showing empty
+    let cyclerTool = source("Sources/lineup/Tools/Cycler/CyclerTool.swift")
+    check(cyclerTool.contains("var canEdit: Bool { canPersist && sectionLoadError == nil }"),
+          "Cycler's pane cannot overwrite bindings it failed to read")
+    check(cyclerTool.contains("guard sectionLoadError == nil else { throw CyclerToolError.sectionUnreadable }"),
+          "a save is refused outright while the section is unreadable")
+    check(cyclerTool.contains("func resetSection()") && cyclerTool.contains("config.cycler-rejected-"),
+          "Cycler's reset preserves the rejected blob first")
+    check(cyclerTool.contains("Reset Cycler shortcuts…"),
+          "the unreadable-section warning offers the reset")
+    let cyclerPane = source("Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift")
+    check(cyclerPane.contains("var canEdit: Bool { tool.canEdit }"),
+          "the pane model reads the tool's combined edit gate")
+    check(cyclerPane.contains("struct CyclerLoadErrorState") && cyclerPane.contains("Your shortcuts couldn’t be read"),
+          "the pane has an explicit load-error state")
+    if let error = cyclerPane.range(of: "if let message = model.loadErrorMessage {"),
+       let empty = cyclerPane.range(of: "} else if model.rows.isEmpty {") {
+        check(error.lowerBound < empty.lowerBound,
+              "the load-error state replaces the empty state, never the other way round")
+    } else {
+        check(false, "the Cycler pane branches on the load error before the empty list")
+    }
+    // The two banners were an if/else: a blocked store plus an unreadable section showed only one.
+    check(!cyclerPane.contains("} else if let message = model.blockedMessage {"),
+          "the load-error and write-blocked banners are independent conditions")
+
+    // ---- 5. restart() re-reads a STOPPED tool's section too ----
+    let registry = source("Sources/lineup/App/ToolRegistry.swift")
+    if let start = registry.range(of: "func restart(_ id: ToolID)") {
+        let body = registry[start.lowerBound...].prefix(600)
+        check(!body.contains("tool.isRunning else { return }"),
+              "restart no longer no-ops for a stopped tool")
+        check(body.contains("tool.attach("),
+              "a stopped tool is re-attached so it re-reads its section")
+        check(body.contains("if isEnabled(id)") && body.contains("start(tool)"),
+              "restart re-asserts the persisted enable flag, so the switch and the tool agree")
+    } else {
+        check(false, "ToolRegistry owns restart(_:)")
+    }
+
+    // ---- 6. A refused enable write reverts the switch and is surfaced ----
+    if let start = registry.range(of: "func setEnabled(_ enabled: Bool, for id: ToolID)") {
+        let body = registry[start.lowerBound...].prefix(900)
+        guard let persist = body.range(of: "try store.setEnabled(enabled, for: id)"),
+              let act = body.range(of: "if !tool.isRunning { start(tool) }") else {
+            check(false, "setEnabled both persists and starts the tool")
+            return
+        }
+        check(persist.lowerBound < act.lowerBound,
+              "setEnabled persists BEFORE it starts or stops, so a refused write changes nothing")
+        check(body.contains("lastEnableError"),
+              "a refused enable write is kept for the UI rather than only logged")
+    } else {
+        check(false, "ToolRegistry owns setEnabled(_:for:)")
+    }
+    let settingsStore = source("Sources/lineup/Settings/SettingsStore.swift")
+    check(settingsStore.contains("@Published private(set) var toolEnableError: String?")
+          && settingsStore.contains("toolEnableError = registry.lastEnableError"),
+          "the Settings store republishes the failed toggle for the pane")
+    check(source("Sources/lineup/Settings/SettingsStore.swift").contains("enableError: toolEnableError")
+          && source("Sources/lineup/Settings/ToolPane.swift").contains("if let message = enableError {"),
+          "the tool pane shows why a switch sprang back")
+    // showMenuBarIcon self-corrects the way launchAtLogin does.
+    check(settingsStore.contains("private let onMenuBarIconChange: (Bool) -> Bool"),
+          "the menu-bar callback reports what is actually in force")
+    if let start = settingsStore.range(of: "@Published var showMenuBarIcon: Bool {") {
+        check(settingsStore[start.lowerBound...].prefix(320).contains("if actual != showMenuBarIcon"),
+              "a refused menu-bar write puts the switch back instead of lying")
+    } else {
+        check(false, "SettingsStore owns the showMenuBarIcon toggle")
+    }
+    let shell = source("Sources/lineup/App/AppShell.swift")
+    check(shell.contains("return store.config.general.showMenuBarIcon"),
+          "the shell answers with the value that survived the write")
+
+    // ---- 7. Zones validates a layout at WRITE time ----
+    let zonesTool = source("Sources/lineup/Tools/Zones/ZonesTool.swift")
+    if let start = zonesTool.range(of: "private func applyLayouts(") {
+        let body = zonesTool[start.lowerBound...].prefix(900)
+        guard let validate = body.range(of: "try updated.validate()"),
+              let save = body.range(of: "try services.config.save(updated)") else {
+            check(false, "applyLayouts validates and then saves")
+            return
+        }
+        check(validate.lowerBound < save.lowerBound,
+              "an invalid layout is refused at write time, not discovered at the next launch")
+    } else {
+        check(false, "ZonesTool owns applyLayouts")
+    }
+    check(zonesTool.contains("if let rejected = try services.config.load(JSONValue.self)"),
+          "Zones' reset aborts when the rejected blob cannot be read back")
+
+    // ---- 8. What's New is gated on a persistable store ----
+    check(shell.contains("canPersist: store.canWrite"),
+          "the shell will not show a note it cannot record as seen")
+
 }
 
 /// `AboutFacts` lives in the app target, which this runner does not link. Mirrored the same way

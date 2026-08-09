@@ -42,10 +42,16 @@ public enum Onboarding {
     /// The 2.0 intro window. Shown once to anyone who already had Lineup, and never to a
     /// brand-new user — the Welcome window already introduces the three tools, and two windows
     /// on a first run is a worse first run.
+    ///
+    /// - Parameter canPersist: the config store accepted its file, so "seen" can actually be
+    ///   recorded. A rejected `config.json` reads as `.returning` with `didShowWhatsNew2` false
+    ///   AND cannot be written, so without this the window would reappear at EVERY launch until
+    ///   the user fixes the file. Losing the note once is much cheaper than that.
     public static func shouldShowWhatsNew(audience: LaunchAudience,
                                           didShowWhatsNew2: Bool,
-                                          showingWelcome: Bool) -> Bool {
-        guard !didShowWhatsNew2, !showingWelcome else { return false }
+                                          showingWelcome: Bool,
+                                          canPersist: Bool) -> Bool {
+        guard !didShowWhatsNew2, !showingWelcome, canPersist else { return false }
         return audience != .brandNew
     }
 

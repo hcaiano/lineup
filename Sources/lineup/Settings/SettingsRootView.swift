@@ -92,5 +92,7 @@ struct ToolSidebarRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .help(row.summary)
+        // The muted icon is the only thing that says "off", and it says nothing to VoiceOver.
+        .accessibilityValue(row.isEnabled ? "On" : "Off")
     }
 }

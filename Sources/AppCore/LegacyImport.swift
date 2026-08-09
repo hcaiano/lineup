@@ -64,6 +64,14 @@ public enum LegacyImport {
         return report
     }
 
+    /// True when the tool's section already carries REAL settings — evidence the user has been
+    /// configuring this tool in 2.0. A section that only holds an `enabled` flag (what the
+    /// registry seeds at first launch) does not count.
+    private static func hasSettings(_ config: LineupAppConfig, _ id: ToolID) -> Bool {
+        guard let section = config.section(for: id) else { return false }
+        return section.settings != .object([:])
+    }
+
     // MARK: - Zones
 
     private static func importZones(into config: inout LineupAppConfig,
@@ -81,11 +89,16 @@ public enum LegacyImport {
                 resolveLegacyTarget: resolveLegacyScreen)
             switch outcome {
             case .loaded(let cfg), .migrated(let cfg):
-                try config.setSettings(cfg, for: .zones)
-                // Zones is Lineup's incumbent behaviour — always on after an import.
-                config.setEnabled(true, for: .zones)
+                // A LATE import (a deferred layout whose display finally reconnected) must not
+                // replace settings the user has since made in 2.0. Their own section wins; the
+                // flag is still set, so this stops retrying either way.
+                if !hasSettings(config, .zones) {
+                    try config.setSettings(cfg, for: .zones)
+                    // Zones is Lineup's incumbent behaviour — always on after an import.
+                    config.setEnabled(true, for: .zones)
+                    report.importedZones = true
+                }
                 config.general.didImportLegacyZones = true
-                report.importedZones = true
             case .fresh:
                 // No zones.json at all. Nothing to import; seed the incumbent default so a
                 // brand-new user still gets Zones running, and don't look again.
@@ -122,14 +135,27 @@ public enum LegacyImport {
             let data = try Data(contentsOf: url)
             let legacy = try CyclerConfig.decode(data).coalescingDuplicateShortcuts()
 
+            // A LATE import — this file was corrupt (or absent) on an earlier launch and only
+            // became importable now — must not replace what the user has configured in 2.0 in
+            // the meantime. Each target section is judged on its own.
+            let cyclerExists = hasSettings(config, .cycler)
+            let hyperkeyExists = hasSettings(config, .hyperkey)
+
             // The split: bindings go to Cycler, hyper-key state goes to Hyperkey, and the
             // menu-bar preference is now app-wide. The cycler section must NOT contain a
             // `hyperKey` key — CyclerToolSettings has no such field by design.
-            try config.setSettings(CyclerToolSettings(bindings: legacy.bindings), for: .cycler)
-            config.setEnabled(!legacy.bindings.isEmpty, for: .cycler)
+            if !cyclerExists {
+                try config.setSettings(CyclerToolSettings(bindings: legacy.bindings), for: .cycler)
+                config.setEnabled(!legacy.bindings.isEmpty, for: .cycler)
+                report.importedBindingCount = legacy.bindings.count
+            }
 
-            try config.setSettings(legacy.hyperKey, for: .hyperkey)
-            config.setEnabled(legacy.hyperKey.enabled, for: .hyperkey)
+            if !hyperkeyExists {
+                try config.setSettings(legacy.hyperKey, for: .hyperkey)
+                config.setEnabled(legacy.hyperKey.enabled, for: .hyperkey)
+                report.importedHyperkey = true
+                report.hyperkeyWasEnabled = legacy.hyperKey.enabled
+            }
 
             // `showMenuBarIcon` is the one field where the naive migration is WRONG for the
             // commonest case. In standalone Cycler it hid Cycler's OWN extra menu-bar icon, next
@@ -138,16 +164,17 @@ public enum LegacyImport {
             // way into the app — for a user who never asked for that, mid-auto-update.
             //
             // So it is adopted only from a Cycler-ONLY migrant, who demonstrably chose to live
-            // without a menu-bar icon and has no Lineup icon to lose.
-            if !hasLineupHistory {
+            // without a menu-bar icon and has no Lineup icon to lose — and only when this is a
+            // FIRST import. A late one would otherwise reach back and hide an icon the user has
+            // been using 2.0 with, which is the one setting that can strand them.
+            if !hasLineupHistory, !cyclerExists, !hyperkeyExists {
                 config.general.showMenuBarIcon = legacy.showMenuBarIcon
             }
             config.general.didImportLegacyCycler = true
 
-            report.importedCycler = true
-            report.importedBindingCount = legacy.bindings.count
-            report.importedHyperkey = true
-            report.hyperkeyWasEnabled = legacy.hyperKey.enabled
+            // "The legacy file was consumed" — false when both targets already held the user's
+            // own settings, so the onboarding line never claims an import that did not happen.
+            report.importedCycler = !cyclerExists || !hyperkeyExists
         } catch {
             // Leave the flag false: a corrupt bindings.json the user later fixes still imports.
             report.cyclerError = "\(error)"

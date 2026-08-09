@@ -18,6 +18,11 @@ struct ToolPane<Content: View>: View {
     let title: String
     let summary: String
     @Binding var isOn: Bool
+    /// Why the last flip of the switch did not take, if it did not. Passed in rather than read
+    /// from the environment: the header has one owner (`SettingsStore.pane(for:)`) and this way
+    /// it cannot be built without one.
+    var enableError: String?
+    var onDismissEnableError: () -> Void = {}
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -31,12 +36,25 @@ struct ToolPane<Content: View>: View {
         GeometryReader { _ in
             VStack(spacing: 0) {
                 header
+                // The switch reads through to the persisted flag, so a refused write already puts
+                // it back. Without a line saying why, that looks like the click was simply lost.
+                if let message = enableError {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 22)
+                        .padding(.bottom, 12)
+                }
                 content()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle(title)
+        // The message describes the toggle the user just clicked; leaving the pane retires it.
+        .onDisappear(perform: onDismissEnableError)
     }
 
     private var header: some View {

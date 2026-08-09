@@ -8,6 +8,10 @@ import Foundation
 public enum JSONValue: Codable, Equatable, Sendable {
     case null
     case bool(Bool)
+    /// A whole number, kept as an integer so a 64-bit id survives a round trip. `Double` cannot
+    /// represent an odd integer above 2^53: `9007199254740993` came back as `...92`, and an
+    /// older build re-writing a newer build's section would silently corrupt it.
+    case int(Int64)
     case number(Double)
     case string(String)
     case array([JSONValue])
@@ -19,6 +23,11 @@ public enum JSONValue: Codable, Equatable, Sendable {
             self = .null
         } else if let v = try? c.decode(Bool.self) {
             self = .bool(v)
+        } else if let v = try? c.decode(Int64.self) {
+            // Tried BEFORE Double: JSONDecoder only hands back an Int64 for a source token that
+            // really is a whole number in range, so a fractional or huge value still falls
+            // through to the Double case below.
+            self = .int(v)
         } else if let v = try? c.decode(Double.self) {
             self = .number(v)
         } else if let v = try? c.decode(String.self) {
@@ -37,6 +46,7 @@ public enum JSONValue: Codable, Equatable, Sendable {
         switch self {
         case .null: try c.encodeNil()
         case .bool(let v): try c.encode(v)
+        case .int(let v): try c.encode(v)
         case .number(let v): try c.encode(v)
         case .string(let v): try c.encode(v)
         case .array(let v): try c.encode(v)
@@ -70,4 +80,32 @@ public enum JSONValue: Codable, Equatable, Sendable {
     }
 
     public var isEmptyObject: Bool { objectValue?.isEmpty == true }
+}
+
+/// A coding key made from any string, so a `Codable` type can read and re-emit the keys it does
+/// not know about (see `LineupAppConfig.extra`).
+struct AnyCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+
+    init(_ stringValue: String) { self.stringValue = stringValue }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { self.stringValue = String(intValue) }
+}
+
+extension KeyedDecodingContainer where Key == AnyCodingKey {
+    /// Every key that is NOT one of `known`, decoded as opaque JSON.
+    func unknownValues(besides known: Set<String>) throws -> [String: JSONValue] {
+        var out: [String: JSONValue] = [:]
+        for key in allKeys where !known.contains(key.stringValue) {
+            out[key.stringValue] = try decode(JSONValue.self, forKey: key)
+        }
+        return out
+    }
+}
+
+extension KeyedEncodingContainer where Key == AnyCodingKey {
+    mutating func encodeExtra(_ extra: [String: JSONValue]) throws {
+        for (key, value) in extra { try encode(value, forKey: AnyCodingKey(key)) }
+    }
 }

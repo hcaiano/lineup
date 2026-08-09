@@ -89,6 +89,10 @@ public final class LineupAppConfigStore {
         guard canWrite else { throw LineupAppConfigError.writesBlocked }
         var copy = config
         try body(&copy)
+        // A mutation that changes nothing writes nothing. Without this, everything that "saves
+        // the current state" — a display change while an import is deferred, a status refresh —
+        // rewrites the file three tools share for no reason.
+        guard copy != config else { return }
         try write(copy)
         config = copy
     }
@@ -123,7 +127,12 @@ public final class LineupAppConfigStore {
     /// Preserves the rejected bytes FIRST; if that fails the reset is aborted and the file is
     /// left exactly as it was, with writes still blocked.
     public func reset(now: Int = LineupAppConfigStore.timestamp()) throws {
-        if let data = try? Data(contentsOf: url) {
+        // `try?` here would treat "the file is unreadable" (bad permissions, an I/O error — the
+        // very cases a reset is reached from) as "there is no file", and the fresh write below
+        // would destroy bytes that were never preserved. Only a genuinely ABSENT file skips
+        // preservation; a read that fails aborts the reset.
+        if FileManager.default.fileExists(atPath: url.path) {
+            let data = try Data(contentsOf: url)        // throws -> abort reset (no clobber)
             let rejected = url.deletingPathExtension().appendingPathExtension("rejected-\(now).json")
             try data.write(to: rejected, options: .atomic) // throws -> abort reset (no clobber)
         }

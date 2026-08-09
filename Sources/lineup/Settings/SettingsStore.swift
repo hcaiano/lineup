@@ -33,8 +33,15 @@ final class SettingsStore: ObservableObject {
     @Published private(set) var toolRows: [ToolRow] = []
     @Published private(set) var isAccessibilityTrusted: Bool
     @Published private(set) var isInputMonitoringGranted: Bool
+    /// Mirrors `general.showMenuBarIcon`. The shell hands back what is ACTUALLY in force after the
+    /// write, so a refused save puts the switch back instead of showing a preference the user does
+    /// not have — the same self-correction `launchAtLogin` does below.
     @Published var showMenuBarIcon: Bool {
-        didSet { guard showMenuBarIcon != oldValue else { return }; onMenuBarIconChange(showMenuBarIcon) }
+        didSet {
+            guard showMenuBarIcon != oldValue else { return }
+            let actual = onMenuBarIconChange(showMenuBarIcon)
+            if actual != showMenuBarIcon { showMenuBarIcon = actual }
+        }
     }
     @Published var launchAtLogin: Bool {
         didSet {
@@ -45,9 +52,15 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// The last tool switch that could not be saved, surfaced by the pane. Cleared as soon as one
+    /// succeeds, or when the user dismisses it.
+    @Published private(set) var toolEnableError: String?
+
     private let registry: ToolRegistry
     private let permissions: PermissionCenter
-    private let onMenuBarIconChange: (Bool) -> Void
+    /// Returns the value that is actually in force after the write, which is the OLD one when the
+    /// store refused it.
+    private let onMenuBarIconChange: (Bool) -> Bool
     private var recordingDepth = 0
     /// Live recorders, keyed by object identity, each with the block that cancels its capture.
     /// The identity is what lets `stopAllRecording()` (blur, window close) tear down exactly the
@@ -57,7 +70,7 @@ final class SettingsStore: ObservableObject {
     init(registry: ToolRegistry,
          permissions: PermissionCenter,
          showMenuBarIcon: Bool,
-         onMenuBarIconChange: @escaping (Bool) -> Void) {
+         onMenuBarIconChange: @escaping (Bool) -> Bool) {
         self.registry = registry
         self.permissions = permissions
         self.showMenuBarIcon = showMenuBarIcon
@@ -78,9 +91,16 @@ final class SettingsStore: ObservableObject {
         }
         isAccessibilityTrusted = permissions.isAccessibilityTrusted
         isInputMonitoringGranted = permissions.isInputMonitoringGranted
+        toolEnableError = registry.lastEnableError
         let login = LaunchAtLogin.isEnabled
         if login != launchAtLogin { launchAtLogin = login }
         objectWillChange.send()
+    }
+
+    /// Dismiss the failed-toggle message.
+    func clearToolEnableError() {
+        registry.clearEnableError()
+        toolEnableError = nil
     }
 
     // MARK: - Tools
@@ -91,12 +111,16 @@ final class SettingsStore: ObservableObject {
         toolRows.first { $0.id == id }?.name ?? id.rawValue.capitalized
     }
 
+    /// Reads through to the registry, so a toggle the store refused to persist springs back on
+    /// its own — `setEnabled` leaves the flag alone when the write fails.
+    ///
+    /// No `refresh()` here: `setEnabled` already calls the registry's `onSettingsChange`, which the
+    /// shell wires straight to this window's refresh. Doing both rebuilt every row twice per click.
     func binding(forTool id: ToolID) -> Binding<Bool> {
         Binding(
             get: { [weak self] in self?.registry.isEnabled(id) ?? false },
             set: { [weak self] newValue in
                 self?.registry.setEnabled(newValue, for: id)
-                self?.refresh()
             })
     }
 
@@ -116,7 +140,9 @@ final class SettingsStore: ObservableObject {
             // owns the global recording suspension.
             if let tool = registry.tool(id) {
                 ToolPane(id: id, title: tool.displayName, summary: tool.summary,
-                         isOn: binding(forTool: id)) {
+                         isOn: binding(forTool: id),
+                         enableError: toolEnableError,
+                         onDismissEnableError: { [weak self] in self?.clearToolEnableError() }) {
                     tool.makeSettingsPane()
                 }
                 .environmentObject(self)

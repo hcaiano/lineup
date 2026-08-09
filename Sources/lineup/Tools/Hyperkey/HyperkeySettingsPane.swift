@@ -130,12 +130,16 @@ struct HyperkeySettingsPane: View {
                         .labelsHidden()
                         .frame(width: 190)
                         .disabled(!model.canEdit)
+                        // `labelsHidden()` leaves VoiceOver with the row's visual title only,
+                        // which it does not read as this control's name.
+                        .accessibilityLabel("Trigger key")
                     }
                     SettingsRow(title: "Include Shift (⇧)", detail: model.shortcutHint) {
                         Toggle("", isOn: model.includeShift)
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .disabled(!model.canEdit)
+                            .accessibilityLabel("Include Shift")
                     }
                     if model.settings.triggerKey.needsCapsLockRemap {
                         SettingsRow(
