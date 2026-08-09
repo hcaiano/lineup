@@ -35,32 +35,45 @@ enum CapsLockHandoff {
 
     /// One-time, called from `HyperkeyTool.start()` BEFORE the first `apply()`.
     ///
-    /// If standalone Cycler recorded ownership of a Caps Lock -> F18 mapping:
-    ///  * the legacy flag is cleared in the `com.caiano.cycler` domain — unconditionally, so a
-    ///    later Cycler run can never also claim the mapping;
+    /// If standalone Cycler recorded ownership of a Caps Lock -> F18 mapping **and is not
+    /// running**:
+    ///  * the legacy flag is cleared in the `com.caiano.cycler` domain, so a later Cycler run can
+    ///    never also claim the mapping;
     ///  * and, only when that mapping is **still applied**, Lineup adopts it (sets `newKey` and
     ///    arms the exit hook), so Lineup's teardown is what finally clears it.
     ///
     /// A set flag with no mapping applied is stale (Cycler cleared the mapping but the flag
     /// survived, or the user cleared it by hand): the flag is dropped and nothing is adopted.
     ///
-    /// - Returns: `true` when ownership was actually adopted.
-    @discardableResult
-    static func adoptLegacyOwnershipIfNeeded() -> Bool {
+    /// The liveness guard is the whole reason this is not unconditional: a RUNNING standalone
+    /// Cycler is still *using* that mapping. Adopting it would hand its Caps Lock to our teardown
+    /// (`HyperkeyTool.apply()` blocks on the same liveness check and immediately clears every
+    /// mapping we own), breaking a live app; clearing its flag alone would strand the mapping when
+    /// Cycler later quits and finds no claim of its own. Same test `orphanedMappingDetected()`
+    /// uses, and it recovers on the next launch once Cycler is gone.
+    ///
+    /// Probes `hidutil` on its queue, so nothing here blocks the main thread; adoption lands
+    /// before the `apply()` that follows because both use that one serial queue.
+    @MainActor
+    static func adoptLegacyOwnershipIfNeeded() {
         guard let legacy = UserDefaults(suiteName: legacySuite), legacy.bool(forKey: legacyKey) else {
-            return false
+            return
         }
-        // Clear first: whatever happens next, standalone Cycler must not keep a claim on a
-        // mapping this process is about to manage.
+        guard SingleInstance.standaloneCyclerIsRunning() == nil else {
+            log.info("standalone Cycler is running; leaving its Caps Lock ownership claim alone")
+            return
+        }
+        // Cycler is gone, so its claim is ours to retire: whatever the probe finds, it must not
+        // keep a claim on a mapping this process is about to manage.
         legacy.removeObject(forKey: legacyKey)
 
-        guard HyperKeyController.isMappingOurs(HyperKeyController.currentMapping()) else {
-            log.info("legacy Cycler ownership flag was stale (no CapsLock->F18 mapping applied); dropped")
-            return false
+        HyperKeyController.adoptAppliedMappingIfPresentAsync { adopted in
+            if adopted {
+                log.info("adopted the CapsLock->F18 mapping left by standalone Cycler")
+            } else {
+                log.info("legacy Cycler ownership flag was stale (no CapsLock->F18 mapping applied); dropped")
+            }
         }
-        HyperKeyController.adoptAppliedMapping()
-        log.info("adopted the CapsLock->F18 mapping left by standalone Cycler")
-        return true
     }
 
     // MARK: - Orphan detection + recovery
@@ -82,14 +95,21 @@ enum CapsLockHandoff {
     /// themselves (a login item, a Karabiner-free `hidutil` one-liner) has the same shape and reads
     /// as orphaned. That is why recovery is a button the user presses, never automatic.
     ///
-    /// Spawns `hidutil`, so callers cache the result rather than asking per menu build or per
-    /// SwiftUI body evaluation.
+    /// Spawns `hidutil`, so the answer arrives on a completion (on the main thread) rather than
+    /// blocking the caller, and callers cache it rather than asking per menu build or per SwiftUI
+    /// body evaluation.
     @MainActor
-    static func orphanedMappingDetected() -> Bool {
-        guard !HyperKeyController.ownsCapsLockMapping else { return false }
-        guard SingleInstance.standaloneCyclerIsRunning() == nil else { return false }
-        guard !HyperKeyController.raycastCapsHyperEnabled() else { return false }
-        return HyperKeyController.isMappingOurs(HyperKeyController.currentMapping())
+    static func orphanedMappingDetected(completion: @escaping (Bool) -> Void) {
+        guard !HyperKeyController.ownsCapsLockMapping,
+              SingleInstance.standaloneCyclerIsRunning() == nil,
+              !HyperKeyController.raycastCapsHyperEnabled()
+        else {
+            completion(false)
+            return
+        }
+        HyperKeyController.currentMappingAsync { mapping in
+            completion(HyperKeyController.isMappingOurs(mapping))
+        }
     }
 
     /// User-triggered recovery, from the "Restore Caps Lock" button in the Hyperkey pane.
@@ -97,13 +117,15 @@ enum CapsLockHandoff {
     /// app installed for its own purposes is never wiped, and forgets any ownership either side
     /// recorded.
     ///
-    /// - Returns: `true` when a mapping was actually cleared.
-    @discardableResult
-    static func restoreCapsLock() -> Bool {
-        let cleared = HyperKeyController.clearIfMappingIsOurs()
-        HyperKeyController.releaseOwnedMapping()
-        UserDefaults(suiteName: legacySuite)?.removeObject(forKey: legacyKey)
-        log.info("restore Caps Lock requested; cleared=\(cleared, privacy: .public)")
-        return cleared
+    /// `hidutil` runs on its own queue; `completion` reports on the main thread whether a mapping
+    /// was actually cleared.
+    @MainActor
+    static func restoreCapsLock(completion: @escaping (Bool) -> Void) {
+        HyperKeyController.clearIfMappingIsOursAsync { cleared in
+            HyperKeyController.releaseOwnedMapping()
+            UserDefaults(suiteName: legacySuite)?.removeObject(forKey: legacyKey)
+            log.info("restore Caps Lock requested; cleared=\(cleared, privacy: .public)")
+            completion(cleared)
+        }
     }
 }

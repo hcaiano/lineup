@@ -21,8 +21,8 @@ final class HyperKeyController {
         case blocked(String)
     }
 
-    static let capsLockHID: UInt64 = 0x700000039
-    static let f18HID: UInt64 = 0x70000006D
+    static let capsLockHID = CapsLockMapping.capsLockHID
+    static let f18HID = CapsLockMapping.f18HID
     private static let capsLockKeyCode = 57
     /// The ownership flag lives in Lineup's own defaults domain. `CapsLockHandoff` owns the
     /// constant so the legacy Cycler key it supersedes has exactly one mention in the tree.
@@ -35,8 +35,17 @@ final class HyperKeyController {
     static let standaloneCyclerBlockedMessage = "Cycler is running — quit it to use Hyperkey here"
     private static let syntheticEventMarker: Int64 = 0x4C4E_4850 // "LNHP" — Lineup's own events
     private static let hidutilQueue = DispatchQueue(label: Product.bundleID + ".hidutil")
-    private static var clearOnExit = false
+    /// `clearOnExit` and `installedAtexit` are read and written from BOTH the main thread and
+    /// `hidutilQueue` (the mapping work runs there, and so does the adoption probe), so they are
+    /// behind a lock rather than bare statics.
+    private static let staticsLock = NSLock()
+    private static var clearOnExitStorage = false
     private static var installedAtexit = false
+
+    private static var clearOnExit: Bool {
+        get { staticsLock.withLock { clearOnExitStorage } }
+        set { staticsLock.withLock { clearOnExitStorage = newValue } }
+    }
 
     /// Set by `HyperkeyTool` immediately before each `apply()`: standalone Cycler.app is alive and
     /// holds (or will grab) the same Caps Lock -> F18 mapping. Checked only for triggers that need
@@ -122,23 +131,33 @@ final class HyperKeyController {
         state == .blocked(Self.inputMonitoringBlockedMessage)
     }
 
+    /// True when the tap is already live for exactly these settings and the Caps Lock remap (if
+    /// this trigger needs one) is already applied — so a re-apply would only re-run the `hidutil`
+    /// probe, which is a subprocess. `HyperkeyTool` asks this before its activation-triggered
+    /// re-applies; the wake path and every settings edit re-apply regardless.
+    ///
+    /// Secure Input is deliberately NOT part of this: its own 2s timer owns that transition and
+    /// calls `apply()` directly, so gating on it here would only duplicate the check.
+    func isSettled(for settings: HyperKeySettings) -> Bool {
+        guard settings.enabled, state == .active, tap != nil else { return false }
+        guard activeTrigger == settings.triggerKey, includeShift == settings.includeShift else { return false }
+        guard settings.triggerKey.needsCapsLockRemap else { return true }
+        return didApplyMapping && !blockedByStandaloneCycler
+    }
+
     func apply(_ settings: HyperKeySettings) {
         appliedSettings = settings
         updateSecureInputWatch(enabled: settings.enabled)
         let operationID = nextHidutilOperationID()
         guard settings.enabled else {
-            stop(invalidatingPending: false)
-            Self.clearKnownOwnedMappingAsync()
-            state = .disabled
+            stopAndClearMapping(settingState: .disabled)
             return
         }
 
         let secureInputActive = IsSecureEventInputEnabled()
 
         guard !secureInputActive else {
-            stop(invalidatingPending: false)
-            Self.clearKnownOwnedMappingAsync()
-            state = .blocked(Self.secureInputBlockedMessage)
+            stopAndClearMapping(settingState: .blocked(Self.secureInputBlockedMessage))
             return
         }
 
@@ -146,17 +165,13 @@ final class HyperKeyController {
         // on one Caps Lock is a guaranteed fight, and its ownership flag would strand the mapping.
         // Same shape as the Raycast block, and it recovers on didBecomeActive once Cycler quits.
         if settings.triggerKey.needsCapsLockRemap, blockedByStandaloneCycler {
-            stop(invalidatingPending: false)
-            Self.clearKnownOwnedMappingAsync()
-            state = .blocked(Self.standaloneCyclerBlockedMessage)
+            stopAndClearMapping(settingState: .blocked(Self.standaloneCyclerBlockedMessage))
             return
         }
 
         // Raycast only matters when Lineup also wants Caps Lock; function keys never collide with it.
         if settings.triggerKey.needsCapsLockRemap, Self.raycastCapsHyperEnabled() {
-            stop(invalidatingPending: false)
-            Self.clearKnownOwnedMappingAsync()
-            state = .blocked("Raycast is using Caps Lock")
+            stopAndClearMapping(settingState: .blocked("Raycast is using Caps Lock"))
             return
         }
 
@@ -170,6 +185,13 @@ final class HyperKeyController {
         start(trigger: settings.triggerKey, includeShift: settings.includeShift, operationID: operationID)
     }
 
+    /// A gate closed: tear the tap down, give the mapping back, and settle on the reason — in ONE
+    /// state transition, so the menu and the pill don't flash "disabled" on the way to "blocked".
+    private func stopAndClearMapping(settingState newState: State) {
+        stop(invalidatingPending: false, settingState: newState)
+        Self.clearKnownOwnedMappingAsync()
+    }
+
     private func updateSecureInputWatch(enabled: Bool) {
         guard enabled else {
             secureInputTimer?.invalidate()
@@ -177,10 +199,14 @@ final class HyperKeyController {
             return
         }
         guard secureInputTimer == nil else { return }
-        secureInputTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        // `.common` mode, not the default one: a tracking run loop (a menu held open, a window
+        // drag) would otherwise stall the Secure Input reconcile for as long as it lasts.
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
             self?.reconcileSecureInput()
         }
-        secureInputTimer?.tolerance = 0.5
+        timer.tolerance = 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        secureInputTimer = timer
     }
 
     private func reconcileSecureInput() {
@@ -212,13 +238,12 @@ final class HyperKeyController {
         // A live tap bound to a different trigger must be torn down so we re-apply the right mapping
         // and watch the right keycode; same-trigger reconfig only needs the live includeShift update.
         if tap != nil, activeTrigger != trigger {
-            stop(invalidatingPending: false)
+            stop(invalidatingPending: false, settingState: state) // mid-reconfigure: no state flash
         }
         self.includeShift = includeShift
 
         guard Self.ensureListenEventAccess() else {
-            if tap != nil { stop(invalidatingPending: false) }
-            state = .blocked(Self.inputMonitoringBlockedMessage)
+            stop(invalidatingPending: false, settingState: .blocked(Self.inputMonitoringBlockedMessage))
             return
         }
 
@@ -237,8 +262,7 @@ final class HyperKeyController {
                     }
                     self.finishStart(self.startTap(trigger: trigger))
                 case .blocked(let message):
-                    if self.tap != nil { self.stop(invalidatingPending: false) }
-                    self.state = .blocked(message)
+                    self.stop(invalidatingPending: false, settingState: .blocked(message))
                 }
             }
             return
@@ -248,7 +272,14 @@ final class HyperKeyController {
     }
 
     private func startTap(trigger: TriggerKey) -> StartResult {
-        if tap != nil {
+        if let tap {
+            // A live tap is not necessarily an ENABLED one: the system disables it on timeout, on
+            // a user-input storm, and across sleep. Without this check the wake re-apply — the
+            // whole reason `didWakeNotification` is observed — was a no-op and the hyper key
+            // stayed dead until the tool was toggled off and on.
+            if !CGEvent.tapIsEnabled(tap: tap) {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
             return .started
         }
 
@@ -269,7 +300,7 @@ final class HyperKeyController {
             callback: hyperKeyControllerTapCallback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            stop(invalidatingPending: false)
+            stop(invalidatingPending: false, settingState: state) // finishStart reports the block
             return .blocked("CGEvent.tapCreate failed")
         }
 
@@ -321,28 +352,44 @@ final class HyperKeyController {
         stop(invalidatingPending: true)
     }
 
-    private func stop(invalidatingPending: Bool) {
+    /// Sleep can swallow the key-up for a held trigger, so the synthetic ⌃⌥⇧⌘ would stay latched
+    /// for the rest of the session — every keystroke arriving as a hyper chord. The wake handler
+    /// calls this before re-applying.
+    func resetTriggerState() {
+        triggerDown = false
+        releaseSyntheticModifiers()
+    }
+
+    private func stop(invalidatingPending: Bool, settingState newState: State = .disabled) {
         if invalidatingPending {
             _ = nextHidutilOperationID()
         }
         releaseSyntheticModifiers()
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
         }
         if let source {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CFRunLoopSourceInvalidate(source)
         }
         tap = nil
         source = nil
         triggerDown = false
         activeTrigger = nil
 
-        if didApplyMapping {
-            didApplyMapping = false
+        let hadMapping = didApplyMapping
+        didApplyMapping = false
+        // `didApplyMapping` is set in the hidutil completion, which `invalidatingPending` has just
+        // cancelled — but the background `ensureCapsLockMapping` may already have applied the
+        // mapping and recorded ownership. Toggling Hyperkey off inside that window would then
+        // leave Caps Lock remapped for the rest of the session with nothing left to clean it up.
+        // The clear self-gates on the persisted ownership flag, so asking unconditionally is free.
+        if hadMapping || invalidatingPending {
             Self.clearKnownOwnedMappingAsync()
         }
-        if state != .disabled {
-            state = .disabled
+        if state != newState {
+            state = newState
         }
     }
 
@@ -489,18 +536,24 @@ final class HyperKeyController {
         runHidutil(arguments: ["property", "--get", "UserKeyMapping"]).output
     }
 
-    static func isMappingEmpty(_ output: String) -> Bool {
-        let compact = output.filter { !$0.isWhitespace }.lowercased()
-        return compact == "()" || compact == "(null)" || compact == "null"
+    /// `hidutil` is a subprocess and every caller is on the main thread (launch, the menu's
+    /// recovery probe, the pane's button). Same queue as the mapping work, so a probe queued
+    /// before an apply is guaranteed to be answered first.
+    static func currentMappingAsync(completion: @escaping (String) -> Void) {
+        hidutilQueue.async {
+            let mapping = currentMapping()
+            DispatchQueue.main.async { completion(mapping) }
+        }
     }
 
+    static func isMappingEmpty(_ output: String) -> Bool {
+        CapsLockMapping.isEmpty(output)
+    }
+
+    /// Shape only — the pair is parsed Src-with-its-own-Dst, so a REVERSED F18 -> Caps Lock
+    /// mapping (same two numbers) is never claimed as ours. See `CapsLockMapping`.
     static func isMappingOurs(_ output: String) -> Bool {
-        // `hidutil property --get` prints a CoreFoundation description whose key quoting/spacing
-        // isn't guaranteed. Match the structure plus our two exact HID usage values.
-        output.components(separatedBy: "HIDKeyboardModifierMappingSrc").count == 2
-            && output.components(separatedBy: "HIDKeyboardModifierMappingDst").count == 2
-            && output.contains("\(capsLockHID)")
-            && output.contains("\(f18HID)")
+        CapsLockMapping.isLineupMapping(output)
     }
 
     private static func applyCapsLockToF18() -> Bool {
@@ -513,6 +566,15 @@ final class HyperKeyController {
             return false
         }
         return true
+    }
+
+    /// Off-main variant of `clearIfMappingIsOurs()`, for the pane's "Restore Caps Lock" button.
+    static func clearIfMappingIsOursAsync(completion: @escaping (Bool) -> Void) {
+        installAtexit()
+        hidutilQueue.async {
+            let cleared = clearIfMappingIsOurs()
+            DispatchQueue.main.async { completion(cleared) }
+        }
     }
 
     @discardableResult
@@ -590,6 +652,18 @@ final class HyperKeyController {
         installAtexit()
     }
 
+    /// Probe AND adopt in one step on the hidutil queue, so a `start()` that queues its own
+    /// mapping work immediately afterwards is guaranteed to see the ownership flag already set.
+    /// Splitting the two across a main-thread hop would race with `ensureCapsLockMapping`.
+    static func adoptAppliedMappingIfPresentAsync(completion: @escaping (Bool) -> Void) {
+        installAtexit()
+        hidutilQueue.async {
+            let present = isMappingOurs(currentMapping())
+            if present { adoptAppliedMapping() }
+            DispatchQueue.main.async { completion(present) }
+        }
+    }
+
     /// Internal, not private: Raycast's own Hyper Key installs the SAME CapsLock->F18 mapping, so
     /// `CapsLockHandoff` has to ask this before calling a mapping orphaned — otherwise Lineup would
     /// offer to "restore" Caps Lock out from under a perfectly healthy Raycast.
@@ -622,15 +696,27 @@ final class HyperKeyController {
         return enabled && keyCode == capsLockKeyCode
     }
 
+    /// How long the exit hook waits for in-flight `hidutil` work before giving up on it.
+    private static let atexitDrainTimeout: DispatchTimeInterval = .seconds(3)
+
     private static func installAtexit() {
-        guard !installedAtexit else { return }
+        staticsLock.lock()
+        let alreadyInstalled = installedAtexit
         installedAtexit = true
+        staticsLock.unlock()
+        guard !alreadyInstalled else { return }
         atexit {
             // Drain in-flight hidutil work first: quitting right after enabling the hyper key
             // must wait for the remap (and its ownership recording) to finish, or the mapping
-            // would outlive the process with no cleanup path. The queue never blocks on main,
-            // so this cannot deadlock.
-            HyperKeyController.hidutilQueue.sync {}
+            // would outlive the process with no cleanup path.
+            //
+            // BOUNDED, never a blocking drain of the whole queue: a wedged `hidutil` would
+            // otherwise hang quit forever, with no window and no menu bar icon left to explain
+            // it. Past the timeout we skip the cleanup rather than hold the process hostage.
+            let drained = DispatchSemaphore(value: 0)
+            HyperKeyController.hidutilQueue.async { drained.signal() }
+            let deadline = DispatchTime.now() + HyperKeyController.atexitDrainTimeout
+            guard drained.wait(timeout: deadline) == .success else { return }
             if HyperKeyController.clearOnExit {
                 _ = HyperKeyController.clearKnownOwnedMapping()
             }
@@ -648,14 +734,32 @@ final class HyperKeyController {
 
         do {
             try process.run()
+            // Drain BOTH pipes before waiting. `waitUntilExit()` first would deadlock on any
+            // output past the 64KB pipe buffer — the child blocks writing, we block waiting —
+            // and the atexit drain would then inherit that wedge. stderr is read concurrently
+            // for the same reason: draining it only after stdout has the identical failure mode.
+            let errorSink = DataSink()
+            let errorRead = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                errorSink.data = err.fileHandleForReading.readDataToEndOfFile()
+                errorRead.signal()
+            }
+            let outputData = out.fileHandleForReading.readDataToEndOfFile()
+            errorRead.wait()
             process.waitUntilExit()
-            let output = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            let error = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            return (process.terminationStatus, output, error)
+            return (process.terminationStatus,
+                    String(decoding: outputData, as: UTF8.self),
+                    String(decoding: errorSink.data, as: UTF8.self))
         } catch {
             return (127, "", String(describing: error))
         }
     }
+}
+
+/// Handoff for the concurrently-read stderr in `runHidutil`: written on the reader queue, read
+/// only after its semaphore has been signalled.
+private final class DataSink: @unchecked Sendable {
+    var data = Data()
 }
 
 private func hyperKeyControllerTapCallback(

@@ -131,13 +131,22 @@ final class HyperkeyTool: Tool {
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name) {
+        let didWake = name == NSWorkspace.didWakeNotification
         let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isRunning else { return }
                 // Debounced: didBecomeActive fires on every app activation and the probe is a
                 // subprocess.
                 self.refreshRecoveryState()
-                self.apply()
+                if didWake {
+                    // Sleep can eat the trigger's key-up, leaving our synthetic ⌃⌥⇧⌘ latched for
+                    // the rest of the session, and it can disable the tap and drop the mapping —
+                    // so the wake path always re-applies in full, never the settled fast path.
+                    self.controller.resetTriggerState()
+                    self.apply(force: true)
+                } else {
+                    self.apply()
+                }
             }
         }
         observers.append((center, token))
@@ -146,13 +155,20 @@ final class HyperkeyTool: Tool {
     // MARK: - Apply
 
     /// Re-evaluates every gate and hands the controller the effective settings.
-    private func apply() {
+    ///
+    /// `force` skips the settled check: wake has to re-arm the tap and re-assert the mapping even
+    /// when nothing about the settings changed.
+    private func apply(force: Bool = false) {
         guard isRunning else { return }
         // Checked here rather than inside the controller because NSRunningApplication lookups are
         // main-actor work and the controller deliberately is not @MainActor.
         controller.blockedByStandaloneCycler = SingleInstance.standaloneCyclerIsRunning() != nil
         var effective = settings
         effective.enabled = true // the TOOL flag is authoritative, and it is true while running
+        // didBecomeActive fires on EVERY app activation, and a full apply() runs the hidutil probe
+        // — a subprocess — each time. When the tap is already live for exactly these settings and
+        // the mapping is already ours, there is nothing to redo.
+        guard force || !controller.isSettled(for: effective) else { return }
         controller.apply(effective)
     }
 
@@ -238,25 +254,41 @@ final class HyperkeyTool: Tool {
         }
     }
 
-    /// The pane's "Restore Caps Lock" button.
+    /// The pane's "Restore Caps Lock" button. `hidutil` runs off the main thread, so the UI
+    /// catches up in the completion.
     func restoreCapsLock() {
-        CapsLockHandoff.restoreCapsLock()
-        refreshRecoveryState(force: true)
-        if isRunning { apply() }
-        services?.refreshMenu()
-        paneModel.refresh()
+        CapsLockHandoff.restoreCapsLock { [weak self] _ in
+            guard let self else { return }
+            self.refreshRecoveryState(force: true)
+            // The mapping (and our claim on it) just went away, so this must not take the settled
+            // fast path — a running Caps Lock trigger has to re-apply it.
+            if self.isRunning { self.apply(force: true) }
+            self.services?.refreshMenu()
+            self.paneModel.refresh()
+        }
     }
 
     var statusText: String? { controller.settingsStatus }
     var needsInputMonitoring: Bool { controller.needsInputMonitoring }
     var permissions: PermissionCenter? { services?.permissions ?? PermissionCenter.shared }
 
-    /// `hidutil` is a subprocess; keep the probe off the hot paths. `force` is for the moments the
-    /// answer genuinely just changed (a restore, the pane opening, start/stop).
+    /// `hidutil` is a subprocess; keep the probe off the hot paths AND off the main thread. `force`
+    /// is for the moments the answer genuinely just changed (a restore, the pane opening, start).
+    ///
+    /// The answer lands asynchronously, so the menu and the pane are refreshed from the completion
+    /// when it actually changed something.
     func refreshRecoveryState(force: Bool = false) {
+        // Quitting: the probe could only spawn a subprocess whose answer nothing would ever read.
+        guard !isTerminating else { return }
         if !force, let last = lastOrphanProbe, Date().timeIntervalSince(last) < 5 { return }
         lastOrphanProbe = Date()
-        orphanedMapping = CapsLockHandoff.orphanedMappingDetected()
+        CapsLockHandoff.orphanedMappingDetected { [weak self] orphaned in
+            guard let self, self.orphanedMapping != orphaned else { return }
+            self.orphanedMapping = orphaned
+            self.services?.refreshMenu()
+            self.services?.refreshSettings()
+            self.paneModel.refresh()
+        }
     }
 
     // MARK: - Menu
@@ -293,9 +325,11 @@ final class HyperkeyTool: Tool {
 
     // MARK: - Settings pane
 
+    /// No `paneModel.refresh()` here: this is called from inside a SwiftUI view update, and
+    /// publishing from there is "Modifying state during view update". The pane refreshes itself
+    /// in `onAppear`.
     func makeSettingsPane() -> AnyView {
-        paneModel.refresh()
-        return AnyView(HyperkeySettingsPane(model: paneModel))
+        AnyView(HyperkeySettingsPane(model: paneModel))
     }
 }
 

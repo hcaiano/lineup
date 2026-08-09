@@ -14,8 +14,73 @@ import HyperkeyCore
 
 func runHyperkeyTests() throws {
     try runHyperkeyModelTests()
+    try runCapsLockMappingTests()
     try runHyperkeyToolSectionTests()
     try runHyperkeySourceScanTests()
+    try runHyperkeyLifecycleScanTests()
+}
+
+// MARK: - The hidutil mapping dump (pure parsing)
+
+/// `hidutil property --get UserKeyMapping` prints a CoreFoundation description. The parsing lives
+/// in `HyperkeyCore` precisely so it can be checked here: the app target is an AppKit executable
+/// this runner cannot import, and getting "is this mapping ours?" wrong either strands the user's
+/// Caps Lock or wipes a mapping that belongs to somebody else.
+private func runCapsLockMappingTests() throws {
+    /// What macOS actually prints for one Caps Lock -> F18 remap.
+    func dump(_ pairs: [(src: UInt64, dst: UInt64)]) -> String {
+        let entries = pairs.map {
+            "    {\n        HIDKeyboardModifierMappingDst = \($0.dst);\n"
+                + "        HIDKeyboardModifierMappingSrc = \($0.src);\n    }"
+        }
+        return "(\n" + entries.joined(separator: ",\n") + "\n)\n"
+    }
+    let caps = CapsLockMapping.capsLockHID
+    let f18 = CapsLockMapping.f18HID
+
+    check(caps == 0x700000039, "Caps Lock keeps its HID usage value")
+    check(f18 == 0x70000006D, "F18 keeps its HID usage value")
+
+    // ---- Empty ----
+    for empty in ["()", "(null)", "null", " ( ) \n"] {
+        check(CapsLockMapping.isEmpty(empty), "\"\(empty)\" reads as an empty mapping")
+        check(!CapsLockMapping.isLineupMapping(empty), "\"\(empty)\" is not our mapping")
+    }
+    // A hidutil that failed to run produces nothing at all; treating that as "nothing is mapped"
+    // would let us stomp on a mapping we never actually read.
+    check(!CapsLockMapping.isEmpty(""), "no output at all is NOT an empty mapping")
+
+    // ---- Ours ----
+    check(CapsLockMapping.isLineupMapping(dump([(caps, f18)])),
+          "the CapsLock->F18 mapping reads as ours")
+    check(CapsLockMapping.pairs(in: dump([(caps, f18)]))
+          == [CapsLockMapping.Pair(src: caps, dst: f18)],
+          "one printed dictionary parses to one Src->Dst pair")
+    check(CapsLockMapping.isLineupMapping(
+        "({HIDKeyboardModifierMappingSrc = 0x700000039; HIDKeyboardModifierMappingDst = 0x70000006D;})"),
+          "a hexadecimal dump of the same mapping still reads as ours")
+    check(CapsLockMapping.isLineupMapping(
+        "({\"HIDKeyboardModifierMappingSrc\"=30064771129;\"HIDKeyboardModifierMappingDst\"=30064771181;})"),
+          "quoting and missing spaces do not change the answer")
+
+    // ---- Not ours ----
+    // THE regression this parser exists for: a REVERSED mapping contains exactly the same two
+    // numbers, and counting occurrences claimed it as ours — so Lineup would have cleared an
+    // F18 -> Caps Lock remap somebody else installed.
+    check(!CapsLockMapping.isLineupMapping(dump([(f18, caps)])),
+          "a reversed F18->CapsLock mapping is NOT ours")
+    check(!CapsLockMapping.isLineupMapping(dump([(caps, 0x700000029)])),
+          "CapsLock remapped to something else is not ours")
+    check(!CapsLockMapping.isLineupMapping(dump([(0x700000029, f18)])),
+          "another key remapped to F18 is not ours")
+    // Ours plus somebody else's: clearing that would take their remap with it.
+    let two = dump([(caps, f18), (0x700000029, 0x700000039)])
+    check(CapsLockMapping.pairs(in: two).count == 2, "two printed dictionaries parse to two pairs")
+    check(!CapsLockMapping.isLineupMapping(two),
+          "our mapping alongside another user mapping is not claimed as ours")
+    check(CapsLockMapping.pairs(in: "(\n)\n").isEmpty, "an empty dump has no pairs")
+    check(CapsLockMapping.pairs(in: "({HIDKeyboardModifierMappingSrc = 30064771129;})").isEmpty,
+          "a Src with no Dst is not a pair")
 }
 
 private func runHyperkeyModelTests() throws {
@@ -259,7 +324,7 @@ private func runHyperkeySourceScanTests() throws {
           "a mapping a live Raycast Hyper Key owns is never reported as orphaned")
     // Recovery must forget BOTH claims, or the next launch adopts a mapping that no longer exists.
     let restoreScope = handoff.components(separatedBy: "func restoreCapsLock").last ?? ""
-    check(restoreScope.contains("HyperKeyController.clearIfMappingIsOurs()"),
+    check(restoreScope.contains("HyperKeyController.clearIfMappingIsOursAsync"),
           "restore clears the mapping only after re-confirming its shape")
     check(restoreScope.contains("releaseOwnedMapping()")
           && restoreScope.contains("removeObject(forKey: legacyKey)"),
@@ -281,8 +346,15 @@ private func runHyperkeySourceScanTests() throws {
     let signalFiles = files.filter { $0.text.contains("DispatchSource.makeSignalSource") }.map(\.path)
     check(signalFiles == ["Sources/lineup/App/TerminationCoordinator.swift"],
           "signal handling stays in TerminationCoordinator (got \(signalFiles))")
-    check(controller.contains("atexit {") && controller.contains("hidutilQueue.sync {}"),
+    check(controller.contains("atexit {") && controller.contains("HyperKeyController.hidutilQueue.async"),
           "HyperKeyController keeps the static atexit drain for an in-flight remap")
+    // ...but the drain is BOUNDED. `hidutilQueue.sync {}` behind a wedged hidutil hangs quit
+    // forever, and an agent with no window and no menu bar icon can only be force-quit.
+    check(!controller.contains("hidutilQueue.sync"),
+          "the atexit drain never blocks on the whole hidutil queue")
+    check(controller.contains("drained.wait(timeout: deadline)")
+          && controller.contains("atexitDrainTimeout"),
+          "the atexit drain waits with a timeout and gives up rather than hanging quit")
     check(tool.contains("services.termination.addCleanup(.hyperkey)")
           && tool.contains("services?.termination.removeCleanup(.hyperkey)"),
           "HyperkeyTool registers its termination cleanup in start() and removes it in stop()")
@@ -334,4 +406,97 @@ private func runHyperkeySourceScanTests() throws {
           "the pane is built on the shared Settings components")
     check(!pane.contains("RecorderButton") && !pane.contains("ShortcutField"),
           "the pane needs no shortcut recorder")
+}
+
+// MARK: - Review fixes: teardown, tap health, adoption liveness, apply churn
+
+/// Four failure modes that all end with the user's Caps Lock (or their whole keyboard) in a state
+/// only a reboot or a reinstall fixes. None of them can be exercised here — they need Input
+/// Monitoring, a signed bundle and a real `hidutil` — so what is pinned is the code shape that
+/// makes each one impossible.
+private func runHyperkeyLifecycleScanTests() throws {
+    let files = hyperkeySourceFiles()
+    func text(_ path: String) -> String { files.first { $0.path == path }?.text ?? "" }
+    let controller = text("Sources/lineup/Tools/Hyperkey/HyperKeyController.swift")
+    let handoff = text("Sources/lineup/Tools/Hyperkey/CapsLockHandoff.swift")
+    let tool = text("Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift")
+
+    // ---- (1) A fast toggle-off must not strand the Caps Lock remap ----
+    // `didApplyMapping` is set in the hidutil COMPLETION, which a real stop() has just cancelled
+    // (`invalidatingPending`) — while the background ensureCapsLockMapping may already have
+    // applied the mapping and recorded ownership. Gating the cleanup on that flag left Caps Lock
+    // remapped for the rest of the session for anyone who switched Hyperkey on and straight back
+    // off. The clear self-gates on the persisted ownership flag, so it is asked unconditionally.
+    let stopScope = controller
+        .components(separatedBy: "private func stop(invalidatingPending:").last?
+        .components(separatedBy: "fileprivate func handle(").first ?? ""
+    check(!stopScope.isEmpty, "HyperKeyController.stop(invalidatingPending:) is scannable")
+    check(stopScope.contains("if hadMapping || invalidatingPending {")
+          && stopScope.contains("Self.clearKnownOwnedMappingAsync()"),
+          "a cancelling stop() always asks for the owned mapping back, flag or no flag")
+    check(controller.contains("guard ownsCapsLockMapping else { return false }"),
+          "clearKnownOwnedMapping self-gates on the persisted ownership flag")
+    // The tap and its run-loop source are invalidated, not just detached.
+    check(stopScope.contains("CFMachPortInvalidate(tap)")
+          && stopScope.contains("CFRunLoopSourceInvalidate(source)"),
+          "stop() invalidates the mach port and the run-loop source before dropping them")
+    // One state transition per gate, so the menu never flashes "disabled" on the way to "blocked".
+    check(controller.contains("private func stop(invalidatingPending: Bool, settingState newState: State = .disabled)"),
+          "stop() takes the state it should settle on, so a blocked apply() fires onStateChange once")
+    check(controller.contains("private func stopAndClearMapping(settingState newState: State)"),
+          "every blocked gate goes through one stop-and-clear helper")
+
+    // ---- (2) The tap is health-checked, and wake resets the state machine ----
+    // `if tap != nil { return .started }` made the wake re-apply a no-op: the system disables a
+    // tap on timeout, on a user-input storm and across sleep, and the object stays non-nil.
+    check(controller.contains("CGEvent.tapIsEnabled(tap: tap)"),
+          "startTap re-arms a tap the system disabled instead of assuming it is live")
+    check(controller.contains("func resetTriggerState()")
+          && controller.contains("triggerDown = false"),
+          "the controller can drop a latched trigger without a full teardown")
+    let wakeScope = tool.components(separatedBy: "if didWake {").last?
+        .components(separatedBy: "} else {").first ?? ""
+    check(wakeScope.contains("controller.resetTriggerState()") && wakeScope.contains("apply(force: true)"),
+          "wake releases the synthetic modifiers and re-applies in full")
+
+    // ---- (3) Adoption must not wipe a RUNNING standalone Cycler's mapping ----
+    // Adopting on shape alone took over the mapping a live Cycler was using — and HyperkeyTool's
+    // own standalone-Cycler block then cleared it out from under it. Liveness gates BOTH halves,
+    // the adoption and the retiring of Cycler's flag.
+    let adoptScope = handoff.components(separatedBy: "static func adoptLegacyOwnershipIfNeeded").last?
+        .components(separatedBy: "// MARK: - Orphan detection").first ?? ""
+    check(!adoptScope.isEmpty, "CapsLockHandoff.adoptLegacyOwnershipIfNeeded is scannable")
+    check(adoptScope.contains("SingleInstance.standaloneCyclerIsRunning() == nil"),
+          "adoption only happens when standalone Cycler is NOT running")
+    let livenessIndex = adoptScope.range(of: "standaloneCyclerIsRunning() == nil")?.lowerBound
+    let clearIndex = adoptScope.range(of: "legacy.removeObject(forKey: legacyKey)")?.lowerBound
+    check(livenessIndex != nil && clearIndex != nil && livenessIndex! < clearIndex!,
+          "the legacy flag is only retired after the liveness check, never out from under a live Cycler")
+
+    // ---- (9) Activation churn: no hidutil subprocess per app switch ----
+    check(controller.contains("func isSettled(for settings: HyperKeySettings) -> Bool"),
+          "the controller can say when a re-apply would change nothing")
+    let settledScope = controller.components(separatedBy: "func isSettled(for settings").last?
+        .components(separatedBy: "func apply(").first ?? ""
+    check(settledScope.contains("state == .active") && settledScope.contains("tap != nil"),
+          "settled means the tap is live and the state is active")
+    check(settledScope.contains("activeTrigger == settings.triggerKey")
+          && settledScope.contains("didApplyMapping"),
+          "settled means the same trigger, with its mapping already applied")
+    check(settledScope.contains("!blockedByStandaloneCycler"),
+          "a standalone Cycler that just launched still un-settles the tool")
+    check(tool.contains("guard force || !controller.isSettled(for: effective) else { return }"),
+          "HyperkeyTool skips the full apply() when nothing changed")
+    check(tool.contains("private func apply(force: Bool = false)"),
+          "apply() can be forced past the settled check")
+
+    // ---- (8) hidutil never runs on the main thread ----
+    // Every probe is a subprocess; the callers are launch, the menu and a button.
+    check(handoff.contains("HyperKeyController.currentMappingAsync")
+          && !handoff.contains("HyperKeyController.currentMapping()"),
+          "CapsLockHandoff probes hidutil off the main thread")
+    check(tool.contains("CapsLockHandoff.orphanedMappingDetected {"),
+          "the orphan probe reports back on a completion")
+    check(tool.contains("guard !isTerminating else { return }"),
+          "the orphan probe is skipped while the app is quitting")
 }
