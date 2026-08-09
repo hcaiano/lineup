@@ -19,6 +19,11 @@ concurrency:
 
 jobs:
   deploy:
+    # Disabled on phase9-docs / unified-app: Lineup 2.0 is a private, in-progress rewrite.
+    # This job would publish web/ (the 1.x public site) to lineup.caiano.com on every push to
+    # main that touches web/. Re-enable by deleting this line once 2.0's public site is ready
+    # (see BUILDING.md and RELEASING.md).
+    if: false
     runs-on: ubuntu-latest
     name: Deploy to Cloudflare
     steps:
