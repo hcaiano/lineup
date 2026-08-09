@@ -85,6 +85,12 @@ final class SettingsStore: ObservableObject {
 
     // MARK: - Tools
 
+    /// The tool's display name, or its raw id when the tool isn't registered in this build —
+    /// used by messages that name an owner (a restore failure, a cross-tool combo conflict).
+    func displayName(for id: ToolID) -> String {
+        toolRows.first { $0.id == id }?.name ?? id.rawValue.capitalized
+    }
+
     func binding(forTool id: ToolID) -> Binding<Bool> {
         Binding(
             get: { [weak self] in self?.registry.isEnabled(id) ?? false },
@@ -101,10 +107,15 @@ final class SettingsStore: ObservableObject {
             GeneralPane(store: self, permissions: permissions,
                         requirements: registry.permissionRequirements())
         case .tool(let id):
+            // The shell draws every tool's header and enable switch (see `ToolPane`); the tool
+            // supplies only its own controls.
             if let tool = registry.tool(id) {
-                tool.makeSettingsPane()
+                ToolPane(id: id, title: tool.displayName, summary: tool.summary,
+                         isOn: binding(forTool: id)) {
+                    tool.makeSettingsPane()
+                }
             } else {
-                PlaceholderPane(title: id.rawValue.capitalized)
+                PlaceholderPane(title: displayName(for: id))
             }
         case .about:
             AboutPane()

@@ -75,6 +75,17 @@ if grep -q 'REPLACE_WITH_SUPublicEDKey' "${APP}/Contents/Info.plist"; then
 fi
 cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
+# SwiftPM puts a target's declared resources (the per-tool icons) in a bundle NEXT TO the
+# product, not inside it. This script assembles the .app by hand, so it has to carry that bundle
+# across: Bundle.module resolves against Contents/Resources, and without this the Settings
+# sidebar and tool headers silently fall back to drawn icons in the shipped app.
+RES_BUNDLE="${SPARKLE_SEARCH_DIR}/${EXEC_NAME}_${EXEC_NAME}.bundle"
+if [ ! -d "${RES_BUNDLE}" ]; then
+  echo "error: resource bundle '${RES_BUNDLE}' not found; run 'swift build -c release' first." >&2
+  exit 1
+fi
+ditto "${RES_BUNDLE}" "${APP}/Contents/Resources/$(basename "${RES_BUNDLE}")"
+
 # Embed Sparkle.framework (auto-updates). SwiftPM copies the binary XCFramework's macOS slice
 # next to the product; fall back to the extracted artifact. ditto (not cp) preserves the
 # framework's Versions symlink structure — a plain copy would break its signature.
@@ -130,6 +141,10 @@ if [ -d "${FW}" ]; then
   codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" "${FW}"
 fi
 
+# NOTE: the SwiftPM resource bundle is deliberately NOT signed on its own. It is a FLAT bundle
+# (Info.plist at the root, no Contents/), which codesign rejects with "bundle format
+# unrecognized"; it carries no executable code, so the app's own signature seals it as data.
+#
 # Sign the app LAST (identifier pinned). This seals the embedded framework.
 codesign --force ${RUNTIME_FLAG} ${TIMESTAMP_FLAG} --sign "${SIGN_ID}" --identifier "${BUNDLE_ID}" "${APP}"
 
