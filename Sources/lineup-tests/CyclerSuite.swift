@@ -1,3 +1,4 @@
+import AppCore
 import Foundation
 import CyclerCore
 
@@ -288,4 +289,159 @@ func runCyclerTests() throws {
         check(!WindowContext.supportsTrailingContext(bundleIdentifier: nil),
               "allowlist: nil bundle id is not supported")
     }
+
+    try runCyclerToolChecks()
+}
+
+// MARK: - Phase 5: the Cycler tool
+
+/// Checks for `Sources/lineup/Tools/Cycler/`. The tool itself lives in the app target, which this
+/// dependency-free runner deliberately does not link (no AppKit, no Carbon, no Sparkle), so the
+/// lifecycle invariants are asserted as source scans — the same technique `AppSuite` uses for the
+/// shell. They are cheap and they fail loudly if a later refactor drops one of the teardown steps.
+private func runCyclerToolChecks() throws {
+    let files = cyclerToolSources()
+
+    for name in ["CyclerTool", "CyclerSettingsPane", "AppPicker", "AppActivator", "CycleHUD"] {
+        check(files.contains { $0.path == "Sources/lineup/Tools/Cycler/\(name).swift" },
+              "Cycler tool file \(name).swift exists")
+    }
+
+    guard let tool = files.first(where: { $0.path.hasSuffix("CyclerTool.swift") })?.text else {
+        check(false, "CyclerTool.swift is readable")
+        return
+    }
+
+    // ---- The Hyperkey split (plan §2.2): NOTHING hyper-key belongs to Cycler ----
+    // Bindings hold raw Carbon masks, so they fire whatever produces ⌃⌥⇧⌘. If any of these names
+    // reappears here, the two tools have been re-coupled and Phase 6 owns the same lines twice.
+    for banned in ["hyperKey", "HyperKey", "TriggerKey", "systemDidWake", "capsLock", "hidutil"] {
+        let offenders = files.filter { $0.text.contains(banned) }.map(\.path)
+        check(offenders.isEmpty, "no Cycler source mentions \(banned) (got \(offenders))")
+    }
+
+    // The copied files were retargeted onto Lineup's log subsystem; none may still name Cycler's
+    // old bundle id (the standalone app's subsystem, and now a different process entirely).
+    let staleSubsystem = files.filter { $0.text.contains("com.caiano.cycler") }.map(\.path)
+    check(staleSubsystem.isEmpty, "no Cycler source keeps the standalone bundle id (got \(staleSubsystem))")
+    for name in ["AppActivator", "CycleHUD"] {
+        guard let text = files.first(where: { $0.path.hasSuffix("\(name).swift") })?.text else { continue }
+        check(!text.contains("Logger(subsystem:") || text.contains("Product.logSubsystem"),
+              "\(name).swift logs under Product.logSubsystem")
+    }
+
+    // ---- stop() gives every resource back (plan §3 Phase 5) ----
+    // A tool the user switched off must leave nothing behind: no live Carbon registration, no retry
+    // timer, no floating HUD panel, no cached per-app window positions, no notification observer.
+    guard let stopBody = swiftFunctionBody(named: "func stop() {", in: tool) else {
+        check(false, "CyclerTool has a stop()")
+        return
+    }
+    for (fragment, what) in [
+        ("hotkeys.unregisterAll()", "releases its Carbon hotkeys"),
+        ("failedHotkeyRetryTimer?.invalidate()", "invalidates the failed-hotkey retry timer"),
+        ("failedHotkeyRetryTimer = nil", "drops the retry timer reference"),
+        ("CycleHUD.shared.dismiss()", "dismisses the cycle HUD"),
+        ("AppActivator.shared.reset()", "resets the activator's remembered windows"),
+        ("removeObserver", "removes its notification observers"),
+        ("observers.removeAll()", "empties the observer list"),
+        ("isRunning = false", "reports itself stopped"),
+    ] {
+        check(stopBody.contains(fragment), "CyclerTool.stop() \(what)")
+    }
+    // The singletons stop() reaches for must actually expose those entry points.
+    check(files.first(where: { $0.path.hasSuffix("CycleHUD.swift") })?.text.contains("func dismiss()") == true,
+          "CycleHUD exposes dismiss()")
+    check(files.first(where: { $0.path.hasSuffix("AppActivator.swift") })?.text.contains("func reset()") == true,
+          "AppActivator exposes reset()")
+
+    // ---- The forward/reverse registration pair, kept verbatim from standalone Cycler ----
+    check(tool.contains("guard b.modifiers & UInt32(shiftKey) == 0 else { continue }"),
+          "a binding that already includes Shift gets no generated reverse")
+    check(tool.contains("guard !explicitCombos.contains(combo) else { continue }"),
+          "a generated reverse is skipped when another binding claims that combo explicitly")
+    check(tool.contains("generatedReverse: true") && tool.contains("generatedReverse: false"),
+          "failures record whether they were the generated reverse")
+    check(tool.contains("HotkeyFailure") && tool.contains("displayReason"),
+          "blocked-shortcut wording comes from HotkeyFailure.displayReason")
+
+    // ---- Shell contracts ----
+    check(tool.contains("let defaultEnabled = false"),
+          "Cycler is off by default (a silent auto-update must not grab an existing user's keys)")
+    check(tool.contains("services.hotkeys.register("),
+          "hotkeys are registered through the tool's HotkeyScope")
+    let directRegistry = files.filter {
+        $0.text.contains("HotkeyManager.shared.register") || $0.text.contains("HotkeyManager.shared.unregister")
+    }.map(\.path)
+    check(directRegistry.isEmpty, "no Cycler source registers on HotkeyManager directly (got \(directRegistry))")
+    check(tool.contains("ToolMenu.item(") && tool.contains("ToolMenu.info("),
+          "menu rows are built with the shared ToolMenu helpers")
+    check(tool.contains("services.config.load(CyclerToolSettings.self)") && tool.contains("services.config.save("),
+          "persistence goes through the tool's ToolConfigScope")
+
+    guard let pane = files.first(where: { $0.path.hasSuffix("CyclerSettingsPane.swift") })?.text else {
+        check(false, "CyclerSettingsPane.swift is readable")
+        return
+    }
+    check(pane.contains("ShortcutField(") && pane.contains("Brand.cyclerAccent"),
+          "the pane records with ShortcutField tinted to the Cycler accent")
+    check(pane.contains("ShortcutRecorder(store:"),
+          "capture runs through ShortcutRecorder, so SettingsStore suspends every tool's hotkeys")
+    check(!pane.contains("addLocalMonitorForEvents"),
+          "the pane owns no NSEvent monitor of its own (the legacy SettingsModel one is gone)")
+    check(pane.contains("func merge(") && pane.contains("reverseShortcutCollision"),
+          "merge-on-duplicate-combo and the reverse-collision warning survive the port")
+
+    // The tool has to be registered, or none of the above is reachable.
+    let shell = (try? String(contentsOfFile: "Sources/lineup/App/AppShell.swift", encoding: .utf8)) ?? ""
+    check(shell.contains("registry.register(CyclerTool())"), "AppShell registers the Cycler tool")
+
+    // ---- CyclerToolSettings: the section Cycler actually writes ----
+    do {
+        // The persisted section carries bindings and NOTHING else — no hyperKey key may leak back
+        // into it, or a rollback to standalone Cycler would read two sources of truth.
+        let settings = CyclerToolSettings(bindings: [
+            AppBinding(keyCode: 18, modifiers: 0x1F00, bundleIdentifier: "com.google.Chrome"),
+        ])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let json = String(decoding: try encoder.encode(settings), as: UTF8.self)
+        check(!json.contains("hyperKey"), "the cycler section encodes no hyperKey")
+        check(!json.contains("showMenuBarIcon"), "the cycler section encodes no menu-bar preference")
+        let back = try JSONDecoder().decode(CyclerToolSettings.self, from: Data(json.utf8))
+        check(back == settings, "CyclerToolSettings round-trips")
+    }
+    do {
+        // What `CyclerTool.save` leans on: two apps recorded onto the same combo become one group,
+        // in the order they were bound. This is the merge path the pane's recorder produces.
+        let merged = CyclerToolSettings(bindings: [
+            AppBinding(keyCode: 18, modifiers: 0x1F00, bundleIdentifier: "com.google.Chrome"),
+            AppBinding(keyCode: 18, modifiers: 0x1F00, bundleIdentifier: "com.apple.Safari"),
+            AppBinding(keyCode: 19, modifiers: 0x1F00, bundleIdentifier: "com.apple.Terminal"),
+        ]).coalescingDuplicateShortcuts()
+        check(merged.bindings.count == 2, "duplicate combos coalesce into one binding")
+        check(merged.bindings.first?.bundleIdentifiers == ["com.google.Chrome", "com.apple.Safari"],
+              "the coalesced group keeps the order the apps were bound in")
+        check(merged.bindings.first?.isGroup == true, "the coalesced binding is a group")
+    }
+}
+
+/// Every Swift file under `Sources/lineup/Tools/Cycler/`.
+private func cyclerToolSources() -> [(path: String, text: String)] {
+    let root = "Sources/lineup/Tools/Cycler"
+    guard let names = try? FileManager.default.contentsOfDirectory(atPath: root) else { return [] }
+    return names.filter { $0.hasSuffix(".swift") }.sorted().compactMap { name in
+        let path = "\(root)/\(name)"
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return (path, text)
+    }
+}
+
+/// The body of a top-level-indented Swift function, matched by its opening line and closed by the
+/// first `\n    }`. Good enough for the 4-space-indented members these scans look at.
+private func swiftFunctionBody(named opening: String, in text: String) -> String? {
+    guard let start = text.range(of: opening) else { return nil }
+    let rest = text[start.upperBound...]
+    guard let end = rest.range(of: "\n    }") else { return nil }
+    return String(rest[..<end.lowerBound])
 }

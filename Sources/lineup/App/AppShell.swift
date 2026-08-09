@@ -71,6 +71,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
         // Tools are registered here in phases 4-6. Order is the menu and sidebar order.
         registry.register(ZonesTool())
+        registry.register(CyclerTool())
         registry.startEnabledTools()
         statusItem.refresh()
 
