@@ -14,17 +14,26 @@ struct ShortcutField: View {
     var accent: Color = .accentColor
     var enabled: Bool = true
     var accessibilityLabel: String?
+    /// `ShortcutRecorder.rejectionCount`, so a refused keystroke is seen as well as heard.
+    var rejectionCount: Int = 0
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             label
-                .frame(width: 150)
+                .frame(minWidth: 150)
                 .padding(.vertical, 5)
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
         .tint(isRecording ? accent : nil)
+        .overlay {
+            if isRecording {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(accent, lineWidth: 1.5)
+            }
+        }
+        .recordingRejectionShake(rejectionCount)
         .disabled(!enabled)
         .accessibilityLabel(accessibilityLabel ?? "Shortcut")
         .accessibilityValue(isRecording ? "Recording" : (text.isEmpty ? "Not set" : text))
@@ -39,7 +48,7 @@ struct ShortcutField: View {
         } else if text.isEmpty {
             Text(emptyText).font(.system(size: 13)).foregroundStyle(.secondary)
         } else {
-            KeyCapRow(display: text, size: .large)
+            KeyCapRow(display: text)
         }
     }
 }

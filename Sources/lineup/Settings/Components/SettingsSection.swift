@@ -2,15 +2,28 @@ import SwiftUI
 
 /// Shared layout constants so every pane's content column lines up, whichever tool drew it.
 /// Carried over from Lineup 1.x's Settings window.
+///
+/// These are the ONLY numbers a pane should use for its outer rhythm. Three panes written by three
+/// people otherwise each pick their own column width and their own gap between sections, and the
+/// window reads as three windows — which is exactly what the 2.0 design review measured.
 enum SettingsMetrics {
-    /// Width of a pane's content column inside the detail area.
+    /// Width of a pane's content column inside the detail area. A `width`, never a `maxWidth`:
+    /// a pane that only caps its width centres its content on a different gutter than its
+    /// neighbours as the window grows.
     static let contentWidth: CGFloat = 540
+    /// Gap between two `SettingsSectionView`s in a pane.
+    static let sectionSpacing: CGFloat = 26
+    /// Space above the first section and below the last one.
+    static let panePaddingVertical: CGFloat = 24
     /// Height of a plain label + control row (`SettingsRow`), which usually carries a detail line.
     static let rowHeight: CGFloat = 44
     /// Height of a shortcut row. Deliberately denser than `rowHeight`: a shortcut row is one label
-    /// and one recorder with no detail line, and Zones shows thirteen of them at once — at the
-    /// default height the list needs scrolling for content that should fit in one look.
+    /// and one recorder with no detail line, and Zones shows sixteen of them at once (7 quick
+    /// actions + 9 zones) — at the default height the list needs scrolling for content that
+    /// should fit in one look.
     static let shortcutRowHeight: CGFloat = 28
+    /// A `Divider`'s thickness, used to trim the one after a section's last row.
+    static let dividerThickness: CGFloat = 1
 }
 
 /// A titled group of rows. Lineup 1.x's section header + hairline-separated row stack, extracted
@@ -37,7 +50,10 @@ struct SettingsSectionView<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.headline)
+                    // A real step above a row title (13pt body): at `.headline` the header and the
+                    // rows under it were the same size and weight, and the sections stopped
+                    // reading as groups at a glance.
+                    .font(.system(size: 15, weight: .semibold))
                 if let caption {
                     Text(caption)
                         .font(.callout)
@@ -48,6 +64,16 @@ struct SettingsSectionView<Content: View>: View {
             VStack(spacing: 0) {
                 content
             }
+            // Every `SettingsRow` draws a trailing hairline, which left a rule hanging under the
+            // last row of every section with nothing below it to separate. Shrinking the box by
+            // exactly one divider and clipping is what drops that last one without making each
+            // row know whether it is the last: the rows are built by `ForEach` in three panes.
+            //
+            // Order matters. The trim has to happen while the divider is still the bottom-most
+            // pixel of the box; with the 2pt breathing room applied first it ate the padding and
+            // left the hairline exactly where it was.
+            .padding(.bottom, -SettingsMetrics.dividerThickness)
+            .clipped()
             .padding(.vertical, 2)
         }
     }
@@ -87,5 +113,27 @@ struct SettingsRow<Content: View>: View {
             Divider()
                 .padding(.leading, 0)
         }
+    }
+}
+
+/// A line of explanation that is not a row: the same treatment a section caption gets, used for
+/// standing facts ("Caps Lock is remapped while Hyperkey runs") that used to be drawn as a
+/// `SettingsRow` with an `EmptyView()` control — a row shape promising a control that never came.
+struct SettingsCaption: View {
+    var text: String
+    var systemImage: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
+            }
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

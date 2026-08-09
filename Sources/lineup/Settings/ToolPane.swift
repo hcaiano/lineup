@@ -29,7 +29,7 @@ struct ToolPane<Content: View>: View {
         // The GeometryReader is load-bearing, not decoration. The header is a fixed block above a
         // scrolling pane, and that combination makes the stack report an ideal height of
         // header + FULL scroll content (a ScrollView's ideal height is its content's). The window
-        // honours that ideal, and with a tall pane — Zones has thirteen shortcut rows — the whole
+        // honours that ideal, and with a tall pane — Zones has sixteen shortcut rows — the whole
         // split view slides up out of the window: no header, a clipped sidebar, rows under the
         // title bar. A GeometryReader takes whatever size it is offered and does not pass its
         // child's ideal upward, so the pane gets exactly the window and scrolls inside it.
@@ -39,13 +39,10 @@ struct ToolPane<Content: View>: View {
                 // The switch reads through to the persisted flag, so a refused write already puts
                 // it back. Without a line saying why, that looks like the click was simply lost.
                 if let message = enableError {
-                    Label(message, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 22)
-                        .padding(.bottom, 12)
+                    PinnedBannerStrip {
+                        BlockedBanner(message: message,
+                                      systemImage: "exclamationmark.triangle.fill")
+                    }
                 }
                 content()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -63,9 +60,13 @@ struct ToolPane<Content: View>: View {
             // Anchored to the corner it reads as a stray control floating over the pane; on the
             // icon's centre line it reads as part of the header — the same relationship Raycast's
             // top-right toggle has with its extension header.
+            //
+            // It sits on the 540pt CONTENT gutter, not on the pane edge. Pinned to the edge it
+            // overhung the column every section below it lines up on by 55pt (measured), which is
+            // what made it read as floating rather than as the header's own control.
             ToolIcon(id: id, size: 72)
                 .padding(.bottom, 2)
-                .frame(maxWidth: .infinity)
+                .frame(width: SettingsMetrics.contentWidth)
                 .overlay(alignment: .trailing) {
                     Toggle("", isOn: $isOn)
                         .labelsHidden()
@@ -73,6 +74,7 @@ struct ToolPane<Content: View>: View {
                         .accessibilityLabel("Enable \(title)")
                         .help(isOn ? "Turn \(title) off" : "Turn \(title) on")
                 }
+                .frame(maxWidth: .infinity)
             Text(title)
                 .font(.system(size: 22, weight: .bold))
             Text(summary)

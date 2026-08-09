@@ -39,6 +39,12 @@ struct SettingsRootView: View {
                 }
             }
             .listStyle(.sidebar)
+            // The brand accent belongs to the SELECTION, and to nothing else. On the split view it
+            // was inherited by every bordered button in every pane — "Open System Settings…",
+            // "Check for Updates…", "Add Shortcut", the + and − in Cycler's rows — so the window
+            // had a dozen equally blue buttons and no primary action anywhere. Secondary buttons
+            // are neutral (system default) now; the panes tint only what is genuinely active.
+            .tint(Color(nsColor: Brand.blue))
             .modifier(HiddenSidebarToggle()) // must sit on the SIDEBAR column, not the split view
             .navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 240)
         } detail: {
@@ -47,7 +53,6 @@ struct SettingsRootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 760, minHeight: 520)
-        .tint(Color(nsColor: Brand.blue))
     }
 }
 

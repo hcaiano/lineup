@@ -59,6 +59,11 @@ final class ShortcutRecorder: ObservableObject {
     /// The field currently capturing, or `nil`. Published so panes re-render on start/stop.
     @Published private(set) var activeID: AnyHashable?
 
+    /// Bumped every time a keystroke is refused (a bare key where a modifier is required). The
+    /// beep alone says nothing on a muted Mac, so the capturing control watches this and shakes.
+    /// Only ever moves while exactly one field is capturing, so only that field reacts.
+    @Published private(set) var rejectionCount = 0
+
     /// Weak, not `unowned`: the recorder is a `@StateObject` and SwiftUI can keep it alive for a
     /// beat after the window (and its store) has gone. An `unowned` read then traps; an optional
     /// one simply has nothing left to suspend, which is the correct answer.
@@ -172,6 +177,7 @@ final class ShortcutRecorder: ObservableObject {
                 finish(.clear)
             case .reject:
                 NSSound.beep()
+                rejectionCount &+= 1   // paired with a visible shake on the capturing control
             case .record:
                 finish(.combo(keyCode: keyCode,
                               modifiers: ShortcutKit.carbonModifierMask(from: event.modifierFlags)))

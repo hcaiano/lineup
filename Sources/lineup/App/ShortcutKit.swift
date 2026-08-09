@@ -90,7 +90,22 @@ enum ShortcutKit {
         return modifierDisplay(modifiers)
     }
 
+    /// Modifiers held on their own, as GLYPHS — the same `⌃⌥⇧⌘` order `display` uses.
+    ///
+    /// It used to answer in words ("Control-Option"), which is why the Zones pane showed a worded
+    /// drag bind sitting directly above rows full of glyph caps. One vocabulary: the words survive
+    /// as `modifierWords` for help text and VoiceOver, where a glyph reads as nothing.
     static func modifierDisplay(_ modifiers: Int) -> String {
+        var s = ""
+        if modifiers & DragSnapModifierMask.control != 0 { s += "⌃" }
+        if modifiers & DragSnapModifierMask.option != 0 { s += "⌥" }
+        if modifiers & DragSnapModifierMask.shift != 0 { s += "⇧" }
+        if modifiers & DragSnapModifierMask.command != 0 { s += "⌘" }
+        return s.isEmpty ? "⇧" : s
+    }
+
+    /// The spoken form of the same mask, for `help(_:)` and accessibility labels.
+    static func modifierWords(_ modifiers: Int) -> String {
         if let choice = dragSnapModifierChoices.first(where: { $0.modifiers == modifiers }) {
             return choice.label
         }
