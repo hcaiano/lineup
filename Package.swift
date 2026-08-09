@@ -9,14 +9,29 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
-        // Pure, testable layout + coordinate math. No AppKit-only state here so it
-        // runs cleanly under `swift test`.
-        .target(name: "LineupCore"),
-        // Thin executable: AppKit agent, AX window writes, Carbon hotkeys.
+        // Pure, testable layout + coordinate math for the Zones tool (the zones.json schema-3
+        // model). Was `LineupCore` in 1.x; renamed in 2.0 because Lineup is now three tools.
+        // No AppKit-only state here so it runs cleanly under `swift run lineup-tests`.
+        .target(name: "ZonesCore"),
+        // Pure Hyper-key persisted settings (TriggerKey + HyperKeySettings). Split out of
+        // CyclerCore so Cycler and Hyperkey are independent tools. No dependencies by design.
+        .target(name: "HyperkeyCore"),
+        // Pure cycle-order math + the legacy ~/.config/cycler/bindings.json model.
+        // Depends on HyperkeyCore only to re-export TriggerKey/HyperKeySettings for that
+        // legacy file shape (see Sources/CyclerCore/Bindings.swift).
+        .target(name: "CyclerCore", dependencies: ["HyperkeyCore"]),
+        // Product identity, tool identity, and the unified ~/.config/lineup/config.json
+        // envelope + legacy import. Needs all three tool models to do the import.
+        .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore"]),
+        // Thin executable: AppKit agent shell + the three tools. AX window writes,
+        // Carbon hotkeys, CGEventTap.
         .executableTarget(
             name: "lineup",
             dependencies: [
-                "LineupCore",
+                "AppCore",
+                "ZonesCore",
+                "CyclerCore",
+                "HyperkeyCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             // The bundled app loads Sparkle.framework from Contents/Frameworks; SwiftPM only
@@ -29,7 +44,7 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["LineupCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore"]
         ),
     ]
 )

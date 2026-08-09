@@ -1,6 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
-import LineupCore
+import ZonesCore
 
 /// App-side glue for the pure `Shortcuts` model: default bindings (Carbon key constants),
 /// Cocoa↔Carbon modifier conversion, and human-readable combo strings.

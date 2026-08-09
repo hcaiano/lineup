@@ -1,5 +1,5 @@
 import AppKit
-import LineupCore
+import ZonesCore
 
 /// Full-screen, WYSIWYG layout editor. Opens an editor over EVERY connected display at once, each
 /// showing that display's own layout (no picker to get confused by). Hover a zone to reveal labeled

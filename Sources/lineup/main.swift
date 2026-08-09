@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 import ServiceManagement
-import LineupCore
+import ZonesCore
 import Sparkle
 
 /// Minimal menu-bar agent: loads the zone config, registers Hyper+key global hotkeys,

@@ -1,6 +1,6 @@
 import AppKit
 import ApplicationServices
-import LineupCore
+import ZonesCore
 import Sparkle
 import SwiftUI
 

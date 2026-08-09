@@ -1,5 +1,5 @@
 import AppKit
-import LineupCore
+import ZonesCore
 
 /// Builds a stable `ScreenInfo` for a live `NSScreen`. Primary key is the display's
 /// hardware UUID (`CGDisplayCreateUUIDFromDisplayID`); when that's unavailable

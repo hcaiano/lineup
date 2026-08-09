@@ -1,6 +1,6 @@
 import AppKit
 import ApplicationServices
-import LineupCore
+import ZonesCore
 
 /// Remembers the frame a window had before WE snapped it, making every snap reversible:
 /// dragging a snapped window away brings its old size back, and the Restore shortcut puts

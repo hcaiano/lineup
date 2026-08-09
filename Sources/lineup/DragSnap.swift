@@ -1,5 +1,5 @@
 import AppKit
-import LineupCore
+import ZonesCore
 
 /// Modifier-drag snapping: while the configured bind is held, dragging a real window
 /// highlights the zone under the cursor; on mouse-release, snap the dragged window into it.
