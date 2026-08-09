@@ -1,7 +1,9 @@
 // TEMPORARY — Lineup 1.x's Settings window, kept VERBATIM (only the top-level type names are
 // prefixed, to avoid clashing with the 2.0 shell's Settings) as the source material for:
 //   * Phase 7a — Settings/Components/{SettingsSectionView, SettingsRow, RecorderButton,
-//     CircleClearButton}
+//     CircleClearButton} — DONE; this file now uses the extracted RecorderButton and
+//     CircleClearButton directly (Swift forbids a private type shadowing a same-named
+//     internal one in the same module), which is also proof the extraction is faithful.
 //   * Phase 4  — Tools/Zones/ZonesSettingsPane.swift (ShortcutsSettingsView + the drag-snap rows)
 //   * Phase 3  — the permission row and About content, already reimplemented in Settings/
 // It is NOT reachable from the 2.0 shell. Delete this file once Phase 4 and 7a have landed.
@@ -576,55 +578,6 @@ private struct ShortcutSettingsRow: View {
 
             Divider()
         }
-    }
-}
-
-private struct CircleClearButton: View {
-    var help: String
-    var accessibilityLabel: String
-    var disabled: Bool
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "xmark.circle.fill")
-                .imageScale(.medium)
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
-        .help(help)
-        .disabled(disabled)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-private struct RecorderButton: View {
-    var text: String
-    var emptyText: String
-    var isRecording: Bool
-    var enabled: Bool
-    var accessibilityLabel: String
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(labelText)
-                .font(.system(size: 13, weight: text.isEmpty ? .regular : .medium))
-                .foregroundStyle(isRecording || !text.isEmpty ? .primary : .secondary)
-                .lineLimit(1)
-                .frame(width: 164)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
-        .disabled(!enabled)
-        .help(isRecording ? "Press keys" : accessibilityLabel)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(isRecording ? "Recording" : (text.isEmpty ? "Not set" : text))
-    }
-
-    private var labelText: String {
-        if isRecording { return "Press keys..." }
-        return text.isEmpty ? emptyText : text
     }
 }
 

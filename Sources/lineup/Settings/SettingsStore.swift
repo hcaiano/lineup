@@ -21,11 +21,12 @@ struct ToolRow: Identifiable, Equatable {
 
 /// The Settings window's view model, and the owner of the GLOBAL recording suspension.
 ///
-/// Every recorder in every pane routes through `beginRecording()` / `endRecording()`, which
-/// suspend and resume the whole Carbon registry. That is what makes shortcut recording safe
-/// across three tools: while a recorder is live, no tool's hotkey can fire, and an
-/// already-bound combo can be re-recorded. Ref-counted in `HotkeyManager`, so overlapping
-/// recorders can't leave the registry suspended.
+/// Every recorder in every pane routes through `beginRecording(_:cancel:)` / `endRecording(_:)`
+/// — in practice through `ShortcutRecorder`, which wraps them — and those suspend and resume the
+/// whole Carbon registry. That is what makes shortcut recording safe across three tools: while a
+/// recorder is live, no tool's hotkey can fire, and an already-bound combo can be re-recorded.
+/// Ref-counted in `HotkeyManager`, so overlapping recorders can't leave the registry suspended.
+/// Panes must never call `HotkeyManager.suspendAll()` themselves.
 @MainActor
 final class SettingsStore: ObservableObject {
     @Published var selection: SettingsSection? = .general
@@ -48,6 +49,10 @@ final class SettingsStore: ObservableObject {
     private let permissions: PermissionCenter
     private let onMenuBarIconChange: (Bool) -> Void
     private var recordingDepth = 0
+    /// Live recorders, keyed by object identity, each with the block that cancels its capture.
+    /// The identity is what lets `stopAllRecording()` (blur, window close) tear down exactly the
+    /// recorders that are open instead of only draining the suspension count.
+    private var activeRecorders: [ObjectIdentifier: () -> Void] = [:]
 
     init(registry: ToolRegistry,
          permissions: PermissionCenter,
@@ -108,27 +113,55 @@ final class SettingsStore: ObservableObject {
 
     // MARK: - Recording (global)
 
+    /// Set by the shell to surface rows that failed to re-register after a recording — another
+    /// app claimed the combo while we were suspended. Called with a non-empty list only.
+    var onRecordingRestoreFailures: (([RestoreFailure]) -> Void)?
+
+    typealias RestoreFailure = (owner: ToolID, keyCode: Int, modifiers: UInt32, status: OSStatus)
+
     var isRecording: Bool { recordingDepth > 0 }
 
-    /// Suspends EVERY tool's hotkeys so the recorder receives the raw combo.
-    func beginRecording() {
+    /// Whether this particular recorder is capturing. Panes go through `ShortcutRecorder`, which
+    /// tracks the finer-grained per-field identity itself.
+    func isRecording(_ recorder: AnyObject) -> Bool {
+        activeRecorders[ObjectIdentifier(recorder)] != nil
+    }
+
+    /// Suspends EVERY tool's hotkeys so `recorder` receives the raw combo.
+    ///
+    /// `cancel` must abandon the capture without calling back into `endRecording` — it is invoked
+    /// by `stopAllRecording()`, which drains the suspension itself. Re-registering an already
+    /// live recorder only replaces its cancel block; the suspension is not double-counted.
+    func beginRecording(_ recorder: AnyObject, cancel: @escaping () -> Void) {
+        let key = ObjectIdentifier(recorder)
+        guard activeRecorders.updateValue(cancel, forKey: key) == nil else { return }
         recordingDepth += 1
         HotkeyManager.shared.suspendAll()
     }
 
-    /// Restores them. Returns the rows that failed to come back (another app claimed the combo
-    /// while we were suspended) so the caller can surface them.
+    /// Restores them. Returns the rows that failed to come back so the caller can surface them.
+    /// A no-op (and empty) when `recorder` is not recording, so double-stopping is safe.
     @discardableResult
-    func endRecording() -> [(owner: ToolID, keyCode: Int, modifiers: UInt32, status: OSStatus)] {
-        guard recordingDepth > 0 else { return [] }
-        recordingDepth -= 1
-        return HotkeyManager.shared.resumeAll()
+    func endRecording(_ recorder: AnyObject) -> [RestoreFailure] {
+        guard activeRecorders.removeValue(forKey: ObjectIdentifier(recorder)) != nil else { return [] }
+        return resumeOneLevel()
     }
 
-    /// Called from `windowWillClose` — a window closed mid-recording must not leave the registry
-    /// suspended.
+    /// Called from `windowWillClose` and `windowDidResignKey` — a window closed or blurred
+    /// mid-recording must leave neither a live event monitor nor a suspended registry.
     func stopAllRecording() {
-        while recordingDepth > 0 { _ = endRecording() }
+        let cancels = Array(activeRecorders.values)
+        activeRecorders.removeAll()
+        for cancel in cancels { cancel() }
+        while recordingDepth > 0 { _ = resumeOneLevel() }
+    }
+
+    private func resumeOneLevel() -> [RestoreFailure] {
+        guard recordingDepth > 0 else { return [] }
+        recordingDepth -= 1
+        let failures = HotkeyManager.shared.resumeAll()
+        if !failures.isEmpty { onRecordingRestoreFailures?(failures) }
+        return failures
     }
 
     /// Combos owned by tools other than `owner`, for cross-tool conflict messages in recorders.

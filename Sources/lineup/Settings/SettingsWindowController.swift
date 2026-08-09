@@ -51,6 +51,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.center()
     }
 
+    /// Losing focus mid-capture must end the capture: the local event monitor only sees this
+    /// app's events, so a recorder left open would sit there claiming to record while the user
+    /// types somewhere else. (Carried over from 1.x.)
+    func windowDidResignKey(_ notification: Notification) {
+        store.stopAllRecording()
+    }
+
     func windowWillClose(_ notification: Notification) {
         store.stopAllRecording() // never leave the hotkey registry suspended
         ActivationCoordinator.shared.release(Self.activationReason)

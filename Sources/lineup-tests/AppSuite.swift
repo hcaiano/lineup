@@ -650,4 +650,21 @@ private func runShellSourceScanTests() throws {
     let zonesPathFiles = files.filter { $0.text.contains("\"zones.json\"") }.map(\.path)
     check(zonesPathFiles == ["Sources/AppCore/Product.swift"],
           "the legacy zones.json path is named only by Product (got \(zonesPathFiles))")
+
+    // SettingsStore is the SOLE route to the global recording suspension. A pane that reached for
+    // HotkeyManager itself would bypass the ref count and the cancel-on-blur/close path, and
+    // could strand all three tools' hotkeys unregistered.
+    let suspendFiles = files.filter {
+        $0.text.contains("HotkeyManager.shared.suspendAll") || $0.text.contains("HotkeyManager.shared.resumeAll")
+    }.map(\.path)
+    check(suspendFiles == ["Sources/lineup/Settings/SettingsStore.swift"],
+          "the global hotkey suspension is driven only by SettingsStore (got \(suspendFiles))")
+
+    // The two recorder styles coexist by design through the merge: Zones keeps 1.x's
+    // RecorderButton, Cycler keeps its ShortcutField. Do not unify them here.
+    let paths = Set(files.map(\.path))
+    for component in ["SettingsSection", "RecorderButton", "ShortcutField", "ShortcutRecorder"] {
+        check(paths.contains("Sources/lineup/Settings/Components/\(component).swift"),
+              "shared Settings component \(component).swift exists")
+    }
 }
