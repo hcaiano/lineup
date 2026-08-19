@@ -636,12 +636,12 @@ private func runIdentityTests() throws {
     check(derived == literal, "the FourCharCode derived from Product.hotkeySignatureString is 'LNUP'")
     check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
 
-    check(plistString("CFBundleShortVersionString") == "2.0.0", "Info.plist ships 2.0.0")
+    check(plistString("CFBundleShortVersionString") == "2.0.1", "Info.plist ships 2.0.1")
     // Sparkle offers an update only when the appcast's sparkle:version (CFBundleVersion) sorts
-    // ABOVE the running app's. 1.9.0 shipped as build 17, so a 2.0.0 that reused 17 would be
+    // ABOVE the running app's. 2.0.0 shipped as build 18, so a 2.0.1 that reused 18 would be
     // invisible to every existing user. The build number must stay strictly monotonic.
-    check(plistString("CFBundleVersion") == "18", "Info.plist ships build 18")
-    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 17, "build number is above 1.9.0's build 17")
+    check(plistString("CFBundleVersion") == "19", "Info.plist ships build 19")
+    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 18, "build number is above 2.0.0's build 18")
 }
 
 private func runShellSourceScanTests() throws {
@@ -779,8 +779,12 @@ private func runSettingsWindowTests() throws {
     check(icon.contains("struct AppStyleIcon"),
           "AppStyleIcon is the drawn-tile template for a tool with no artwork")
     check(icon.contains("applicationIconImage"), "Zones uses the running app's own icon")
-    check(icon.contains("Bundle.module") && icon.contains("\"cycler-icon\""),
-          "Cycler's icon is loaded from the package resource bundle")
+    check(!icon.contains("Bundle.module."),
+          "a missing tool resource bundle cannot trigger SwiftPM's fatal Bundle.module accessor")
+    check(icon.contains("Bundle.main.resourceURL")
+          && icon.contains("\"lineup_lineup.bundle\"")
+          && icon.contains("\"cycler-icon\""),
+          "Cycler's icon is loaded safely from the app's packaged resource bundle")
     let paths = Set(files.map(\.path))
     check(!paths.contains("Sources/lineup/App/ZZPreviewTools.swift"),
           "the temporary preview-tool scaffold is not committed")
@@ -791,8 +795,8 @@ private func runSettingsWindowTests() throws {
     let manifest = (try? String(contentsOfFile: "Package.swift", encoding: .utf8)) ?? ""
     check(manifest.contains(".copy(\"Resources/ToolIcons\")"),
           "Package.swift declares the tool icons as a target resource")
-    // build-app.sh assembles the .app by hand: without this copy, Bundle.module finds nothing in
-    // the shipped app and every tool icon silently falls back to a drawn tile.
+    // build-app.sh assembles the .app by hand. The bundle belongs in Contents/Resources; the
+    // loader must still tolerate a missing copy and fall back to a drawn tile.
     let buildScript = (try? String(contentsOfFile: "Scripts/build-app.sh", encoding: .utf8)) ?? ""
     check(buildScript.contains("${EXEC_NAME}_${EXEC_NAME}.bundle")
           && buildScript.contains("${APP}/Contents/Resources/$(basename \"${RES_BUNDLE}\")"),

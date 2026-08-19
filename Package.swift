@@ -36,8 +36,8 @@ let package = Package(
             ],
             // Per-tool app icons for the Settings sidebar and pane headers. `.copy` (not
             // `.process`) so the folder shape inside lineup_lineup.bundle is predictable.
-            // Scripts/build-app.sh must copy that bundle into Contents/Resources, or
-            // Bundle.module finds nothing in the shipped app.
+            // Scripts/build-app.sh must copy that bundle into Contents/Resources, where the
+            // app's non-trapping tool-icon loader looks for it.
             resources: [.copy("Resources/ToolIcons")],
             // The bundled app loads Sparkle.framework from Contents/Frameworks; SwiftPM only
             // adds an rpath into .build, so add the bundle-relative one for the shipped app.

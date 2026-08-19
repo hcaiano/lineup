@@ -90,16 +90,25 @@ enum ToolIconLibrary {
     private static let cyclerIcon: NSImage? = bundled("cycler-icon")
 
     private static func bundled(_ name: String) -> NSImage? {
-        // `.copy("Resources/ToolIcons")` keeps the folder, but be liberal about the layout so a
-        // switch to `.process` (which flattens) does not silently blank the icon.
-        let candidates = [
-            Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "ToolIcons"),
-            Bundle.module.url(forResource: name, withExtension: "png",
-                              subdirectory: "Resources/ToolIcons"),
-            Bundle.module.url(forResource: name, withExtension: "png"),
-        ]
-        for case let url? in candidates {
-            if let image = NSImage(contentsOf: url) { return image }
+        // Do not use SwiftPM's generated `Bundle.module` accessor here. It traps when the
+        // resource bundle is missing, which turns an optional icon into a launch crash. The
+        // assembled app stores the bundle in Contents/Resources; a bare `swift run` keeps it
+        // beside the executable. Search both locations and let the caller draw its fallback.
+        var roots: [URL] = []
+        if let resourceURL = Bundle.main.resourceURL { roots.append(resourceURL) }
+        roots.append(Bundle.main.bundleURL)
+
+        for root in roots {
+            let bundle = root.appendingPathComponent("lineup_lineup.bundle", isDirectory: true)
+            // `.copy("Resources/ToolIcons")` keeps ToolIcons; `.process` would flatten it.
+            for relativePath in [
+                "ToolIcons/\(name).png",
+                "Resources/ToolIcons/\(name).png",
+                "\(name).png",
+            ] {
+                let url = bundle.appendingPathComponent(relativePath)
+                if let image = NSImage(contentsOf: url) { return image }
+            }
         }
         return nil
     }

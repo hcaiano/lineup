@@ -77,8 +77,8 @@ cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
 # SwiftPM puts a target's declared resources (the per-tool icons) in a bundle NEXT TO the
 # product, not inside it. This script assembles the .app by hand, so it has to carry that bundle
-# across: Bundle.module resolves against Contents/Resources, and without this the Settings
-# sidebar and tool headers silently fall back to drawn icons in the shipped app.
+# across. The app's tool-icon loader reads it from Contents/Resources; without this the Settings
+# sidebar and tool headers safely fall back to drawn icons in the shipped app.
 RES_BUNDLE="${SPARKLE_SEARCH_DIR}/${EXEC_NAME}_${EXEC_NAME}.bundle"
 if [ ! -d "${RES_BUNDLE}" ]; then
   echo "error: resource bundle '${RES_BUNDLE}' not found; run 'swift build -c release' first." >&2
