@@ -7,6 +7,21 @@
     <description>Updates for Lineup, a macOS utilities suite.</description>
     <language>en</language>
     <item>
+      <title>Lineup 2.0.1</title>
+      <link>https://lineup.caiano.com/</link>
+      <sparkle:version>19</sparkle:version>
+      <sparkle:shortVersionString>2.0.1</sparkle:shortVersionString>
+      <sparkle:releaseNotesLink>https://lineup.caiano.com/release-notes/2.0.1</sparkle:releaseNotesLink>
+      <description><![CDATA[
+        <h2>Lineup 2.0.1</h2>
+        <p>Fixes a crash that could stop Lineup from opening after the 2.0 update. The app now loads
+        tool icons safely and uses a built-in fallback if an optional resource is unavailable.</p>
+      ]]></description>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 19 Aug 2026 16:43:13 +0000</pubDate>
+      <enclosure url="https://lineup.caiano.com/downloads/Lineup-2.0.1.dmg" type="application/octet-stream" sparkle:edSignature="/yxwi+eajx/Ai9l7Fp/bKVMW3pma+PfKzffUSepz6DwuAX2NrY/h1dprZno1onPFn2zKdwfKtnS5vLYd3GWZDQ==" length="3219871" />
+    </item>
+    <item>
       <title>Lineup 2.0.0</title>
       <link>https://lineup.caiano.com/</link>
       <sparkle:version>18</sparkle:version>
