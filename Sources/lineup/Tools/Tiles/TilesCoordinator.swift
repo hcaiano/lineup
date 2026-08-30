@@ -23,8 +23,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     nonisolated(unsafe) private var lastPersistedJournal: RecoveryJournal?
     nonisolated(unsafe) private var recordKeys: [WindowToken: String] = [:]
     /// A freeform Zones action detaches a window for the rest of this Tiles
-    /// session. Explicit Zone placement or a close clears this runtime-only
-    /// marker.
+    /// session. Explicit Zone placement, a toggle back to tiled, or a close
+    /// clears this runtime-only marker.
     nonisolated(unsafe) private var detachedTokens: Set<WindowToken> = []
     nonisolated(unsafe) private var acceptingEvents = false
     nonisolated(unsafe) private var runtimePaused = false
@@ -187,6 +187,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             enqueue(.moveFocusedWindowToTile(direction))
         case .toggleFocusedSplitOrientation:
             toggleFocusedSplitOrientation()
+        case .toggleFocusedTiled:
+            toggleFocusedTiled()
         }
     }
 
@@ -224,6 +226,57 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                     }
                 }
             }
+        }
+    }
+
+    /// Toggle only the focused window. A managed window is first restored to
+    /// its recorded adoption frame and that write must verify before the pure
+    /// detach mutation commits. A detached window is adopted through the same
+    /// reducer path as a new window, with the marker cleared only after commit.
+    private func toggleFocusedTiled() {
+        guard acceptingEvents else { return }
+        let layouts = self.layouts
+        runtimeQueue.async { [weak self] in
+            guard let self, self.acceptingEvents else { return }
+            let snapshot = self.windowSystem.snapshot(.all)
+            guard let focused = snapshot.focused,
+                  let entry = snapshot.windows[focused] else {
+                self.publishState(presentation: .failure(
+                    "No focused tiled or freeform window is available."))
+                return
+            }
+
+            if let managed = self.session.windows[focused] {
+                guard managed.workspace == self.session.activeWorkspace,
+                      managed.visibility == .visible,
+                      entry.isAvailableForPlacement else {
+                    self.publishState(presentation: .failure(
+                        "The focused tiled window is not available."))
+                    return
+                }
+                let baseGeneration = self.session.transition?.mutationID.rawValue
+                    ?? self.session.mutationGeneration
+                let effect = WindowEffect.setFrame(
+                    focused, managed.adoptionFrame,
+                    MutationID(rawValue: baseGeneration &+ 1))
+                self.process(.detach(focused), snapshot: snapshot, layouts: layouts,
+                             includeDetached: true,
+                             presentationOverride: .confirmation("Window is freeform."),
+                             preCommit: {
+                                 self.windowSystem.apply([effect]).first?.succeeded == true
+                             },
+                             preCommitFailureMessage: "Tiles could not restore a safe freeform frame.")
+                return
+            }
+
+            guard self.detachedTokens.contains(focused) else {
+                self.publishState(presentation: .failure(
+                    "No focused tiled or freeform window is available."))
+                return
+            }
+            self.process(.adopt(focused), snapshot: snapshot, layouts: layouts,
+                         includeDetached: true,
+                         presentationOverride: .confirmation("Window is tiled."))
         }
     }
 
@@ -425,9 +478,15 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     }
 
     nonisolated private func process(_ event: TilesEvent, layouts: LayoutSnapshot,
-                                     includeDetached: Bool = false) {
+                                     includeDetached: Bool = false,
+                                     presentationOverride: TilesPresentation? = nil,
+                                     preCommit: (() -> Bool)? = nil,
+                                     preCommitFailureMessage: String? = nil) {
         process(event, snapshot: windowSystem.snapshot(.all), layouts: layouts,
-                includeDetached: includeDetached)
+                includeDetached: includeDetached,
+                presentationOverride: presentationOverride,
+                preCommit: preCommit,
+                preCommitFailureMessage: preCommitFailureMessage)
     }
 
     nonisolated private func processWindowChange(_ token: WindowToken, pid: pid_t,
@@ -455,7 +514,10 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
 
     nonisolated private func process(_ event: TilesEvent, snapshot: WindowSnapshot,
                                      layouts: LayoutSnapshot,
-                                     includeDetached: Bool = false) {
+                                     includeDetached: Bool = false,
+                                     presentationOverride: TilesPresentation? = nil,
+                                     preCommit: (() -> Bool)? = nil,
+                                     preCommitFailureMessage: String? = nil) {
         guard acceptingEvents, !runtimePaused else { return }
         if case .windowClosed(let token) = event {
             // A destroyed detached window has no model plan, but its marker
@@ -528,6 +590,16 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             return
         }
 
+        // Some events need one verified AX mutation before their pure reducer state can commit.
+        // Keeping it after the journal write makes both failure paths fail closed: an unwritable
+        // journal leaves the managed state untouched, while a rejected frame leaves the journal
+        // and in-memory session describing the still-managed window.
+        if let preCommit, !preCommit() {
+            publishState(presentation: .failure(
+                preCommitFailureMessage ?? "Tiles could not complete that action."))
+            return
+        }
+
         let priorSession = session
         let results = windowSystem.apply(plan.effects)
         let committed = TilesReducer.commit(state: priorSession, plan: plan, results: results)
@@ -584,6 +656,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         switch event {
         case .detach(let token):
             detachedTokens.insert(token)
+        case .adopt(let token):
+            detachedTokens.remove(token)
         case .place(let token, _):
             detachedTokens.remove(token)
         default:
@@ -606,7 +680,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             preview = nil
         }
         let presentation = journalSaved
-            ? presentationAfterCommit(for: event, preview: preview)
+            ? (presentationOverride ?? presentationAfterCommit(for: event, preview: preview))
             : .failure("Tiles completed the action but could not save recovery state.")
         publishState(preview: preview, presentation: presentation)
         scheduleHealingPasses(layouts: layouts)
@@ -762,7 +836,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                                                  message: String) -> TilesPresentation? {
         switch event {
         case .cycleFocusedTile, .switchWorkspace, .nextWorkspace, .previousWorkspace,
-             .moveFocusedWindow, .focusTile, .moveFocusedWindowToTile:
+             .moveFocusedWindow, .focusTile, .moveFocusedWindowToTile, .detach, .adopt:
             return .failure(message)
         default:
             return nil

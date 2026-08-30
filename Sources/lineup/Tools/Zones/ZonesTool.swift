@@ -45,11 +45,14 @@ final class ZonesTool: Tool {
     private var settingsModel: ZonesSettingsModel?
     private let placementCenter: WindowPlacementCenter
     private let layoutMutationCenter: ZoneLayoutMutationCenter
+    private let hyperkeyIncludesShift: () -> Bool
 
     init(placementCenter: WindowPlacementCenter,
-         layoutMutationCenter: ZoneLayoutMutationCenter) {
+         layoutMutationCenter: ZoneLayoutMutationCenter,
+         hyperkeyIncludesShift: @escaping () -> Bool = { false }) {
         self.placementCenter = placementCenter
         self.layoutMutationCenter = layoutMutationCenter
+        self.hyperkeyIncludesShift = hyperkeyIncludesShift
     }
 
     private lazy var dragSnap = DragSnapController(
@@ -130,7 +133,9 @@ final class ZonesTool: Tool {
     // MARK: - Effective settings
 
     /// The effective shortcut set (user config, or the built-in defaults).
-    private var shortcuts: Shortcuts { config.shortcuts ?? ShortcutKit.defaults }
+    private var shortcuts: Shortcuts {
+        config.shortcuts ?? ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())
+    }
 
     /// The effective drag-snap bind, with nil/unknown config values falling back to Shift.
     private var dragSnapTrigger: DragSnapTrigger {
@@ -589,7 +594,9 @@ final class ZonesTool: Tool {
             blockedMessage: { [weak self] in self?.configBlockedMessage },
             canReset: { [weak self] in self?.services?.config.canWrite ?? false },
             resetSection: { [weak self] in self?.resetSection() },
-            shortcuts: { [weak self] in self?.shortcuts ?? ShortcutKit.defaults },
+            shortcuts: { [weak self] in
+                self?.shortcuts ?? ShortcutKit.zonesDefaults(includeShift: false)
+            },
             setShortcuts: { [weak self] in self?.applyShortcuts($0) },
             isDragSnapOn: { [weak self] in self?.isDragSnapOn ?? false },
             setDragSnapOn: { [weak self] in self?.setDragSnapEnabled($0) },

@@ -47,7 +47,9 @@ func runTilesRuntimeTests() throws {
         let decoded = try TilesSettings.decode(legacy)
         check(decoded.tileSpacingEnabled,
               "tiles settings: legacy schema defaults to tile spacing enabled")
-        check(decoded.focusTileLeft == nil && decoded.toggleSplitOrientation == nil,
+        check(decoded.workspace1 == nil && decoded.workspace4 == nil &&
+              decoded.focusTileLeft == nil && decoded.toggleSplitOrientation == nil &&
+              decoded.toggleTiled == nil,
               "tiles settings: legacy schema leaves new shortcuts unassigned")
 
         func binding(_ action: String, _ keyCode: Int) -> ShortcutBinding {
@@ -55,6 +57,10 @@ func runTilesRuntimeTests() throws {
         }
         let full = TilesSettings(
             tileSpacingEnabled: false,
+            workspace1: binding("workspace1", 9),
+            workspace2: binding("workspace2", 10),
+            workspace3: binding("workspace3", 11),
+            workspace4: binding("workspace4", 12),
             focusTileLeft: binding("focusTileLeft", 0),
             focusTileRight: binding("focusTileRight", 1),
             focusTileUp: binding("focusTileUp", 2),
@@ -63,7 +69,8 @@ func runTilesRuntimeTests() throws {
             moveWindowRight: binding("moveWindowRight", 5),
             moveWindowUp: binding("moveWindowUp", 6),
             moveWindowDown: binding("moveWindowDown", 7),
-            toggleSplitOrientation: binding("toggleSplitOrientation", 8))
+            toggleSplitOrientation: binding("toggleSplitOrientation", 8),
+            toggleTiled: binding("toggleTiled", 13))
         check(try TilesSettings.decode(full.encoded()) == full,
               "tiles settings: spacing and all directional shortcuts round-trip")
     }
@@ -163,6 +170,15 @@ func runTilesRuntimeTests() throws {
     check(coordinatorSource.contains("detachedTokens") &&
           coordinatorSource.contains("includeDetached: true"),
           "tiles runtime: freeform detachment persists until explicit placement")
+    check(coordinatorSource.contains("WindowEffect.setFrame") &&
+          coordinatorSource.contains("managed.adoptionFrame") &&
+          coordinatorSource.contains("apply([effect]).first?.succeeded == true") &&
+          coordinatorSource.contains("preCommitFailureMessage") &&
+          coordinatorSource.contains("process(.detach(focused)") &&
+          coordinatorSource.contains("process(.adopt(focused)") &&
+          coordinatorSource.contains("case .adopt(let token):") &&
+          coordinatorSource.contains("detachedTokens.remove(token)"),
+          "tiles runtime: the tiled/freeform toggle verifies the safe frame and clears its marker on adoption")
     check(coordinatorSource.contains("removing(identityKey: oldKey)"),
           "tiles runtime: title changes remove the previous journal identity")
     check(coordinatorSource.contains("synchronizeJournalWithSession()") &&
@@ -202,8 +218,9 @@ func runTilesRuntimeTests() throws {
           "tiles runtime: placement uses raw geometry while AX effects use spaced frames")
     check(coordinatorSource.contains("case .focusTile(let direction)") &&
            coordinatorSource.contains("case .moveFocusedWindowToTile(let direction)") &&
-           coordinatorSource.contains("case .toggleFocusedSplitOrientation"),
-          "tiles runtime: all directional and split actions reach the coordinator")
+           coordinatorSource.contains("case .toggleFocusedSplitOrientation") &&
+           coordinatorSource.contains("case .toggleFocusedTiled"),
+          "tiles runtime: all directional, split, and toggle actions reach the coordinator")
     check(coordinatorSource.contains("enqueueRelativeWorkspaceMove(forward:") &&
            coordinatorSource.contains("let source = self.session.activeWorkspace"),
           "tiles runtime: relative window moves resolve from serialized workspace state")
@@ -222,8 +239,9 @@ func runTilesRuntimeTests() throws {
           toolSource.contains("var reverseAction: ReverseAction?"),
           "tiles runtime: only spacing edits reflow and reverse metadata is explicit")
     check(toolSource.contains("coordinator.perform(.focusTile(.left))") &&
-          toolSource.contains("coordinator.perform(.moveFocusedWindowToTile(.down))"),
-          "tiles runtime: shortcuts map to all four directional runtime actions")
+          toolSource.contains("coordinator.perform(.moveFocusedWindowToTile(.down))") &&
+          toolSource.contains("coordinator.perform(.toggleFocusedTiled)"),
+          "tiles runtime: shortcuts map to directional actions and tiled/freeform toggle")
     check(paneSource.contains("Space between tiles") &&
           paneSource.contains("Keep \\(Int(TilesSettings.tileSpacingPoints)) pt") &&
           toolSource.contains("Focus Tile Left") &&
@@ -233,13 +251,16 @@ func runTilesRuntimeTests() throws {
     check(paneSource.contains("Workspace and stacks") &&
           paneSource.contains("Focus tile") &&
           paneSource.contains("Move window") &&
-          paneSource.contains("Layout"),
-          "tiles runtime: directional shortcuts are grouped for readable Settings")
+          paneSource.contains("Layout") &&
+          paneSource.contains("Numbers switch workspaces") &&
+          paneSource.contains("Shift-Tab reverses"),
+          "tiles runtime: shortcuts are grouped and explain workspace reverses")
     check(toolSource.contains("let focus = NSMenuItem(title: \"Focus Tile\"") &&
           toolSource.contains("let moveTile = NSMenuItem(title: \"Move Focused Window\"") &&
           toolSource.contains("Switch Split Direction") &&
+          toolSource.contains("Toggle Tiled / Freeform") &&
           toolSource.contains("item.isEnabled = runtimeReady"),
-          "tiles runtime: menu exposes directional controls only when runtime is ready")
+          "tiles runtime: menu exposes directional and toggle controls only when runtime is ready")
     check(layoutSource.contains("framesByScreen") &&
           mutationSource.contains("enum ZoneLayoutMutationResult") &&
           mutationSource.contains("toggleParentSplit"),

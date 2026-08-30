@@ -22,6 +22,7 @@ enum TilesRuntimeAction: Equatable {
     case focusTile(TileDirection)
     case moveFocusedWindowToTile(TileDirection)
     case toggleFocusedSplitOrientation
+    case toggleFocusedTiled
 }
 
 /// Small stack preview supplied by a running coordinator for the non-activating HUD.
@@ -80,6 +81,7 @@ final class TilesTool: Tool {
 
     private(set) var isRunning = false
     private(set) var settings = TilesSettings()
+    var hyperkeyIncludesShiftForSettings: Bool { hyperkeyIncludesShift() }
     /// `nil` from the config scope means the tool has never stored its own settings. An enabled
     /// flag-only section still counts as first use; a decoded section, including all-null rows,
     /// is explicit user state and must not be replaced by defaults.
@@ -115,6 +117,10 @@ final class TilesTool: Tool {
     /// Internal, not private: the Settings pane renders its shortcut rows from
     /// these cases so a renamed action can never drift from its row.
     enum Action: String, CaseIterable {
+        case workspace1
+        case workspace2
+        case workspace3
+        case workspace4
         case nextWorkspace
         case nextWindow
         case moveWindowToNextWorkspace
@@ -127,6 +133,7 @@ final class TilesTool: Tool {
         case moveWindowUp
         case moveWindowDown
         case toggleSplitOrientation
+        case toggleTiled
 
         /// The Settings pane heading each action belongs to.
         enum Group {
@@ -138,16 +145,29 @@ final class TilesTool: Tool {
 
         var group: Group {
             switch self {
-            case .nextWorkspace, .nextWindow, .moveWindowToNextWorkspace:
+            case .workspace1, .workspace2, .workspace3, .workspace4,
+                 .nextWorkspace, .nextWindow, .moveWindowToNextWorkspace:
                 return .workspaceAndStacks
             case .focusTileLeft, .focusTileRight, .focusTileUp, .focusTileDown:
                 return .focus
             case .moveWindowLeft, .moveWindowRight, .moveWindowUp, .moveWindowDown:
                 return .move
-            case .toggleSplitOrientation:
+            case .toggleSplitOrientation, .toggleTiled:
                 return .layout
             }
         }
+
+        var workspaceNumber: Int? {
+            switch self {
+            case .workspace1: return 1
+            case .workspace2: return 2
+            case .workspace3: return 3
+            case .workspace4: return 4
+            default: return nil
+            }
+        }
+
+        var hasGeneratedWorkspaceMove: Bool { workspaceNumber != nil }
 
         /// Only cyclic actions get an implicit Shift reverse.  Keeping this
         /// metadata on the action prevents directional shortcuts from
@@ -171,6 +191,10 @@ final class TilesTool: Tool {
 
         var title: String {
             switch self {
+            case .workspace1: return "Workspace 1"
+            case .workspace2: return "Workspace 2"
+            case .workspace3: return "Workspace 3"
+            case .workspace4: return "Workspace 4"
             case .nextWorkspace: return "Next Workspace"
             case .nextWindow: return "Next Window in Tile"
             case .moveWindowToNextWorkspace: return "Move Window to Next Workspace"
@@ -183,15 +207,20 @@ final class TilesTool: Tool {
             case .moveWindowUp: return "Move Window Up"
             case .moveWindowDown: return "Move Window Down"
             case .toggleSplitOrientation: return "Switch Split Direction"
+            case .toggleTiled: return "Toggle Tiled / Freeform"
             }
         }
 
         /// The one place an action is tied to its stored field. Reading,
         /// clearing and assigning a binding all go through this key path, so
-        /// the twelve named fields on disk stay unchanged while the shell
+        /// the named fields on disk stay unchanged while the shell
         /// keeps a single mapping.
         var keyPath: WritableKeyPath<TilesSettings, ShortcutBinding?> {
             switch self {
+            case .workspace1: return \.workspace1
+            case .workspace2: return \.workspace2
+            case .workspace3: return \.workspace3
+            case .workspace4: return \.workspace4
             case .nextWorkspace: return \.nextWorkspace
             case .nextWindow: return \.nextWindow
             case .moveWindowToNextWorkspace: return \.moveWindowToNextWorkspace
@@ -204,6 +233,7 @@ final class TilesTool: Tool {
             case .moveWindowUp: return \.moveWindowUp
             case .moveWindowDown: return \.moveWindowDown
             case .toggleSplitOrientation: return \.toggleSplitOrientation
+            case .toggleTiled: return \.toggleTiled
             }
         }
 
@@ -223,10 +253,11 @@ final class TilesTool: Tool {
         var modifiers: UInt32
         var reason: String
         var generatedReverse: Bool
+        var generatedWorkspaceMove: Bool = false
     }
 
     init(coordinator: TilesCoordinatorProtocol,
-         hyperkeyIncludesShift: @escaping () -> Bool = { true }) {
+         hyperkeyIncludesShift: @escaping () -> Bool = { false }) {
         self.coordinator = coordinator
         self.hyperkeyIncludesShift = hyperkeyIncludesShift
     }
@@ -418,6 +449,9 @@ final class TilesTool: Tool {
             throw TilesToolError.invalidSettings("Unsupported Tiles settings schema \(candidate.schemaVersion).")
         }
         var seen = Set<HotkeyCombo>()
+        // An explicit Shift variant can already be stored by an older/custom configuration. Keep
+        // it loadable and untouched; applyCapture rejects only a new edit that would steal a
+        // generated reverse or numbered-workspace move.
         for binding in bindings(in: candidate) {
             guard (0...127).contains(binding.keyCode) else {
                 throw TilesToolError.invalidSettings("The Tiles shortcut key code is invalid.")
@@ -435,6 +469,21 @@ final class TilesTool: Tool {
 
     private func bindings(in source: TilesSettings) -> [ShortcutBinding] {
         Action.allCases.compactMap { $0.binding(source) }
+    }
+
+    /// Return the Tiles action whose generated physical-Shift combo would be replaced by this
+    /// explicit capture. Stored settings are allowed to keep such a value for compatibility;
+    /// rejecting it here only protects a new recorder edit from silently disabling a reverse or
+    /// numbered-workspace move.
+    private func generatedCounterpartOwner(keyCode: Int, modifiers: UInt32) -> Action? {
+        guard modifiers & UInt32(shiftKey) != 0 else { return nil }
+        return Action.allCases.first { action in
+            guard action.hasGeneratedReverse || action.hasGeneratedWorkspaceMove,
+                  let binding = action.binding(settings),
+                  binding.modifiers & DragSnapModifierMask.shift == 0,
+                  binding.keyCode == keyCode else { return false }
+            return (UInt32(truncatingIfNeeded: binding.modifiers) | UInt32(shiftKey)) == modifiers
+        }
     }
 
     var canPersist: Bool { sectionLoadError == nil && (services?.config.canWrite ?? false) }
@@ -581,6 +630,44 @@ final class TilesTool: Tool {
             }
         }
 
+        // A numbered workspace combo gets a physical Shift counterpart that
+        // moves the focused window without changing the active workspace.
+        // Hyperkey's include-Shift mode cannot distinguish that counterpart,
+        // so only bindings without Shift receive the generated move.
+        for action in Action.allCases {
+            guard action.hasGeneratedWorkspaceMove,
+                  let binding = action.binding(settings),
+                  binding.modifiers & DragSnapModifierMask.shift == 0 else { continue }
+            let forward = UInt32(truncatingIfNeeded: binding.modifiers)
+            let move = HotkeyCombo(keyCode: binding.keyCode,
+                                   modifiers: forward | UInt32(shiftKey))
+            guard !explicit.contains(move) else { continue }
+            if let owner = persisted.conflictOwner(keyCode: move.keyCode,
+                                                   modifiers: move.modifiers,
+                                                   excluding: .tiles) {
+                log.error("Tiles workspace move shortcut blocked by \(self.displayName(for: owner), privacy: .public)")
+                failures.append(FailedHotkey(action: action, keyCode: move.keyCode,
+                                             modifiers: move.modifiers,
+                                             reason: "already used by \(self.displayName(for: owner))",
+                                             generatedReverse: false,
+                                             generatedWorkspaceMove: true))
+                continue
+            }
+            let result = services.hotkeys.register(keyCode: move.keyCode,
+                                                   modifiers: move.modifiers) { [weak self] in
+                self?.perform(action, generatedWorkspaceMove: true)
+            }
+            if case .success(let token) = result {
+                hotkeyTokens.append(token)
+            } else if case .failure(let reason) = result {
+                failures.append(FailedHotkey(action: action, keyCode: move.keyCode,
+                                             modifiers: move.modifiers,
+                                             reason: reason.displayReason,
+                                             generatedReverse: false,
+                                             generatedWorkspaceMove: true))
+            }
+        }
+
         failedHotkeys = failures
         for failure in failures { logHotkeyFailure(failure) }
         updateFailedHotkeyRetryTimer()
@@ -633,6 +720,18 @@ final class TilesTool: Tool {
                                               excluding: .tiles) == nil else { continue }
             if seen.insert(reverse).inserted { out.append((reverse.keyCode, reverse.modifiers)) }
         }
+        for action in Action.allCases where action.hasGeneratedWorkspaceMove {
+            guard let binding = action.binding(source),
+                  binding.modifiers & DragSnapModifierMask.shift == 0 else { continue }
+            let forward = UInt32(truncatingIfNeeded: binding.modifiers)
+            let move = HotkeyCombo(keyCode: binding.keyCode,
+                                   modifiers: forward | UInt32(shiftKey))
+            guard !explicit.contains(move),
+                  siblingCombos.conflictOwner(keyCode: move.keyCode,
+                                              modifiers: move.modifiers,
+                                              excluding: .tiles) == nil else { continue }
+            if seen.insert(move).inserted { out.append((move.keyCode, move.modifiers)) }
+        }
         return out
     }
 
@@ -647,23 +746,32 @@ final class TilesTool: Tool {
             failedHotkeys.append(FailedHotkey(action: match.action, keyCode: combo.keyCode,
                                               modifiers: combo.modifiers,
                                               reason: HotkeyFailure.carbon(failure.status).displayReason,
-                                              generatedReverse: match.generatedReverse))
+                                              generatedReverse: match.generatedReverse,
+                                              generatedWorkspaceMove: match.generatedWorkspaceMove))
         }
         updateFailedHotkeyRetryTimer()
         services?.refreshMenu()
     }
 
-    private func matchingAction(for combo: HotkeyCombo) -> (action: Action, generatedReverse: Bool)? {
+    private func matchingAction(for combo: HotkeyCombo) -> (action: Action,
+                                                             generatedReverse: Bool,
+                                                             generatedWorkspaceMove: Bool)? {
         for action in Action.allCases {
             guard let binding = action.binding(settings) else { continue }
             let forward = HotkeyCombo(keyCode: binding.keyCode,
                                       modifiers: UInt32(truncatingIfNeeded: binding.modifiers))
-            if forward == combo { return (action, false) }
+            if forward == combo { return (action, false, false) }
             if action.hasGeneratedReverse,
                binding.modifiers & DragSnapModifierMask.shift == 0,
                HotkeyCombo(keyCode: binding.keyCode,
                            modifiers: forward.modifiers | UInt32(shiftKey)) == combo {
-                return (action, true)
+                return (action, true, false)
+            }
+            if action.hasGeneratedWorkspaceMove,
+               binding.modifiers & DragSnapModifierMask.shift == 0,
+               HotkeyCombo(keyCode: binding.keyCode,
+                           modifiers: forward.modifiers | UInt32(shiftKey)) == combo {
+                return (action, false, true)
             }
         }
         return nil
@@ -693,8 +801,9 @@ final class TilesTool: Tool {
 
     private func logHotkeyFailure(_ failure: FailedHotkey) {
         let combo = ShortcutKit.display(keyCode: failure.keyCode, modifiers: failure.modifiers)
-        let reverse = failure.generatedReverse ? " reverse" : ""
-        log.error("Tiles\(reverse, privacy: .public) shortcut \(failure.action.title, privacy: .public) \(combo, privacy: .public) blocked: \(failure.reason, privacy: .public)")
+        let suffix = failure.generatedReverse ? " reverse" :
+            (failure.generatedWorkspaceMove ? " workspace move" : "")
+        log.error("Tiles\(suffix, privacy: .public) shortcut \(failure.action.title, privacy: .public) \(combo, privacy: .public) blocked: \(failure.reason, privacy: .public)")
     }
 
     // MARK: Actions
@@ -724,9 +833,23 @@ final class TilesTool: Tool {
         services?.refreshSettings()
     }
 
-    private func perform(_ action: Action, generatedReverse: Bool) {
+    private func perform(_ action: Action, generatedReverse: Bool = false,
+                         generatedWorkspaceMove: Bool = false) {
         guard runtimeReady else { return }
+        if generatedWorkspaceMove, let workspace = action.workspaceNumber {
+            coordinator.perform(.moveFocusedWindow(toWorkspace: workspace))
+            settingsModel.refresh()
+            return
+        }
         switch action {
+        case .workspace1:
+            coordinator.perform(.switchWorkspace(1))
+        case .workspace2:
+            coordinator.perform(.switchWorkspace(2))
+        case .workspace3:
+            coordinator.perform(.switchWorkspace(3))
+        case .workspace4:
+            coordinator.perform(.switchWorkspace(4))
         case .nextWorkspace:
             coordinator.perform(generatedReverse ? .previousWorkspace : .nextWorkspace)
         case .nextWindow:
@@ -753,6 +876,8 @@ final class TilesTool: Tool {
             coordinator.perform(.moveFocusedWindowToTile(.down))
         case .toggleSplitOrientation:
             coordinator.perform(.toggleFocusedSplitOrientation)
+        case .toggleTiled:
+            coordinator.perform(.toggleFocusedTiled)
         }
         // The coordinator's onStateChange rebuilds the menu once the action has
         // committed. Rebuilding it here as well would query every tool and the
@@ -791,6 +916,12 @@ final class TilesTool: Tool {
     func moveFocusedWindowToWorkspace(_ workspace: Int) {
         guard runtimeReady, WorkspaceID.from(workspace) != nil else { return }
         coordinator.perform(.moveFocusedWindow(toWorkspace: workspace))
+        settingsModel.refresh()
+    }
+
+    func toggleFocusedTiled() {
+        guard runtimeReady else { return }
+        coordinator.perform(.toggleFocusedTiled)
         settingsModel.refresh()
     }
 
@@ -891,7 +1022,12 @@ final class TilesTool: Tool {
         }
         toggleSplit.isEnabled = runtimeReady
 
-        var items: [NSMenuItem] = [workspaces, move, focus, moveTile, toggleSplit, cycle]
+        let toggleTiled = ToolMenu.item("Toggle Tiled / Freeform", symbol: "rectangle.inset.filled.and.person.filled") {
+            [weak self] in self?.toggleFocusedTiled()
+        }
+        toggleTiled.isEnabled = runtimeReady
+
+        var items: [NSMenuItem] = [workspaces, move, focus, moveTile, toggleSplit, toggleTiled, cycle]
         if coordinator.recoveryRequired {
             let restore = ToolMenu.item("Restore Windows", symbol: "arrow.counterclockwise") {
                 [weak self] in self?.restoreWindows()
@@ -932,7 +1068,8 @@ final class TilesTool: Tool {
         }
         if !failedHotkeys.isEmpty {
             var details = failedHotkeys.prefix(4).map { failure in
-                let prefix = failure.generatedReverse ? "Reverse " : ""
+                let prefix = failure.generatedReverse ? "Reverse " :
+                    (failure.generatedWorkspaceMove ? "Move " : "")
                 return "\(prefix)\(failure.action.title) \(ShortcutKit.display(keyCode: failure.keyCode, modifiers: failure.modifiers)): \(failure.reason)"
             }
             if failedHotkeys.count > 4 { details.append("…and \(failedHotkeys.count - 4) more") }
@@ -978,11 +1115,16 @@ final class TilesTool: Tool {
     /// Refresh the in-memory recommendation before the first explicit edit. No config write occurs
     /// here, so the disabled tool still reserves no combinations until the user saves or activates
     /// it. Once any edit is stored, the guard preserves every user-owned row unchanged.
-    func refreshRecommendedDefaultsIfNeeded() {
+    func refreshRecommendedDefaultsIfNeeded(excluding actionID: String? = nil) {
         guard !hasStoredSettings, sectionLoadError == nil else { return }
         let spacing = settings.tileSpacingEnabled
+        let preservedAction = actionID.flatMap(Action.init(rawValue:))
+        let preservedBinding = preservedAction?.binding(settings)
         var refreshed = ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())
         refreshed.tileSpacingEnabled = spacing
+        if let preservedAction {
+            refreshed[keyPath: preservedAction.keyPath] = preservedBinding
+        }
         settings = refreshed
     }
 
@@ -1010,9 +1152,46 @@ final class TilesTool: Tool {
         }
     }
 
+    func anyWorkspaceMoveShortcutAvailable() -> Bool {
+        let persisted = services?.boundCombos() ?? []
+        let explicit = Set(bindings(in: settings).map {
+            HotkeyCombo(keyCode: $0.keyCode,
+                        modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
+        })
+        return Action.allCases.contains { action in
+            guard action.hasGeneratedWorkspaceMove,
+                  let binding = action.binding(settings),
+                  binding.modifiers & DragSnapModifierMask.shift == 0 else { return false }
+            let move = HotkeyCombo(keyCode: binding.keyCode,
+                                   modifiers: UInt32(truncatingIfNeeded: binding.modifiers)
+                                     | UInt32(shiftKey))
+            guard !explicit.contains(move) else { return false }
+            return persisted.conflictOwner(keyCode: move.keyCode,
+                                           modifiers: move.modifiers,
+                                           excluding: .tiles) == nil
+        }
+    }
+
+    func nextWindowReverseShortcutAvailable() -> Bool {
+        let action = Action.nextWindow
+        guard let binding = action.binding(settings),
+              binding.modifiers & DragSnapModifierMask.shift == 0 else { return false }
+        let reverse = HotkeyCombo(keyCode: binding.keyCode,
+                                  modifiers: UInt32(truncatingIfNeeded: binding.modifiers)
+                                    | UInt32(shiftKey))
+        let explicit = Set(bindings(in: settings).map {
+            HotkeyCombo(keyCode: $0.keyCode,
+                        modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
+        })
+        guard !explicit.contains(reverse) else { return false }
+        return (services?.boundCombos() ?? []).conflictOwner(
+            keyCode: reverse.keyCode, modifiers: reverse.modifiers,
+            excluding: .tiles) == nil
+    }
+
     func applyCapture(_ capture: ShortcutRecorder.Capture, for actionID: String) {
         guard canEdit, let action = Action(rawValue: actionID) else { return }
-        refreshRecommendedDefaultsIfNeeded()
+        refreshRecommendedDefaultsIfNeeded(excluding: actionID)
         switch capture {
         case .clear:
             var updated = settings
@@ -1023,6 +1202,15 @@ final class TilesTool: Tool {
             NSSound.beep()
 
         case .combo(let keyCode, let modifiers):
+            if let owner = generatedCounterpartOwner(keyCode: keyCode, modifiers: modifiers) {
+                let generatedKind = owner.hasGeneratedWorkspaceMove
+                    ? "the Shift-number window move"
+                    : "the Shift reverse"
+                settingsModel.showAlert(
+                    title: "Shortcut reserved",
+                    message: "\(ShortcutKit.display(keyCode: keyCode, modifiers: modifiers)) is reserved for \(generatedKind) of \(owner.title). Record the base shortcut instead.")
+                return
+            }
             if let owner = settingsModel.boundCombos.conflictOwner(keyCode: keyCode,
                                                                    modifiers: modifiers,
                                                                    excluding: .tiles) {

@@ -2272,7 +2272,7 @@ private func runVisualDesignTests() throws {
           "the Hyperkey status line is no longer a SettingsRow with an empty control")
     check(hyperPane.contains("SettingsCaption(text: status"),
           "the running status is a caption")
-    check(hyperPane.contains("SettingsCaption(\n            text: \"Zones and Cycler shortcuts use"),
+    check(hyperPane.contains("SettingsCaption(\n            text: \"Lineup leaves ⇧ available for move/reverse shortcuts."),
           "the cross-tool hint is a caption, not the window's only card")
     check(!hyperPane.contains("Color(nsColor: .textBackgroundColor).opacity(0.5)"),
           "the hint card's 1.000-contrast fill is gone")
@@ -2473,13 +2473,29 @@ private func runTilesShellContractTests() throws {
             && shell.contains("currentHyperkeyIncludesShift")
             && shell.contains("HyperKeySettings.self"),
           "AppShell injects a read-only Hyperkey mode seam into Tiles")
+    check(shell.contains("registry.register(ZonesTool(")
+            && shell.contains("hyperkeyIncludesShift: { [weak self] in")
+            && shell.contains("registry.register(TilesTool(")
+            && shell.contains("HyperKeySettings().includeShift"),
+          "AppShell injects the same read-only Hyperkey mode seam into Zones with a false default")
 
     let shortcutKit = source("Sources/lineup/App/ShortcutKit.swift")
     check(shortcutKit.contains("static let hyperWithoutShift: UInt32")
             && shortcutKit.contains("(`6912`)")
             && shortcutKit.contains("(`6400`)")
+            && shortcutKit.contains("static func zonesDefaults(includeShift: Bool)")
             && shortcutKit.contains("static func tilesDefaults(includeShift: Bool)"),
-          "ShortcutKit owns the two adaptive Hyperkey masks and Tiles preset")
+          "ShortcutKit owns the two adaptive Hyperkey masks and Zones/Tiles presets")
+    if let zonesDefaultsStart = shortcutKit.range(of: "static func zonesDefaults(includeShift: Bool)"),
+       let zonesDefaultsEnd = shortcutKit.range(of: "    /// The first-use Tiles preset", range: zonesDefaultsStart.upperBound..<shortcutKit.endIndex) {
+        let zonesDefaults = shortcutKit[zonesDefaultsStart.lowerBound..<zonesDefaultsEnd.lowerBound]
+        check(zonesDefaults.contains("let mask = includeShift ? hyperInt : Int(hyperWithoutShift)")
+                && zonesDefaults.contains("kVK_UpArrow")
+                && zonesDefaults.contains("kVK_RightArrow"),
+              "Zones fresh quick-action defaults follow the current Hyperkey mask")
+    } else {
+        check(false, "Zones adaptive preset source is bounded")
+    }
     guard let presetStart = shortcutKit.range(of: "static func tilesDefaults(includeShift: Bool)"),
           let presetEnd = shortcutKit.range(of: "    /// `Int` form,", range: presetStart.upperBound..<shortcutKit.endIndex) else {
         check(false, "Tiles preset source is bounded for exact-map checks")
@@ -2487,15 +2503,18 @@ private func runTilesShellContractTests() throws {
     }
     let preset = shortcutKit[presetStart.lowerBound..<presetEnd.lowerBound]
     check(preset.contains("let base = includeShift ? hyper : hyperWithoutShift")
-            && preset.contains("kVK_ANSI_H, kVK_ANSI_J, kVK_ANSI_K, kVK_ANSI_Semicolon")
+            && preset.contains("let focusKeys = [kVK_ANSI_H, kVK_ANSI_J, kVK_ANSI_K, kVK_ANSI_L]")
             && preset.contains("[kVK_ANSI_U, kVK_ANSI_I, kVK_ANSI_O, kVK_ANSI_P]"),
           "Tiles preset keeps the exact focus and full-Shift movement key order")
-    check(preset.contains("kVK_ANSI_Grave, base")
-            && preset.contains("kVK_Tab, base")
-            && preset.contains("kVK_Space, base")
-            && preset.contains("kVK_Return, base")
-            && preset.contains("moveWindowLeft: binding(\"moveWindowLeft\", moveKeys[0], hyper)"),
-          "Tiles preset keeps the exact cyclic, split and movement modifier map")
+    check(preset.contains("workspace1: binding(\"workspace1\", kVK_ANSI_1, base)")
+            && preset.contains("workspace4: binding(\"workspace4\", kVK_ANSI_4, base)")
+            && preset.contains("nextWindow: binding(\"nextWindow\", kVK_Tab, base)")
+            && preset.contains("toggleSplitOrientation: binding(\"toggleSplitOrientation\", kVK_Return, base)")
+            && preset.contains("toggleTiled: binding(\"toggleTiled\", kVK_Space, base)")
+            && preset.contains("moveWindowLeft: binding(\"moveWindowLeft\", moveKeys[0], hyper)")
+            && !preset.contains("kVK_ANSI_Grave")
+            && !preset.contains("moveWindowToNextWorkspace"),
+          "Tiles preset keeps numbered workspaces, stack, split, toggle, and movement modifier map")
 
     let mutationCenter = source("Sources/lineup/App/ZoneLayoutMutationCenter.swift")
     check(mutationCenter.contains("@MainActor\nfinal class ZoneLayoutMutationCenter")
@@ -2504,6 +2523,11 @@ private func runTilesShellContractTests() throws {
           "Zones and Tiles share a narrow main-actor layout mutation center")
     check(shell.contains("layoutMutationCenter: layoutMutationCenter"),
           "AppShell injects the same layout mutation center into both tools")
+    let zonesTool = source("Sources/lineup/Tools/Zones/ZonesTool.swift")
+    check(zonesTool.contains("private let hyperkeyIncludesShift: () -> Bool")
+            && zonesTool.contains("hyperkeyIncludesShift: @escaping () -> Bool = { false }")
+            && zonesTool.contains("config.shortcuts ?? ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())"),
+          "Zones uses adaptive fresh defaults without rewriting stored shortcuts")
     let tilesCoordinator = source("Sources/lineup/Tools/Tiles/TilesCoordinator.swift")
     check(!tilesCoordinator.contains("LayoutEdit.") && !tilesCoordinator.contains("config.save"),
           "Tiles does not write Zones geometry directly")
@@ -2546,8 +2570,9 @@ private func runTilesShellContractTests() throws {
           "a blocked config or preflight leaves Tiles paused without runtime resources")
     check(tool.contains("func persistedCombos()")
             && tool.contains("UInt32(shiftKey)")
+            && tool.contains("hasGeneratedWorkspaceMove")
             && tool.contains("conflictOwner(keyCode:"),
-          "persistedCombos includes generated reverse bindings and sibling conflicts")
+          "persistedCombos includes generated reverse, workspace-move, and sibling conflicts")
     check(tool.contains("private var hasStoredSettings = false")
             && tool.contains("guard !hasStoredSettings else { return true }")
             && tool.contains("let loaded = stored ?? ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())")
@@ -2568,11 +2593,20 @@ private func runTilesShellContractTests() throws {
     } else {
         check(false, "Tiles reset has a live-update path")
     }
-    check(tool.contains("func refreshRecommendedDefaultsIfNeeded()")
+    check(tool.contains("func refreshRecommendedDefaultsIfNeeded(excluding actionID: String? = nil)")
             && tool.contains("refreshed.tileSpacingEnabled = spacing")
             && tool.contains("refreshRecommendedDefaultsIfNeeded()")
-            && !tool.contains("refreshRecommendedDefaultsIfNeeded(excluding:"),
-          "Tiles refreshes every stale pre-enable recommendation before an explicit edit")
+            && tool.contains("preservedBinding")
+            && tool.contains("refreshRecommendedDefaultsIfNeeded(excluding: actionID)"),
+          "Tiles refreshes stale pre-enable recommendations without replacing the active edit")
+    check(tool.contains("init(coordinator: TilesCoordinatorProtocol,")
+            && tool.contains("hyperkeyIncludesShift: @escaping () -> Bool = { false }")
+            && tool.contains("generatedCounterpartOwner(keyCode: Int, modifiers: UInt32)")
+            && tool.contains("title: \"Shortcut reserved\"")
+            && tool.contains("message: \"\\(ShortcutKit.display")
+            && tool.contains("\\(generatedKind)")
+            && tool.contains("\\(owner.title)"),
+          "Tiles keeps the fresh no-Shift fallback and protects generated Shift shortcuts in the recorder")
     check(tool.contains("func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure])"),
           "Tiles receives shortcut restore failures for retry")
 
@@ -2591,10 +2625,11 @@ private func runTilesShellContractTests() throws {
     // action and the pane only has to iterate every case.
     check(pane.contains("TilesTool.Action.allCases"),
           "Tiles Settings renders a shortcut row for every action")
-    for label in ["Next Workspace", "Next Window in Tile", "Move Window to Next Workspace",
+    for label in ["Workspace 1", "Workspace 2", "Workspace 3", "Workspace 4",
+                  "Next Workspace", "Next Window in Tile", "Move Window to Next Workspace",
                   "Focus Tile Left", "Focus Tile Right", "Focus Tile Up", "Focus Tile Down",
                   "Move Window Left", "Move Window Right", "Move Window Up", "Move Window Down",
-                  "Switch Split Direction"] {
+                  "Switch Split Direction", "Toggle Tiled / Freeform"] {
         check(tool.contains(label), "Tiles Settings includes the \(label) shortcut row")
     }
     check(pane.contains("Space between tiles")
@@ -2603,14 +2638,17 @@ private func runTilesShellContractTests() throws {
           "Tiles Settings exposes one switch for 8 pt tile spacing")
     check(tool.contains("let focus = NSMenuItem(title: \"Focus Tile\"")
             && tool.contains("let moveTile = NSMenuItem(title: \"Move Focused Window\"")
-            && tool.contains("Switch Split Direction"),
-          "Tiles menu exposes directional focus, move and split controls")
+            && tool.contains("Switch Split Direction")
+            && tool.contains("Toggle Tiled / Freeform"),
+          "Tiles menu exposes directional focus, move, split, and toggle controls")
     check(pane.contains("ShortcutRecorder")
             && pane.contains("RecorderButton(")
             && pane.contains("Set shortcut")
-            && pane.contains("prepareForRecording()")
-            && pane.contains("model.prepareForRecording()")
-            && pane.contains("Hold Shift with an available workspace or stack shortcut for previous"),
+            && pane.contains("prepareForRecording(_ action")
+            && pane.contains("model.prepareForRecording(action)")
+            && pane.contains("Numbers switch workspaces")
+            && pane.contains("Turn off Hyperkey Include Shift")
+            && pane.contains("Shift-Tab reverses"),
           "Tiles shortcuts use the shared recorder and describe only available reverses")
     check(pane.contains("BlockedBanner(message: message")
             && pane.contains("model.canEdit")

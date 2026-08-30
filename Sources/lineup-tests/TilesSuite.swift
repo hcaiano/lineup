@@ -453,6 +453,28 @@ func runTilesTests() throws {
               "reducer: a confirmed-gone token is removed during reconcile")
         check(afterMissedClose.workspaces[.workspace1]?.screens["main"]?.first?.order == [second],
               "reducer: confirmed close frees its stack membership")
+
+        // The shell uses these two existing reducer transitions for its true
+        // tiled/freeform toggle. Detach removes ownership; adoption puts the
+        // same focused token back into the active workspace and plans a tile
+        // frame before the shell clears its detached marker.
+        let detachedPlan = TilesReducer.plan(state: adopted,
+                                              event: .detach(first),
+                                              snapshot: cycleSnapshot, layouts: layouts)
+        check(detachedPlan.effects.isEmpty && detachedPlan.nextState.windows[first] == nil,
+              "reducer: detaching removes the focused window from Tiles ownership")
+        let detached = TilesReducer.commit(state: adopted, plan: detachedPlan,
+                                            results: successful(detachedPlan))
+        check(detached.isValid && detached.workspaces[.workspace1]?.screens["main"]?.first?.order == [second],
+              "reducer: detached state keeps the remaining stack valid")
+
+        let readoptPlan = TilesReducer.plan(state: detached, event: .adopt(first),
+                                            snapshot: cycleSnapshot, layouts: layouts)
+        let readopted = TilesReducer.commit(state: detached, plan: readoptPlan,
+                                            results: successful(readoptPlan))
+        check(readoptPlan.effects.contains { if case .setFrame(first, _, _) = $0 { return true }; return false } &&
+              readopted.windows[first]?.workspace == .workspace1 && readopted.isValid,
+              "reducer: a detached focused window is adopted and tiled again")
     }
 
     // ---- workspace staging, destination ordering, failure, and stale plans ----

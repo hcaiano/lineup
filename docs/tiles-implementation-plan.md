@@ -180,9 +180,14 @@ Zones remains the layout owner and the manual placement tool.
   produces visible frame changes.
 - Shift-drag or a direct Zone-N placement moves the managed window to that tile and selects it.
 - Dropping onto an occupied tile adds the window to that stack.
-- A freeform Zones quick action such as Full, Center, Left, or Right detaches the window from Tiles
-  for the current session. This is the automatic floating escape hatch.
+- A freeform Zones quick action such as Full, Center, Left, or Right first snaps the managed window,
+  then detaches it from Tiles for the current session. This is the automatic floating escape hatch.
 - Shift-dragging a detached window into a zone adopts it again.
+- The Tiles Space shortcut is a true toggle: a managed focused window is restored to its safe
+  adoption frame and detached; a detached focused window is adopted into the active workspace and
+  tiled. Every frame write is verified before the ownership mutation, and failures show HUD feedback.
+- Zones quick-action arrows remain placement controls; Tiles H/J/K/L shortcuts navigate focus
+  between tiles.
 - A normal user drag whose center settles inside another leaf transfers the window to that tile.
 - An external resize of a managed window is corrected to its tile after debounce.
 
@@ -510,23 +515,37 @@ Register Tiles after Zones and before Cycler. The existing dynamic sidebar creat
 The content has three compact sections:
 
 1. **Workspace**: four native buttons with the active one selected. Runtime actions are disabled
-   while Tiles is off. A caption says `Uses your Zones layouts. Workspaces are separate from macOS Spaces. Use a Zones quick action to float a window.`
+   while Tiles is off. A caption says `Uses your Zones layouts. Workspaces are separate from macOS Spaces. Use a Zones Hyper+arrow quick action to float a window.`
 2. **Behavior**: one `Space between tiles` switch. On uses the fixed 8 pt product spacing; off
    uses the exact Zones frames. A caption explains the fixed fill-then-stack policy.
 3. **Shortcuts**: recorder rows grouped as workspace and stacks, focus tile, move window, and
-   layout. The groups include the three workspace/stack actions, four focus directions, four move
-   directions, and Switch Split Direction.
+   layout. The groups include four numbered workspace actions, the three legacy workspace/stack
+   actions, four focus directions, four move directions, Switch Split Direction, and Toggle Tiled /
+   Freeform. Numbers switch workspaces; physical Shift-number moves the focused window without
+   switching. Shift-Tab reverses the stack when that generated reverse is available.
 
 Before first activation, Tiles has no settings section and shows its adaptive recommendation only
 in memory, so a disabled never-activated tool reserves no shortcut combinations. On first
 activation, Tiles writes an adaptive preset from the current Hyperkey mode. With
-`includeShift=false`, focus left/down/up/right uses mask `6400` plus H/J/K/semicolon, movement uses
-full Hyper mask `6912` plus the same keys, and next window/workspace/move-to-next-workspace/split
-uses mask `6400` plus Tab/grave/Space/Return. With `includeShift=true`, focus uses full Hyper plus
-H/J/K/semicolon, movement uses full Hyper plus U/I/O/P, and the cyclic and split actions use full
-Hyper plus Tab/grave/Space/Return. Existing settings, including explicit null bindings, are never normalized;
-reset creates the current adaptive preset. Only the three cyclic workspace/stack actions can
-generate a Shift reverse, and the UI shows the previous hint only when one is available.
+`includeShift=false`, numbered workspaces use mask `6400` plus 1/2/3/4, focus left/down/up/right
+uses mask `6400` plus H/J/K/L, movement uses full Hyper mask `6912` plus H/J/K/L, and stack/split/
+toggle uses mask `6400` plus Tab/Return/Space. The legacy relative workspace rows are unassigned.
+With `includeShift=true`, numbered workspace rows still select their workspace with full Hyper but
+do not generate a physical Shift move because that counterpart cannot be distinguished; focus uses
+full Hyper plus H/J/K/L, movement uses full Hyper plus U/I/O/P, and stack/split/toggle use full
+Hyper plus Tab/Return/Space. Existing settings,
+including explicit null bindings, are never normalized; reset creates the current adaptive preset.
+Only the three cyclic workspace/stack actions can generate a Shift reverse, and the UI shows hints
+only for reverses that are available.
+
+Cycler receives no new app bindings as part of this preset. H/J/K/L remain the recommended Tiles
+focus letters; any existing Cycler rows remain explicit and win normal conflict checks.
+
+Zones' fresh quick-action defaults use the current Hyperkey mask too: `6400` when Include Shift is
+off and `6912` when it is on. Existing saved or legacy `6912` bindings are preserved; in compact
+mode they therefore require a physical Shift with Caps+arrow. A live Include Shift change does not
+rewrite or re-register an existing Zones section; the current mode is used when fresh defaults are
+first registered or saved.
 
 The pane reuses `SettingsSectionView`, `SettingsRow`, `SettingsCaption`, `ShortcutRecorder`, and
 `BlockedBanner`. It remains editable while the tool is off. It uses native controls, blue as the
@@ -541,6 +560,7 @@ Tiles contributes one compact submenu:
 - Focus Tile > Left, Right, Up, Down
 - Move Focused Window > Left, Right, Up, Down
 - Switch Split Direction
+- Toggle Tiled / Freeform
 - Next Window in Tile
 
 `Restore Windows` appears only when recovery is required. There is no healthy `Show All Windows`
@@ -570,6 +590,10 @@ public struct TilesSettings: Codable, Equatable {
     public static let currentSchema = 1
     public var schemaVersion: Int
     public var tileSpacingEnabled: Bool
+    public var workspace1: ShortcutBinding?
+    public var workspace2: ShortcutBinding?
+    public var workspace3: ShortcutBinding?
+    public var workspace4: ShortcutBinding?
     public var nextWorkspace: ShortcutBinding?
     public var nextWindow: ShortcutBinding?
     public var moveWindowToNextWorkspace: ShortcutBinding?
@@ -582,6 +606,7 @@ public struct TilesSettings: Codable, Equatable {
     public var moveWindowUp: ShortcutBinding?
     public var moveWindowDown: ShortcutBinding?
     public var toggleSplitOrientation: ShortcutBinding?
+    public var toggleTiled: ShortcutBinding?
 }
 ```
 
@@ -593,6 +618,10 @@ The opaque tool section is:
   "settings": {
     "schemaVersion": 1,
     "tileSpacingEnabled": true,
+    "workspace1": null,
+    "workspace2": null,
+    "workspace3": null,
+    "workspace4": null,
     "nextWorkspace": null,
     "nextWindow": null,
     "moveWindowToNextWorkspace": null,
@@ -604,18 +633,22 @@ The opaque tool section is:
     "moveWindowRight": null,
     "moveWindowUp": null,
     "moveWindowDown": null,
-    "toggleSplitOrientation": null
+    "toggleSplitOrientation": null,
+    "toggleTiled": null
   }
 }
 ```
 
-Do not increment the `LineupAppConfig` envelope schema. A missing section uses defaults. A future
-or invalid Tiles section runs no window mutations, preserves the rejected JSON, and offers the
-same safe reset discipline as the current tools.
+Do not increment the `LineupAppConfig` envelope schema. A missing section uses the current adaptive
+defaults in memory and materializes them on first activation or save. An explicitly stored section,
+including one with all-null shortcut fields, remains user state and is never normalized. A future or
+invalid Tiles section runs no window mutations, preserves the rejected JSON, and offers the same
+safe reset discipline as the current tools.
 
-Missing fields decode to the current defaults because Tiles is not released yet; the schema stays
-at `1`. `persistedCombos()` includes generated reverse combos when they exist. Recording checks
-enabled and disabled sibling tools through `boundCombos`. `start`, restore-after-recording,
+Missing shortcut fields decode as nil for compatibility with older settings; they are not filled in
+or rewritten while stored state is loaded. The schema stays at `1`. `persistedCombos()` includes
+generated reverse combos when they exist. Recording checks enabled and disabled sibling tools through
+`boundCombos`. `start`, restore-after-recording,
 activation, and the retry timer follow the current hotkey failure behavior.
 
 ## 11. File plan
@@ -819,6 +852,8 @@ Use a packaged app, not only `swift run`.
 - Fill leaves, overflow into the focused stack, cycle, close selected, and restore.
 - Move and resize manually; drag through Zones; run a freeform Zones quick action.
 - Switch and move across all four workspaces.
+- Toggle a focused managed window to its safe freeform frame and back with the Tiles Space
+  shortcut; verify a detached window is adopted into the active workspace on the second press.
 - Measure a switch with at least ten managed windows across two displays. It must complete in under
   two seconds, preserve the correct focus, and have acceptable Dock animation noise. If it fails,
   stop and redesign staging before more polish work.
@@ -856,6 +891,8 @@ runtime checks.
 - Every tile supports an ordered window stack and integrated cycling.
 - Zones drag/direct placement can move and stack managed windows.
 - Existing freeform Zones actions remain useful through session detachment.
+- The Tiles Space shortcut toggles a focused window between its verified adoption frame and the
+  active workspace tile.
 - Config has one binary spacing choice and optional action shortcuts; workspace, placement, and
   stack policies are fixed.
 - All mutations are planned, bounded, verified, and recoverable.
@@ -930,13 +967,15 @@ set that fits its Zones-owned layout model:
 
 The actions are available from the Tiles menu and shortcut rows. On first activation, the rows use
 an adaptive preset that avoids Zones' Hyper plus arrow keys: the no-Shift Hyperkey mode uses
-Control-Option-Command (`6400`) for focus and cyclic actions, full Hyper (`6912`) for movement,
-and H/J/K/semicolon for the directional map; the full-Shift mode uses full Hyper for every row,
-with U/I/O/P for movement. Stored rows are preserved when Hyperkey mode changes, and reset uses
-the mode active at reset time. Shift reverse remains limited to the three cyclic actions and is
-generated only for bindings that do not already include Shift.
+Control-Option-Command (`6400`) for numbered workspace selection, focus, and stack/split/toggle
+actions; its physical Shift-number counterparts move the focused window, while full Hyper (`6912`)
+plus H/J/K/L moves it spatially. The full-Shift mode uses full Hyper for focus, movement fallback
+U/I/O/P, and stack/split/toggle; numbered workspace rows still select workspaces but have no
+generated Shift move because that counterpart cannot be distinguished. Stored rows are preserved
+when Hyperkey mode changes, and
+reset uses the mode active at reset time. Shift reverse remains limited to the three cyclic actions
+and is generated only for bindings that do not already include Shift.
 
-Swap, divider nudging, direct numbered workspace shortcut rows, cross-display navigation, and
-custom gap values remain deferred. Swap had weak binding evidence in the inspected sample.
-Divider nudging would extend the Zones editing contract. Direct workspace selection already exists
-in the pane and menu; eight more switch-and-move recorders would make Settings harder to scan.
+Swap, divider nudging, cross-display navigation, and custom gap values remain deferred. Swap had
+weak binding evidence in the inspected sample; divider nudging would extend the Zones editing
+contract.

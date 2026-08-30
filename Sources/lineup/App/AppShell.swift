@@ -108,12 +108,15 @@ final class AppShell: NSObject, NSApplicationDelegate {
         // Cycler and Hyperkey remain independent tools.
         registry.register(ZonesTool(
             placementCenter: placementCenter,
-            layoutMutationCenter: layoutMutationCenter))
+            layoutMutationCenter: layoutMutationCenter,
+            hyperkeyIncludesShift: { [weak self] in
+                self?.currentHyperkeyIncludesShift() ?? HyperKeySettings().includeShift
+            }))
         registry.register(TilesTool(coordinator: TilesCoordinator(
             store: store, placementCenter: placementCenter,
             layoutMutationCenter: layoutMutationCenter),
             hyperkeyIncludesShift: { [weak self] in
-                self?.currentHyperkeyIncludesShift() ?? true
+                self?.currentHyperkeyIncludesShift() ?? HyperKeySettings().includeShift
             }))
         registry.register(CyclerTool())
         registry.register(HyperkeyTool())
@@ -164,7 +167,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
     /// Read-only shell seam for Tiles' first-use/reset shortcut preset. Hyperkey remains the owner
     /// of its settings; Tiles never receives a sibling config scope or writes this value back.
     private func currentHyperkeyIncludesShift() -> Bool {
-        (try? store.config.settings(HyperKeySettings.self, for: .hyperkey))?.includeShift ?? true
+        (try? store.config.settings(HyperKeySettings.self, for: .hyperkey))?.includeShift
+            ?? HyperKeySettings().includeShift
     }
 
     // MARK: - Legacy import

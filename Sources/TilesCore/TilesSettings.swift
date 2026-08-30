@@ -20,6 +20,10 @@ public struct TilesSettings: Codable, Equatable {
     /// Keep the visual rhythm of tiled windows enabled by default.  This is a
     /// single opinionated switch instead of separate inner/outer gap knobs.
     public var tileSpacingEnabled: Bool
+    public var workspace1: ShortcutBinding?
+    public var workspace2: ShortcutBinding?
+    public var workspace3: ShortcutBinding?
+    public var workspace4: ShortcutBinding?
     public var nextWorkspace: ShortcutBinding?
     public var nextWindow: ShortcutBinding?
     public var moveWindowToNextWorkspace: ShortcutBinding?
@@ -32,9 +36,14 @@ public struct TilesSettings: Codable, Equatable {
     public var moveWindowUp: ShortcutBinding?
     public var moveWindowDown: ShortcutBinding?
     public var toggleSplitOrientation: ShortcutBinding?
+    public var toggleTiled: ShortcutBinding?
 
     public init(schemaVersion: Int = TilesSettings.currentSchema,
                 tileSpacingEnabled: Bool = true,
+                workspace1: ShortcutBinding? = nil,
+                workspace2: ShortcutBinding? = nil,
+                workspace3: ShortcutBinding? = nil,
+                workspace4: ShortcutBinding? = nil,
                 nextWorkspace: ShortcutBinding? = nil,
                 nextWindow: ShortcutBinding? = nil,
                 moveWindowToNextWorkspace: ShortcutBinding? = nil,
@@ -46,9 +55,14 @@ public struct TilesSettings: Codable, Equatable {
                 moveWindowRight: ShortcutBinding? = nil,
                 moveWindowUp: ShortcutBinding? = nil,
                 moveWindowDown: ShortcutBinding? = nil,
-                toggleSplitOrientation: ShortcutBinding? = nil) {
+                toggleSplitOrientation: ShortcutBinding? = nil,
+                toggleTiled: ShortcutBinding? = nil) {
         self.schemaVersion = schemaVersion
         self.tileSpacingEnabled = tileSpacingEnabled
+        self.workspace1 = workspace1
+        self.workspace2 = workspace2
+        self.workspace3 = workspace3
+        self.workspace4 = workspace4
         self.nextWorkspace = nextWorkspace
         self.nextWindow = nextWindow
         self.moveWindowToNextWorkspace = moveWindowToNextWorkspace
@@ -61,6 +75,7 @@ public struct TilesSettings: Codable, Equatable {
         self.moveWindowUp = moveWindowUp
         self.moveWindowDown = moveWindowDown
         self.toggleSplitOrientation = toggleSplitOrientation
+        self.toggleTiled = toggleTiled
     }
 
     public static let `default` = TilesSettings()
@@ -68,6 +83,10 @@ public struct TilesSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
         case tileSpacingEnabled
+        case workspace1
+        case workspace2
+        case workspace3
+        case workspace4
         case nextWorkspace
         case nextWindow
         case moveWindowToNextWorkspace
@@ -80,6 +99,7 @@ public struct TilesSettings: Codable, Equatable {
         case moveWindowUp
         case moveWindowDown
         case toggleSplitOrientation
+        case toggleTiled
     }
 
     public init(from decoder: Decoder) throws {
@@ -94,6 +114,10 @@ public struct TilesSettings: Codable, Equatable {
         }
         self.schemaVersion = schema
         self.tileSpacingEnabled = try container.decodeIfPresent(Bool.self, forKey: .tileSpacingEnabled) ?? true
+        self.workspace1 = try container.decodeIfPresent(ShortcutBinding.self, forKey: .workspace1)
+        self.workspace2 = try container.decodeIfPresent(ShortcutBinding.self, forKey: .workspace2)
+        self.workspace3 = try container.decodeIfPresent(ShortcutBinding.self, forKey: .workspace3)
+        self.workspace4 = try container.decodeIfPresent(ShortcutBinding.self, forKey: .workspace4)
         self.nextWorkspace = try container.decodeIfPresent(ShortcutBinding.self, forKey: .nextWorkspace)
         self.nextWindow = try container.decodeIfPresent(ShortcutBinding.self, forKey: .nextWindow)
         self.moveWindowToNextWorkspace = try container.decodeIfPresent(ShortcutBinding.self, forKey: .moveWindowToNextWorkspace)
@@ -106,6 +130,7 @@ public struct TilesSettings: Codable, Equatable {
         self.moveWindowUp = try container.decodeIfPresent(ShortcutBinding.self, forKey: .moveWindowUp)
         self.moveWindowDown = try container.decodeIfPresent(ShortcutBinding.self, forKey: .moveWindowDown)
         self.toggleSplitOrientation = try container.decodeIfPresent(ShortcutBinding.self, forKey: .toggleSplitOrientation)
+        self.toggleTiled = try container.decodeIfPresent(ShortcutBinding.self, forKey: .toggleTiled)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -115,6 +140,10 @@ public struct TilesSettings: Codable, Equatable {
         try container.encode(tileSpacingEnabled, forKey: .tileSpacingEnabled)
         // Encode nulls explicitly.  This keeps the stable section shape and
         // makes an unassigned recorder distinguishable from a missing field.
+        try container.encode(workspace1, forKey: .workspace1)
+        try container.encode(workspace2, forKey: .workspace2)
+        try container.encode(workspace3, forKey: .workspace3)
+        try container.encode(workspace4, forKey: .workspace4)
         try container.encode(nextWorkspace, forKey: .nextWorkspace)
         try container.encode(nextWindow, forKey: .nextWindow)
         try container.encode(moveWindowToNextWorkspace, forKey: .moveWindowToNextWorkspace)
@@ -127,6 +156,7 @@ public struct TilesSettings: Codable, Equatable {
         try container.encode(moveWindowUp, forKey: .moveWindowUp)
         try container.encode(moveWindowDown, forKey: .moveWindowDown)
         try container.encode(toggleSplitOrientation, forKey: .toggleSplitOrientation)
+        try container.encode(toggleTiled, forKey: .toggleTiled)
     }
 
     public func validate() throws {

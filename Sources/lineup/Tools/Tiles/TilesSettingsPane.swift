@@ -52,17 +52,27 @@ final class TilesSettingsModel: ObservableObject {
     }
 
     var shortcutCaption: String? {
-        tool?.anyReverseShortcutAvailable() == true
-            ? "Hold Shift with an available workspace or stack shortcut for previous."
-            : nil
+        guard let tool else { return nil }
+        var hints: [String] = []
+        if tool.anyWorkspaceMoveShortcutAvailable() {
+            hints.append("Numbers switch workspaces; Shift-number moves the focused window.")
+        } else if tool.hyperkeyIncludesShiftForSettings {
+            hints.append("Turn off Hyperkey Include Shift to enable Shift-number window moves.")
+        }
+        if tool.nextWindowReverseShortcutAvailable() {
+            hints.append("Shift-Tab reverses the stack.")
+        } else if tool.anyReverseShortcutAvailable() {
+            hints.append("Hold Shift with an available cyclic shortcut for previous.")
+        }
+        return hints.isEmpty ? nil : hints.joined(separator: " ")
     }
 
     var runtimeNeedsAccessibility: Bool {
         runtimeBlockedMessage?.localizedCaseInsensitiveContains("Accessibility") == true
     }
 
-    func prepareForRecording() {
-        tool?.refreshRecommendedDefaultsIfNeeded()
+    func prepareForRecording(_ action: String? = nil) {
+        tool?.refreshRecommendedDefaultsIfNeeded(excluding: action)
         boundCombos = tool?.boundCombos() ?? []
         refresh()
     }
@@ -199,7 +209,7 @@ private struct TilesSettingsPaneBody: View {
 
                         SettingsCaption(
                             text: model.canUseRuntime
-                                ? "Uses your Zones layouts. Workspaces are separate from macOS Spaces. Use a Zones quick action to float a window."
+                                ? "Uses your Zones layouts. Workspaces are separate from macOS Spaces. Use a Zones Hyper+arrow quick action to float a window."
                                 : "Tiles starts in Workspace \(model.activeWorkspace). It uses your Zones layouts when enabled.",
                             systemImage: "square.grid.3x3")
                             .padding(.top, 8)
@@ -294,7 +304,7 @@ private struct TilesSettingsPaneBody: View {
 
     private func record(_ action: String) {
         guard model.canEdit else { return }
-        model.prepareForRecording()
+        model.prepareForRecording(action)
         recorder.toggle(action) { capture in
             model.applyCapture(capture, for: action)
         }

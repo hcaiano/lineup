@@ -57,8 +57,18 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
   are no spacing values or layout policies to tune.
 - On first activation or shortcut edit, Tiles materializes an adaptive preset from Hyperkey mode;
   stored shortcuts are never rewritten.
-- A Zones freeform quick action temporarily floats a managed window. Dropping it into a zone
-  adopts it again.
+- In the recommended preset, number shortcuts switch Tiles workspaces and their physical
+  Shift-number counterparts move the focused window; Include Shift leaves those move counterparts
+  unassigned because the masks cannot be distinguished.
+- A Zones quick action on a managed window snaps it, then temporarily floats/detaches it. Dropping
+  it into a zone adopts it again.
+- The Tiles Space shortcut toggles the focused window between its safe freeform frame and the
+  active workspace tile.
+- Zones quick-action arrows use Hyper+arrows. Fresh defaults follow Hyperkey mode (`6400` when
+  Include Shift is off, `6912` when it is on); existing full-Hyper bindings require physical
+  Shift in the compact mode and are never rewritten. Tiles H/J/K/L navigate focus between tiles.
+- Cycler receives no new app bindings; H/J/K/L remain the recommended Tiles focus letters and
+  existing Cycler rows keep their explicit conflicts.
 - The full agreed behavior and safety gates are in `docs/tiles-implementation-plan.md`.
 
 ## Accessibility & Inclusion
