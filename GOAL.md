@@ -1,10 +1,12 @@
 # Lineup — Production-Readiness & Design Goal
 
-> Scope update, 2026-08-30: this document records the completed production-readiness phase. The
-> new Tiles phase in `docs/tiles-implementation-plan.md` supersedes only the old capability
-> non-goals below. Its agreed scope adds automatic tiling, four Lineup workspaces, and stacked
-> window cycling while preserving Zones as the only layout editor.
-
+> [!NOTE]
+> This is the historical brief for the Lineup 2.0 redesign. Use [PRODUCT.md](PRODUCT.md) and the
+> current code as the source of truth for new work.
+>
+> The Tiles phase in `docs/tiles-implementation-plan.md` supersedes only the old capability
+> non-goals below. It adds automatic tiling, four Lineup workspaces, and stacked window cycling
+> while preserving Zones as the only layout editor.
 **One-liner:** Lineup is a tiny, native macOS menu-bar window manager that snaps windows into
 per-screen, user-defined zones — built for ultrawide monitors (Samsung G9) but useful to anyone.
 This phase makes it **beautiful, minimal, discoverable, and production-ready** for a public GitHub
@@ -73,7 +75,7 @@ Reset). Hide "granted/OK" states and the config path and the shortcut list.
 - Clean, native-feeling AppKit (spacing, alignment, hover states, empty states).
 - README rewritten for a public release: what it is, 60-second install, screenshots/GIF, the editor
   + shortcuts + per-screen story, the seam-alignment use case, known limitations, license.
-- Add a **LICENSE** (MIT unless told otherwise).
+- Publish the project under the **Apache License 2.0**.
 - No rough edges: no debug strings, no dead UI, accessible labels, sane window sizes.
 
 ## Non-goals (this phase)

@@ -1,10 +1,11 @@
 # Releasing Lineup
 
 > This file describes the 1.x public release process, which ran through CI and GitHub releases.
-> **2.0.0 shipped differently**: built, notarized and appcast on the release Mac, with the DMG
-> and the feed served from `lineup.caiano.com` so no GitHub release is involved. See
+> **The 2.x distribution path is different**: the release Mac builds, notarizes, and signs the
+> appcast. Sparkle downloads the DMG and feed from `lineup.caiano.com`, not from GitHub Releases. See
 > [BUILDING.md](BUILDING.md#auto-updates-sparkle) for the current process; treat the rest of
-> this file as 1.x history.
+> this file as 1.x history. The preserved workflow is also gated by the unset
+> `ENABLE_RELEASE_WORKFLOW` repository variable.
 
 Releases are **hybrid**: CI does the heavy, reproducible work (universal build, Developer ID
 signing, Apple notarization, GitHub release), and one local command signs the Sparkle appcast.
@@ -31,9 +32,9 @@ The Sparkle EdDSA private key — the auto-update root of trust — is deliberat
    ./Scripts/publish-appcast.sh 1.8.1
    ```
 
-   This downloads the notarized DMG the workflow released, EdDSA-signs `web/appcast.xml`, and
-   opens a PR. **Merging that PR** triggers `deploy-web.yml`, which publishes the feed to
-   `https://lineup.caiano.com/appcast.xml` — that is what prompts existing users to update.
+   This downloads the notarized DMG the workflow released, EdDSA-signs `web/appcast.xml`, stages
+   the hosted DMG, and opens a PR. After the PR merges, deploy `web/` as described in
+   [web/README.md](web/README.md). Publishing the feed is what prompts existing users to update.
 
 To smoke-test the build/notarize path without releasing, run the workflow manually
 (`workflow_dispatch`, `dry_run: true`): it uploads the DMG as an artifact instead of cutting a

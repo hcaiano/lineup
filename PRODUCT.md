@@ -23,9 +23,9 @@ disappears into muscle memory.
 
 ## Brand Personality
 
-Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in `Sources/lineup/App/Brand.swift`)
-carries the identity; everything else defers to macOS conventions (system fonts, vibrancy, standard
-controls). The app should feel like Apple shipped it.
+Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
+`Sources/lineup/App/Brand.swift`) carries the identity; everything else defers to macOS conventions
+(system fonts, vibrancy, standard controls). The app should feel like Apple shipped it.
 
 ## Anti-references
 

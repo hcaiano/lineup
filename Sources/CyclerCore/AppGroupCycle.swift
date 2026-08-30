@@ -3,10 +3,10 @@ import Foundation
 /// Pure "press the key, which app should win?" math for a multi-app binding (an *app group*).
 ///
 /// Where `WindowCycle` decides the next *window* of one app, this decides the next *app* of a
-/// group, and gives up window cycling. The AppKit layer (Sources/cycler) owns the live process
-/// list and the launch/activate/hide side effects; this type owns the *decision*, so the
-/// round-robin behaviour is unit-testable without a running app. Keep it free of AppKit so it
-/// builds under `swift run cycler-tests`.
+/// group, and gives up window cycling. The AppKit layer (Sources/lineup/Tools/Cycler) owns the live
+/// process list and the launch/activate/hide side effects; this type owns the *decision*, so the
+/// round-robin behaviour is unit-testable without a running app. Keep it free of AppKit so it builds
+/// under `swift run lineup-tests`.
 ///
 /// It is intentionally **stateless**: every press recomputes the decision from the live
 /// installed/running/frontmost snapshot. There is no remembered "current app", so hide↔activate

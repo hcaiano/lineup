@@ -39,11 +39,13 @@ if [ "${UNIVERSAL}" = "1" ]; then
   EXEC_SRC=".build/uni-universal/release/${EXEC_NAME}"
   # Sparkle's XCFramework macOS slice is already universal; take it from the arm64 build.
   SPARKLE_SEARCH_DIR="${ARM_SCRATCH}/arm64-apple-macosx/release"
+  SPARKLE_LICENSE="${ARM_SCRATCH}/checkouts/Sparkle/LICENSE"
 else
   echo "==> swift build -c release (host arch only)"
   swift build -c release
   EXEC_SRC="${BUILD_DIR}/${EXEC_NAME}"
   SPARKLE_SEARCH_DIR="${BUILD_DIR}"
+  SPARKLE_LICENSE=".build/checkouts/Sparkle/LICENSE"
 fi
 
 # Ensure the icon exists.
@@ -74,6 +76,12 @@ if grep -q 'REPLACE_WITH_SUPublicEDKey' "${APP}/Contents/Info.plist"; then
   exit 1
 fi
 cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
+cp "LICENSE" "${APP}/Contents/Resources/Lineup-LICENSE.txt"
+if [ ! -f "${SPARKLE_LICENSE}" ]; then
+  echo "error: Sparkle licence notices not found at '${SPARKLE_LICENSE}'." >&2
+  exit 1
+fi
+cp "${SPARKLE_LICENSE}" "${APP}/Contents/Resources/Sparkle-LICENSE.txt"
 
 # SwiftPM puts a target's declared resources (the per-tool icons) in a bundle NEXT TO the
 # product, not inside it. This script assembles the .app by hand, so it has to carry that bundle

@@ -1,0 +1,109 @@
+name: Bug report
+description: Report a reproducible problem, regression, or crash.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for broken behavior. Start new features and behavior changes in Discussions.
+        Search existing issues first and report one problem at a time.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues and did not find this problem.
+          required: true
+        - label: I can provide enough detail to reproduce or investigate it.
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Zones
+        - Cycler
+        - Hyperkey
+        - Settings or menu bar
+        - Install, update, or packaging
+        - Website or documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Give a short, deterministic sequence.
+      placeholder: |
+        1. Enable ...
+        2. Open ...
+        3. Press or drag ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Lineup version
+      description: Find this in Lineup > About.
+      placeholder: 2.0.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Blocks normal use
+        - Major or frequent failure
+        - Minor or occasional failure
+        - Visual problem
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: macOS 15.6, MacBook Pro with Apple M3 Pro
+    validations:
+      required: true
+
+  - type: textarea
+    id: displays
+    attributes:
+      label: Display setup
+      description: Include display count, resolution, scaling, and arrangement when relevant.
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, or recordings
+      description: Add only relevant evidence. Remove personal data and secrets first.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: If you found a temporary workaround, describe it.

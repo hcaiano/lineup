@@ -28,6 +28,7 @@ func runAppTests() throws {
     try runStoreTests()
     try runLegacyImportTests()
     try runIdentityTests()
+    try runReleaseToolingTests()
     try runShellSourceScanTests()
     try runSettingsWindowTests()
     try runIntegrationTests()
@@ -648,6 +649,37 @@ private func runIdentityTests() throws {
     check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 18, "build number is above 2.0.0's build 18")
 }
 
+private func runReleaseToolingTests() throws {
+    let publisher = try String(contentsOfFile: "Scripts/publish-appcast.sh", encoding: .utf8)
+    check(publisher.contains("HOSTED_DMG=\"web/downloads/Lineup-${VERSION}.dmg\""),
+          "publish-appcast names the self-hosted DMG")
+    check(publisher.contains("git add -- web/appcast.xml \"$HOSTED_DMG\""),
+          "publish-appcast commits the feed and its self-hosted DMG together")
+    check(publisher.contains("Merge the PR, then deploy web/"),
+          "publish-appcast does not claim that a merge deploys a dormant workflow")
+
+    let deploy = try String(contentsOfFile: ".github/workflows/deploy-web.yml", encoding: .utf8)
+    let release = try String(contentsOfFile: ".github/workflows/release.yml", encoding: .utf8)
+    let ci = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
+    check(deploy.contains("vars.ENABLE_WEB_DEPLOY == 'true'")
+            && release.contains("vars.ENABLE_RELEASE_WORKFLOW == 'true'"),
+          "dormant release workflows use explicit repository-variable gates")
+    check(ci.contains("runs-on: macos-26") && release.contains("runs-on: macos-26"),
+          "CI and release builds use an SDK that provides macOS 26 symbols")
+    if let appNotarize = release.range(of: "./Scripts/notarize.sh \"dist/Lineup.app\" lineup-notary"),
+       let makeDMG = release.range(of: "./Scripts/make-dmg.sh") {
+        check(appNotarize.lowerBound < makeDMG.lowerBound,
+              "release notarizes and staples the app before packaging the DMG")
+    } else {
+        check(false, "release notarizes and staples the app before packaging the DMG")
+    }
+    check(deploy.contains("permissions:\n  contents: read")
+            && deploy.contains("cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd")
+            && deploy.contains("wranglerVersion: '4.127.1'")
+            && deploy.contains("persist-credentials: false"),
+          "web deploy uses least privilege and pinned action and CLI versions")
+}
+
 private func runShellSourceScanTests() throws {
     let files = sourceFiles()
     check(!files.isEmpty, "source scan finds Swift files")
@@ -805,6 +837,9 @@ private func runSettingsWindowTests() throws {
     check(buildScript.contains("${EXEC_NAME}_${EXEC_NAME}.bundle")
           && buildScript.contains("${APP}/Contents/Resources/$(basename \"${RES_BUNDLE}\")"),
           "build-app.sh copies the SwiftPM resource bundle into Contents/Resources")
+    check(buildScript.contains("Lineup-LICENSE.txt")
+          && buildScript.contains("Sparkle-LICENSE.txt"),
+          "build-app.sh includes Lineup and Sparkle licence notices")
 
     // ---- Window controller ----
     let controller = source("Sources/lineup/Settings/SettingsWindowController.swift")
@@ -846,13 +881,11 @@ private func runSettingsWindowTests() throws {
     check(!general.contains("RoundedRectangle"),
           "General uses the shared section style, not a pane-local card")
 
-    // ---- About: private build ----
+    // ---- About ----
     let about = source("Sources/lineup/Settings/AboutPane.swift")
     check(about.contains("lineup.caiano.com"), "About links the product site")
     check(about.contains("AppUpdater.shared.checkForUpdates"), "About offers Check for Updates")
-    check(!about.lowercased().contains("github"),
-          "About has no source-repository link (Lineup 2.0 is a private build)")
-    check(!about.contains("MIT"), "About has no open-source licence line")
+    check(about.contains("AboutFacts.copyright"), "About uses the shared attribution line")
 
     // ---- Reopen path: with no menu-bar icon, Settings is the only way back in ----
     let shell = source("Sources/lineup/App/AppShell.swift")
@@ -1520,16 +1553,13 @@ private func runParityFixTests() throws {
     // ---- A34: the two Abouts tell ONE story ----
     let aboutWindow = source("Sources/lineup/App/AboutWindow.swift")
     let aboutPane = source("Sources/lineup/Settings/AboutPane.swift")
-    check(!aboutWindow.contains("MIT"), "the About window has no open-source licence line")
-    check(!aboutWindow.lowercased().contains("github"),
-          "the About window has no source-repository link (this branch is private)")
     check(aboutWindow.contains("lineup.caiano.com") && aboutPane.contains("lineup.caiano.com"),
           "both Abouts keep the product site")
     check(aboutWindow.contains("AboutFacts.copyright") && aboutPane.contains("AboutFacts.copyright"),
           "both Abouts render the SAME copyright string, so they cannot drift apart again")
     check(AboutFactsMirror.copyright == "© 2026 Henrique Caiano. All rights reserved."
             && aboutWindow.contains("\"\(AboutFactsMirror.copyright)\""),
-          "the copyright line reserves all rights and names no licence")
+          "both Abouts keep the same copyright attribution")
     check(aboutWindow.contains("AboutFacts.buildDateLine()") && aboutPane.contains("AboutFacts.buildDateLine()"),
           "the build date the window always had is now on the Settings pane too")
     check(aboutWindow.contains("func versionLine()") && aboutPane.contains("CFBundleVersion"),

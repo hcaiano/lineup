@@ -1,7 +1,8 @@
 import AppKit
 
 // Renders a faithful still of the on-screen layout editor for the README — same brand blue,
-// zone numbering, divider px/% readouts and hover controls as Sources/lineup/LayoutEditorOverlay.swift,
+// zone numbering, divider px/% readouts and hover controls as
+// Sources/lineup/Tools/Zones/LayoutEditorOverlay.swift,
 // drawn over a neutral widescreen frame with zone 2 hovered. This is a documentation mock;
 // replace it with a real screenshot from your display anytime. Usage: swift make-editor-shot.swift out.png
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "editor.png"
@@ -17,7 +18,7 @@ NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 let ctx = NSGraphicsContext.current!.cgContext
 let rgb = CGColorSpaceCreateDeviceRGB()
 
-// Brand blue — identical to Sources/lineup/Theme.swift (#2F6BFF).
+// Brand blue — identical to Sources/lineup/App/Brand.swift (#2F6BFF).
 let blue = NSColor(srgbRed: 0.184, green: 0.420, blue: 1.0, alpha: 1)
 
 // A muted desktop backdrop (we can't show the user's real wallpaper) + the editor's dark wash.
