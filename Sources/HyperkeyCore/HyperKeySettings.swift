@@ -1,8 +1,8 @@
 import Foundation
 
-/// Optional, off-by-default built-in HyperKey. When `enabled`, Cycler itself makes the `triggerKey`
-/// behave as Hyper system-wide, so users don't need Raycast/Karabiner. This is pure persisted
-/// settings only; the actual key remapping lives in the AppKit target (Sources/cycler), never here.
+/// Optional, off-by-default Hyperkey settings. When `enabled`, the Hyperkey tool makes the
+/// `triggerKey` behave as Hyper system-wide, so users don't need Raycast/Karabiner. This is pure
+/// persisted state; key remapping lives in Sources/lineup/Tools/Hyperkey, never here.
 public struct HyperKeySettings: Codable, Equatable, Sendable {
     public var enabled: Bool
     public var triggerKey: TriggerKey

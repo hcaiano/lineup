@@ -4,47 +4,51 @@
 
 # Lineup
 
-**A private macOS menu-bar utility suite.**
+**A native macOS menu-bar suite for window layouts and keyboard shortcuts.**
+
+[Download](https://lineup.caiano.com) · [Build from source](BUILDING.md) ·
+[Contribute](CONTRIBUTING.md)
 
 </div>
 
----
+![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup is Henrique's personal macOS utility suite. It lives in the menu bar and bundles three
-tools:
+Lineup combines three tools. Enable only the tools you need:
 
-- **Zones** — draw your own window-snapping zone layouts, per screen, and drop windows into them
-  with a drag or a keyboard shortcut.
-- **Cycler** — cycle through apps and windows with keyboard shortcuts, including app groups and
+- **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
+- **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
-- **Hyperkey** — turn Caps Lock (or another key) into a "Hyper" key (Control + Option + Shift +
-  Command), so a single keypress drives the other two tools' shortcuts.
+- **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
 
-Each tool can be turned on or off independently in Settings. Zones is on by default; Cycler and
-Hyperkey start off so an automatic update never silently grabs new hotkeys or Caps Lock.
+Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
-## Status
+## Install
 
-Lineup 2.0 is a **private** rewrite, developed on the `unified-app` branch. It is not distributed
-or supported publicly. Lineup 1.x (the single-tool Zones app) was open source under the MIT
-license; see [LICENSE](LICENSE) for how that history applies now.
+1. Download the current version from [lineup.caiano.com](https://lineup.caiano.com).
+2. Move Lineup to Applications and open it.
+3. Allow Accessibility access when macOS asks. Lineup needs it to inspect and move windows.
+4. If you enable Hyperkey, allow Input Monitoring when macOS asks. The other tools do not request
+   this permission.
 
 ## Build from source
 
 ```sh
-git clone <this repo> && cd lineup
-swift build                          # compiles all targets
-swift run lineup-tests               # dependency-free test suite (no Xcode/XCTest needed)
-./Scripts/setup-signing.sh           # one-time: stable signature so the macOS permission sticks
-./Scripts/build-app.sh ~/Applications
-open ~/Applications/Lineup.app
+git clone https://github.com/hcaiano/lineup.git
+cd lineup
+swift build
+swift run lineup-tests
 ```
 
-See [BUILDING.md](BUILDING.md) for the full project layout, packaging, notarization, and
-auto-update setup.
+Building needs the macOS 26 SDK. Command Line Tools 26 are enough; full Xcode is optional. See
+[BUILDING.md](BUILDING.md) to assemble the app, keep a stable local Accessibility grant, and
+understand the project layout.
 
-## Configuration
+## Contribute
 
-Settings live at `~/.config/lineup/config.json`, one envelope with a section per tool. Lineup 1.x's
-`~/.config/lineup/zones.json` is read once, on first launch of 2.0, to import an existing Zones
-layout; it is never written to or deleted by 2.0.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you report a bug or open a pull request. New features
+and behavior changes should start in [Discussions](https://github.com/hcaiano/lineup/discussions).
+
+## License
+
+Lineup is available under the [Apache License 2.0](LICENSE). Releases before 2.0.0 remain under
+their [MIT License](LICENSE-1.x).

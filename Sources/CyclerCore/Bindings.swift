@@ -116,7 +116,7 @@ public struct CyclerConfig: Codable, Equatable, Sendable {
     }
 
     /// Decode from raw JSON bytes. Throws on malformed JSON (the caller surfaces it and keeps an
-    /// empty config rather than clobbering the file — see Sources/cycler/main.swift).
+    /// empty config rather than clobbering the file — see Sources/AppCore/LegacyImport.swift).
     public static func decode(_ data: Data) throws -> CyclerConfig {
         try JSONDecoder().decode(CyclerConfig.self, from: data)
     }

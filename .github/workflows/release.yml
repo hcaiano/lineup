@@ -1,8 +1,7 @@
 name: Release
 
-# Hybrid, tag-triggered release. Push a `vX.Y.Z` tag and this builds the universal
-# app, signs it with the Developer ID cert, notarizes + staples the DMG with Apple,
-# and publishes a GitHub release with the DMG attached.
+# Dormant hybrid release workflow. If it is re-enabled, a `vX.Y.Z` tag builds the universal app,
+# signs it with Developer ID, notarizes and staples the app and DMG, and publishes a GitHub release.
 #
 # It deliberately STOPS before signing the Sparkle appcast: the EdDSA private key
 # (the auto-update root of trust) is kept off CI. After this workflow finishes, run
@@ -10,8 +9,8 @@ name: Release
 #
 #     ./Scripts/publish-appcast.sh <version>     # e.g. 1.8.1
 #
-# which downloads the notarized DMG this workflow released, EdDSA-signs the appcast,
-# and opens a PR to update web/appcast.xml (merging it auto-deploys the feed).
+# which downloads the notarized DMG this workflow released, EdDSA-signs the appcast, and opens a PR
+# with the feed and hosted DMG. Merge that PR, then deploy web/ manually.
 #
 # Required repo secrets (see RELEASING.md for how to set them):
 #   BUILD_CERTIFICATE_BASE64      base64 of the Developer ID Application .p12
@@ -43,12 +42,10 @@ concurrency:
 
 jobs:
   release:
-    # Disabled on phase9-docs / unified-app: Lineup 2.0 is a private, in-progress rewrite.
-    # This job would notarize and publish a PUBLIC GitHub release from unfinished work if a
-    # `vX.Y.Z` tag reached this branch. Re-enable by deleting this line once 2.0 is ready to
-    # ship publicly (see BUILDING.md and RELEASING.md).
-    if: false
-    runs-on: macos-14
+    # ENABLE_RELEASE_WORKFLOW is unset by default. Current releases stay on the trusted release Mac.
+    # See BUILDING.md and RELEASING.md before enabling it.
+    if: ${{ vars.ENABLE_RELEASE_WORKFLOW == 'true' }}
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -117,6 +114,7 @@ jobs:
           # The notary profile is in the throwaway keychain; tell notarize.sh to read from it.
           export NOTARY_KEYCHAIN="$KEYCHAIN_PATH"
           ./Scripts/build-app.sh dist
+          ./Scripts/notarize.sh "dist/Lineup.app" lineup-notary
           ./Scripts/make-dmg.sh dist
           ./Scripts/notarize.sh "dist/Lineup-${{ steps.ver.outputs.version }}.dmg" lineup-notary
 

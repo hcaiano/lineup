@@ -1,9 +1,8 @@
 import AppKit
 import Foundation
 
-/// The facts both Abouts show. One producer, so the AppKit window and the SwiftUI Settings pane
-/// cannot drift apart the way they had: after 2.0 became a private build this window still
-/// carried an open-source licence line and a source-repository link, and the pane did not.
+/// The facts both Abouts show. One producer keeps the AppKit window and SwiftUI Settings pane
+/// consistent.
 enum AboutFacts {
     /// Nil when the executable can't be dated (nothing to show is better than a wrong date).
     static func buildDateLine() -> String? {
@@ -18,7 +17,7 @@ enum AboutFacts {
         return "Built \(formatter.string(from: date))"
     }
 
-    /// No licence clause: Lineup 2.0 is proprietary. Kept byte-identical to the Settings pane's.
+    /// Kept byte-identical to the Settings pane's attribution line.
     static let copyright = "© 2026 Henrique Caiano. All rights reserved."
 }
 
@@ -59,7 +58,6 @@ private final class AppearanceLayerView: NSView {
 /// The menu bar's About window. Shows exactly what Settings › About shows — brand mark, version,
 /// build date, the product site — because a user can reach both and they must not disagree.
 ///
-/// No source-repository link and no open-source licence line: this branch is private.
 @MainActor
 final class AboutWindowController: NSObject, NSWindowDelegate {
     private static let shared = AboutWindowController()
