@@ -376,6 +376,7 @@ public enum TilesReducer {
             let destination = stacks[destinationIndex].address
             let epoch = takeFocusEpoch(&state)
             let selectsNewWindow = selectNewlyAdopted || snapshot.focused == entry.token
+            let focusesNewWindow = snapshot.focused == entry.token
             _ = stacks[destinationIndex].append(
                 entry.token,
                 selecting: selectsNewWindow,
@@ -398,7 +399,7 @@ public enum TilesReducer {
                 if stacks[destinationIndex].selected == entry.token {
                     effects.append(.raise(entry.token, mutationID))
                 }
-                if selectsNewWindow {
+                if focusesNewWindow {
                     effects.append(.focus(entry.token, mutationID))
                 }
             }

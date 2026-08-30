@@ -632,7 +632,7 @@ final class AXWindowSystem: TilesWindowSystem {
         let sizeSettable = settableObservation(window, kAXSizeAttribute)
         let minimizedSettable = settableObservation(window, kAXMinimizedAttribute)
         let hasUsableFrame = frame.map { $0.width > 0 && $0.height > 0 } == true
-        let fullScreen = bool(window, "AXFullScreen")
+        let fullScreen = fullScreenObservation(of: window)
         let complete = role != nil && subrole != nil && hasUsableFrame && minimized != nil &&
             fullScreen != nil && positionSettable != nil && sizeSettable != nil &&
             minimizedSettable != nil
@@ -677,10 +677,10 @@ final class AXWindowSystem: TilesWindowSystem {
                     row[kCGWindowName as String] as? String ?? "")
         }
 
-        // Build a bipartite graph and keep only forced one-to-one pairs.  Two
-        // same-frame windows with empty CG titles remain ambiguous and are
-        // therefore left unreachable until another observation disambiguates
-        // them. A candidate is never correlated to more than one AX entry.
+        // Build a bipartite graph. A balanced component with a perfect
+        // matching proves that all its AX entries are on the current Space,
+        // even when same-frame CG titles make the individual pairing
+        // ambiguous. Unbalanced components stay unreachable.
         let usable: [(entry: Entry, frame: CGRect)] = observations.compactMap { observation in
             guard let frame = observation.frame, !observation.minimized else { return nil }
             return (observation.entry, frame)
@@ -698,20 +698,9 @@ final class AXWindowSystem: TilesWindowSystem {
         }
         guard edges.contains(where: { !$0.isEmpty }) else { return [] }
 
-        // An AX entry is reachable only when it has one candidate and that CG
-        // candidate has one AX owner. A runtime UUID is not correlation evidence.
-        var candidateOwners = Array(repeating: [Int](), count: candidates.count)
-        for (entry, matches) in edges.enumerated() {
-            for candidate in matches { candidateOwners[candidate].append(entry) }
-        }
-        var result = Set<WindowToken>()
-        for entry in usable.indices where edges[entry].count == 1 {
-            let candidate = edges[entry][0]
-            if candidateOwners[candidate].count == 1 {
-                result.insert(usable[entry].entry.token)
-            }
-        }
-        return result
+        let reachableIndices = WindowCorrelation.reachableEntryIndices(
+            edges: edges, candidateCount: candidates.count)
+        return Set(reachableIndices.map { usable[$0].entry.token })
     }
 
     private func focusedToken() -> WindowToken? {
@@ -831,6 +820,17 @@ final class AXWindowSystem: TilesWindowSystem {
     private func bool(_ element: AXUIElement, _ attribute: String) -> Bool? {
         var raw: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success else { return nil }
+        return raw as? Bool
+    }
+
+    /// Some standard windows do not expose `AXFullScreen`. That is an
+    /// unsupported optional attribute, not evidence that the window is full
+    /// screen. Other AX failures remain incomplete so discovery can retry.
+    private func fullScreenObservation(of element: AXUIElement) -> Bool? {
+        var raw: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, "AXFullScreen" as CFString, &raw)
+        if error == .attributeUnsupported { return false }
+        guard error == .success else { return nil }
         return raw as? Bool
     }
 

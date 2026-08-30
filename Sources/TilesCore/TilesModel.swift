@@ -629,6 +629,89 @@ public struct WindowSnapshot: Equatable, Sendable {
     }
 }
 
+/// Correlates AX windows with the public CoreGraphics window list.
+///
+/// The graph is intentionally conservative: an AX entry is reachable only
+/// when its connected component has the same number of AX entries and CG
+/// candidates and a perfect matching.  In particular, a stack of same-app
+/// windows can produce an ambiguous all-to-all component when CG titles are
+/// empty.  That ambiguity does not identify a particular window, but the
+/// balanced component still proves that every entry is on the current Space.
+public enum WindowCorrelation {
+    public static func reachableEntryIndices(edges: [[Int]], candidateCount: Int) -> Set<Int> {
+        guard candidateCount > 0 else { return [] }
+
+        let normalized = edges.map { candidates in
+            Set(candidates.filter { (0..<candidateCount).contains($0) }).sorted()
+        }
+        var owners = Array(repeating: [Int](), count: candidateCount)
+        for (entry, candidates) in normalized.enumerated() {
+            for candidate in candidates { owners[candidate].append(entry) }
+        }
+
+        var visitedEntries = Set<Int>()
+        var visitedCandidates = Set<Int>()
+        var reachable = Set<Int>()
+
+        for start in normalized.indices where !normalized[start].isEmpty &&
+                !visitedEntries.contains(start) {
+            var componentEntries = [Int]()
+            var componentCandidates = [Int]()
+            var pendingEntries = [start]
+            var pendingCandidates = [Int]()
+            visitedEntries.insert(start)
+
+            while let entry = pendingEntries.popLast() {
+                componentEntries.append(entry)
+                for candidate in normalized[entry] where !visitedCandidates.contains(candidate) {
+                    visitedCandidates.insert(candidate)
+                    pendingCandidates.append(candidate)
+                }
+                while let candidate = pendingCandidates.popLast() {
+                    componentCandidates.append(candidate)
+                    for owner in owners[candidate] where !visitedEntries.contains(owner) {
+                        visitedEntries.insert(owner)
+                        pendingEntries.append(owner)
+                    }
+                }
+            }
+
+            guard componentEntries.count == componentCandidates.count else { continue }
+
+            var matchedEntries = Array(repeating: -1, count: candidateCount)
+            var matchingCount = 0
+            for entry in componentEntries {
+                var seenCandidates = Set<Int>()
+                if augment(entry, edges: normalized, seenCandidates: &seenCandidates,
+                           matchedEntries: &matchedEntries) {
+                    matchingCount += 1
+                }
+            }
+            if matchingCount == componentEntries.count {
+                reachable.formUnion(componentEntries)
+            }
+        }
+
+        return reachable
+    }
+
+    private static func augment(_ entry: Int, edges: [[Int]],
+                                seenCandidates: inout Set<Int>,
+                                matchedEntries: inout [Int]) -> Bool {
+        for candidate in edges[entry] where !seenCandidates.contains(candidate) {
+            seenCandidates.insert(candidate)
+            if matchedEntries[candidate] == -1 ||
+                    augment(matchedEntries[candidate], edges: edges,
+                            seenCandidates: &seenCandidates,
+                            matchedEntries: &matchedEntries) {
+                matchedEntries[candidate] = entry
+                return true
+            }
+        }
+        return false
+    }
+}
+
 public enum TileCycleDirection: Equatable, Sendable {
     case forward
     case reverse

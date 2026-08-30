@@ -375,8 +375,17 @@ func runTilesTests() throws {
               createdPlan.nextState.workspaces[.workspace1]?.screens["main"]?.first?.selected == created,
               "reducer: a new overflow window becomes the selected stack member")
         check(createdPlan.effects.contains { if case .raise(created, _) = $0 { return true }; return false } &&
-              createdPlan.effects.contains { if case .focus(created, _) = $0 { return true }; return false },
-              "reducer: a new overflow window is raised and focused")
+              !createdPlan.effects.contains { if case .focus(created, _) = $0 { return true }; return false },
+              "reducer: a background new overflow window is raised but not focused")
+
+        let focusedCreatedSnapshot = WindowSnapshot([
+            entry(first, x: 10), entry(second, x: 20), entry(created, x: 30)
+        ], focused: created)
+        let focusedCreatedPlan = TilesReducer.plan(state: adopted, event: .windowCreated(created),
+                                                   snapshot: focusedCreatedSnapshot, layouts: layouts)
+        check(focusedCreatedPlan.effects.contains { if case .raise(created, _) = $0 { return true }; return false } &&
+              focusedCreatedPlan.effects.contains { if case .focus(created, _) = $0 { return true }; return false },
+              "reducer: a focused new overflow window is raised and focused")
 
         let bestEffortCommitted = TilesReducer.commit(
             state: .empty, plan: adopt,
@@ -668,6 +677,21 @@ func runTilesTests() throws {
 
     // ---- settings and recovery schema safety ----
     do {
+        // AX/CG correlation must tolerate ambiguous same-frame stacks while
+        // still rejecting components that cannot account for every endpoint.
+        check(WindowCorrelation.reachableEntryIndices(edges: [[0], [1]], candidateCount: 2) == [0, 1],
+              "correlation: one-to-one components are reachable")
+        check(WindowCorrelation.reachableEntryIndices(edges: [[0, 1], [0, 1]], candidateCount: 2) == [0, 1],
+              "correlation: balanced ambiguous stacks are reachable")
+        check(WindowCorrelation.reachableEntryIndices(edges: [[0], [0]], candidateCount: 1).isEmpty,
+              "correlation: an unbalanced component is not reachable")
+        check(WindowCorrelation.reachableEntryIndices(
+            edges: [[99], [0, 1], [0, 1], [2]], candidateCount: 3) == [1, 2, 3],
+              "correlation: invalid indices are ignored and balanced components survive")
+        check(WindowCorrelation.reachableEntryIndices(
+            edges: [[0], [0], [0, 1, 2]], candidateCount: 3).isEmpty,
+              "correlation: equal-size components without a perfect matching are not reachable")
+
         let settings = TilesSettings(nextWorkspace: ShortcutBinding(action: "nextWorkspace",
                                                                       keyCode: 17, modifiers: 256))
         let data = try settings.encoded()

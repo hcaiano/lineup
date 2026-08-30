@@ -80,15 +80,19 @@ Sheets, dialogs, popovers, utility panels, Lineup windows, native Full Screen wi
 with incomplete AX support remain unmanaged. This is a fixed safety policy, not an exclusion UI.
 
 Tiles adopts only visible windows that public AX/CG correlation reports in the current native Space.
-Correlation uses PID, frame, title digest, and a deterministic ordinal; an ambiguous match is
-ineligible. After adoption, a retained minimized AX element remains a valid mutation target even
-though it is absent from the on-screen CG snapshot. This lets a destination workspace restore all
-of its Tiles-staged windows in one ordered plan. A non-minimized managed window that becomes
-unreachable keeps its assignment and visibility state, but effects skip it until it is reachable
-again. A native Space change, detected from application activation or snapshot divergence, triggers
-one full reconciliation and never a placement mutation by itself. Tiles does not counteract a
-native Space switch that macOS performs when it deminimizes a Tiles-staged window. The intended
-workflow is to use Tiles workspaces instead of changing native Spaces while Tiles is active.
+Correlation builds a PID/frame/title bipartite graph. A balanced component with a perfect matching
+proves group reachability even when empty CG titles make the individual pairing ambiguous, as can
+happen when a stack puts several windows of one app on the same frame. An unbalanced component is
+ineligible. An unsupported optional `AXFullScreen` attribute counts as not Full Screen; other read
+failures keep eligibility incomplete. After adoption, a retained minimized AX element remains a
+valid mutation target even though it is absent from the on-screen CG snapshot. This lets a
+destination workspace restore all of its Tiles-staged windows in one ordered plan. A non-minimized
+managed window that becomes unreachable keeps its assignment and visibility state, but effects skip
+it until it is reachable again. A native Space change, detected from application activation or
+snapshot divergence, triggers one full reconciliation and never a placement mutation by itself.
+Tiles does not counteract a native Space switch that macOS performs when it deminimizes a
+Tiles-staged window. The intended workflow is to use Tiles workspaces instead of changing native
+Spaces while Tiles is active.
 
 ## 4. Caller flows
 

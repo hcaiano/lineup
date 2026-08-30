@@ -112,11 +112,10 @@ func runTilesRuntimeTests() throws {
           "tiles runtime: retained minimized windows remain valid bulk mutation targets")
     check(!axSource.contains("CGS") && !axSource.contains("SkyLight"),
           "tiles runtime: no private Space API is present")
-    check(axSource.contains("var candidateOwners") &&
-          axSource.contains("edges[entry].count == 1") &&
-          axSource.contains("candidateOwners[candidate].count == 1") &&
+    check(axSource.contains("WindowCorrelation.reachableEntryIndices") &&
+          axSource.contains("candidateCount: candidates.count") &&
           !axSource.contains("entry.token.rawValue.uuidString"),
-          "tiles runtime: ambiguous AX/CG matches stay unreachable without identity tie-breaks")
+          "tiles runtime: balanced AX/CG stack components stay reachable without identity tie-breaks")
     check(axSource.contains("candidateEntries[index].entry"),
           "tiles runtime: recovery keeps the matcher candidate-to-entry mapping")
     check(axSource.contains("pendingGoneTokens[entry.token] = entry.pid"),
@@ -130,7 +129,8 @@ func runTilesRuntimeTests() throws {
           axSource.contains("initiallyMinimized") &&
           axSource.contains("let hasUsableFrame") &&
           axSource.contains("hasUsableFrame && minimized != nil") &&
-          axSource.contains("let fullScreen = bool(window, \"AXFullScreen\")") &&
+          axSource.contains("let fullScreen = fullScreenObservation(of: window)") &&
+          axSource.contains("if error == .attributeUnsupported { return false }") &&
           axSource.contains("fullScreen == false"),
           "tiles runtime: incomplete initial eligibility can settle without losing minimized state")
     check(reducerSource.contains("!entry.isMinimized") &&
