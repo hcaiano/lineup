@@ -6,10 +6,11 @@ import Foundation
 public struct HyperKeySettings: Codable, Equatable, Sendable {
     public var enabled: Bool
     public var triggerKey: TriggerKey
-    /// `true` means Cycler's default Hyper (control+option+shift+command); `false` excludes Shift.
+    /// `true` includes Shift in the emitted Hyper modifiers; `false` leaves physical Shift
+    /// available for Lineup's move and reverse shortcuts.
     public var includeShift: Bool
 
-    public init(enabled: Bool = false, triggerKey: TriggerKey = .capsLock, includeShift: Bool = true) {
+    public init(enabled: Bool = false, triggerKey: TriggerKey = .capsLock, includeShift: Bool = false) {
         self.enabled = enabled
         self.triggerKey = triggerKey
         self.includeShift = includeShift
@@ -24,9 +25,12 @@ public struct HyperKeySettings: Codable, Equatable, Sendable {
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         let decodedTrigger = try container.decodeIfPresent(TriggerKey.self, forKey: .triggerKey) ?? .capsLock
         triggerKey = TriggerKey.pickerCases.contains(decodedTrigger) ? decodedTrigger : .capsLock
+        // `includeShift` was added to the standalone Cycler config after its original Hyperkey
+        // format. Preserve that format's full-Hyper behavior when an old object omits the field;
+        // newly created settings use the compact default from `init` above.
         includeShift = try container.decodeIfPresent(Bool.self, forKey: .includeShift) ?? true
     }
 
-    /// The default for a config that has never enabled HyperKey: off, Caps Lock, full Hyper.
+    /// The default for a config that has never enabled Hyperkey: off, Caps Lock, no Shift.
     public static let disabled = HyperKeySettings()
 }

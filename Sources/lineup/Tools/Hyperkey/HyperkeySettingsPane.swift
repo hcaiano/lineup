@@ -71,7 +71,7 @@ final class HyperkeyPaneModel: ObservableObject {
     }
 
     var includeShift: Binding<Bool> {
-        Binding(get: { [weak self] in self?.settings.includeShift ?? true },
+        Binding(get: { [weak self] in self?.settings.includeShift ?? false },
                 set: { [weak self] value in self?.edit { $0.setIncludeShift(value) } })
     }
 
@@ -102,7 +102,9 @@ final class HyperkeyPaneModel: ObservableObject {
     }
 
     var shortcutHint: String {
-        settings.includeShift ? "Sends ⌃⌥⇧⌘ while held." : "Sends ⌃⌥⌘ while held; a physical ⇧ still passes through."
+        settings.includeShift
+            ? "Sends ⌃⌥⇧⌘ while held."
+            : "Sends ⌃⌥⌘ while held; physical ⇧ stays available for move/reverse shortcuts."
     }
 
     /// The standing fact about the chosen trigger, if it has one. Shown as the section's caption
@@ -235,9 +237,8 @@ struct HyperkeySettingsPane: View {
 
     // MARK: - Chrome
 
-    /// Plan §6.4 — the one genuinely load-bearing cross-tool message in the suite: Zones' defaults
-    /// and most Cycler bindings are ⌃⌥⇧⌘, and with Hyperkey off the user needs a hyper source from
-    /// somewhere.
+    /// Plan §6.4 — the one genuinely load-bearing cross-tool message in the suite: with the
+    /// compact Hyperkey default, physical Shift stays available for move and reverse shortcuts.
     ///
     /// Drawn as a caption, not as a card. It was the only card in the whole window, and its fill
     /// (`textBackgroundColor` at 50%) measured a 1.000 contrast ratio against the light window
@@ -245,8 +246,8 @@ struct HyperkeySettingsPane: View {
     /// standing explanation in Settings uses.
     private var hint: some View {
         SettingsCaption(
-            text: "Zones and Cycler shortcuts use ⌃⌥⇧⌘. Turn Hyperkey on to get that from Caps "
-                + "Lock without Karabiner or Raycast.",
+            text: "Lineup leaves ⇧ available for move/reverse shortcuts. Turn Hyperkey on to get "
+                + "⌃⌥⌘ from Caps Lock without Karabiner or Raycast.",
             systemImage: "lightbulb")
     }
 }

@@ -94,7 +94,17 @@ private func runHyperkeyModelTests() throws {
         check(legacy.hyperKey == .disabled, "missing hyperKey decodes to .disabled")
         check(legacy.hyperKey.enabled == false, "default hyperKey is off")
         check(legacy.hyperKey.triggerKey == .capsLock, "default trigger is Caps Lock")
-        check(legacy.hyperKey.includeShift == true, "default includeShift is true")
+        check(legacy.hyperKey.includeShift == false, "default includeShift is false")
+        let fresh = HyperKeySettings()
+        check(fresh.includeShift == false, "new Hyperkey settings leave Shift available by default")
+    }
+    do {
+        // The legacy object predates includeShift. Keep its established full-Hyper behavior when
+        // that field is absent; explicit true and false values remain covered below.
+        let legacy = try CyclerConfig.decode(Data(
+            #"{"bindings":[],"hyperKey":{"enabled":true,"triggerKey":"capsLock"}}"#.utf8))
+        check(legacy.hyperKey.includeShift == true,
+              "legacy Hyperkey without includeShift keeps the full-Hyper behavior")
     }
     do {
         // A real binding file from before this change (only the legacy singular key) still decodes,
@@ -395,8 +405,8 @@ private func runHyperkeySourceScanTests() throws {
           "HyperkeyTool is registered by the shell")
 
     // ---- The pane (plan §6.4 + the recovery affordance) ----
-    check(pane.contains("Zones and Cycler shortcuts use ⌃⌥⇧⌘."),
-          "the Hyperkey pane carries the cross-tool hint")
+    check(pane.contains("Lineup leaves ⇧ available for move/reverse shortcuts."),
+          "the Hyperkey pane explains that Shift remains available for move and reverse shortcuts")
     check(pane.contains("TriggerKey.pickerCases"), "the pane offers the trigger picker")
     check(pane.contains("model.includeShift"), "the pane offers the includeShift toggle")
     check(pane.contains("Restore Caps Lock"), "the pane offers the Caps Lock recovery button")
