@@ -756,6 +756,17 @@ private func runReleaseToolingTests() throws {
             && buildApp.contains("LINEUP_ALLOW_DIRTY=1")
             && buildApp.contains("local Nightly bundle tests"),
           "Nightly bundles embed a source commit only from a clean checkout")
+    if let frameworkCopy = buildApp.range(of: "ditto \"${SPARKLE_FW}\""),
+       let finalValidation = buildApp.range(of: "validate_source_snapshot \"bundle assembly\""),
+       let markerWrite = buildApp.range(of: "Add :LineupSourceCommit"),
+       let signingProbe = buildApp.range(of: "PROBE=\"${APP}/Contents/MacOS/${EXEC_NAME}\"") {
+        check(frameworkCopy.lowerBound < finalValidation.lowerBound
+                && finalValidation.lowerBound < markerWrite.lowerBound
+                && markerWrite.lowerBound < signingProbe.lowerBound,
+              "Nightly source validation and marker writing follow all bundle copies and precede signing")
+    } else {
+        check(false, "Nightly source validation and marker writing follow all bundle copies and precede signing")
+    }
     check(nightly.contains("gh api") && nightly.contains("--paginate --slurp")
             && nightly.contains("prerelease")
             && nightly.contains("releases/tags/${TAG}")

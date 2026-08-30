@@ -183,20 +183,6 @@ if [ -n "${BUILD_OVERRIDE}" ]; then
 fi
 /usr/libexec/PlistBuddy -c "Set :LineupBuildChannel ${BUILD_CHANNEL}" \
   "${APP}/Contents/Info.plist"
-if [ "${BUILD_CHANNEL}" = "nightly" ]; then
-  validate_source_snapshot "bundle assembly"
-  if [ "${SOURCE_DIRTY}" -eq 1 ]; then
-    # A dirty test bundle must remain useful for local inspection but can never pass the
-    # Nightly appcast proof. The prefix is deliberately not a Git SHA; the appcast rejects it.
-    SOURCE_MARKER="dirty-${SOURCE_SHA}"
-    /usr/libexec/PlistBuddy -c "Add :LineupSourceDirty bool true" \
-      "${APP}/Contents/Info.plist"
-  else
-    SOURCE_MARKER="${SOURCE_SHA}"
-  fi
-  /usr/libexec/PlistBuddy -c "Add :LineupSourceCommit string ${SOURCE_MARKER}" \
-    "${APP}/Contents/Info.plist"
-fi
 
 # Fail closed if the real Sparkle public key was never filled in: a placeholder SUPublicEDKey
 # ships an app that can never validate an update (users would have to reinstall by hand).
@@ -232,6 +218,23 @@ SPARKLE_FW="${SPARKLE_SEARCH_DIR}/Sparkle.framework"
 [ -d "${SPARKLE_FW}" ] || { echo "error: Sparkle.framework not found; run 'swift build -c release' first." >&2; exit 1; }
 mkdir -p "${APP}/Contents/Frameworks"
 ditto "${SPARKLE_FW}" "${APP}/Contents/Frameworks/Sparkle.framework"
+
+if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  # Recheck after every bundle input is copied and immediately before the first signing probe.
+  # This closes the source-snapshot race across the whole source-sensitive assembly window.
+  validate_source_snapshot "bundle assembly"
+  if [ "${SOURCE_DIRTY}" -eq 1 ]; then
+    # A dirty test bundle must remain useful for local inspection but can never pass the
+    # Nightly appcast proof. The prefix is deliberately not a Git SHA; the appcast rejects it.
+    SOURCE_MARKER="dirty-${SOURCE_SHA}"
+    /usr/libexec/PlistBuddy -c "Add :LineupSourceDirty bool true" \
+      "${APP}/Contents/Info.plist"
+  else
+    SOURCE_MARKER="${SOURCE_SHA}"
+  fi
+  /usr/libexec/PlistBuddy -c "Add :LineupSourceCommit string ${SOURCE_MARKER}" \
+    "${APP}/Contents/Info.plist"
+fi
 
 # Resolve the signing identity by ATTEMPTING the sign on the bundled executable (a probe that
 # proves the key is actually usable), in order:
