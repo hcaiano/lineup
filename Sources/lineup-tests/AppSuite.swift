@@ -2536,14 +2536,23 @@ private func runTilesShellContractTests() throws {
     let tilesPane = source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
     check(tilesTool.contains("func hyperkeyModeDidChange()")
             && tilesTool.contains("if runtimeReady { registerHotkeys() }")
-            && tilesTool.contains("workspaceMoveShortcutText(for workspace: Int)"),
+            && tilesTool.contains("enum WorkspaceMoveShortcutState: Equatable")
+            && tilesTool.contains("workspaceMoveShortcutState(for workspace: Int)")
+            && tilesTool.contains("return .workspaceShortcutMissing")
+            && tilesTool.contains("return .unavailableWithIncludeShift")
+            && tilesTool.contains("return .shortcut(ShortcutKit.display("),
           "Tiles reloads atomically adapted shortcuts and exposes derived workspace moves")
     check(tilesPane.contains("workspaceMoveShortcutRow")
             && tilesPane.contains("Move Window to Workspace")
+            && tilesPane.contains("Set Workspace \\(workspace) first")
+            && tilesPane.contains("Unavailable with Include Shift")
+            && tilesPane.contains("Unavailable until Workspace \\(workspace) has a shortcut")
+            && tilesPane.contains("Unavailable while Hyperkey includes Shift")
+            && !tilesPane.contains("shortcut.isEmpty")
             && tilesPane.contains("shortcutRow(.nextWindow)")
             && !tilesPane.contains("shortcutRow(.nextWorkspace)")
             && !tilesPane.contains("shortcutRow(.moveWindowToNextWorkspace)"),
-          "Tiles shows derived numbered moves and omits unfinished relative-workspace rows")
+          "Tiles distinguishes missing and full-Hyper workspace moves and omits unfinished relative rows")
     check(tilesTool.contains("private func menuTitle(")
             && tilesTool.contains("addingShift: true")
             && tilesTool.contains("The Carbon hotkey remains the single dispatcher"),

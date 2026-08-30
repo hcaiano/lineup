@@ -409,6 +409,12 @@ private func runHyperkeySourceScanTests() throws {
             && tool.contains("settings = previous")
             && tool.contains("apply()"),
           "Include Shift delegates the atomic sibling update and rolls the visible setting back on failure")
+    check(tool.contains("try persistResetSettings()")
+            && tool.contains("private func persistResetSettings() throws")
+            && tool.contains("settings.enabled = isRunning")
+            && tool.contains("fullHyperFallback.includeShift = true")
+            && tool.contains("try persistIncludeShiftChange(fullHyperFallback, settings)"),
+          "an unreadable Hyperkey reset atomically adapts only exact legacy full-Hyper presets")
     check(tool.contains("system-wide ⌃⌥⌘ modifier; Shift is optional")
             && !tool.contains("system-wide ⌃⌥⇧⌘ modifier"),
           "Hyperkey's user-facing summary matches the compact default")

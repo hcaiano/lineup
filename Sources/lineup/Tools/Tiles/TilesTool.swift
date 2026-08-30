@@ -1169,13 +1169,23 @@ final class TilesTool: Tool {
         return action.binding(settings)
     }
 
-    func workspaceMoveShortcutText(for workspace: Int) -> String {
+    enum WorkspaceMoveShortcutState: Equatable {
+        case shortcut(String)
+        case workspaceShortcutMissing
+        case unavailableWithIncludeShift
+    }
+
+    func workspaceMoveShortcutState(for workspace: Int) -> WorkspaceMoveShortcutState {
         guard let action = Action.allCases.first(where: { $0.workspaceNumber == workspace }),
-              let binding = action.binding(settings),
-              binding.modifiers & DragSnapModifierMask.shift == 0 else { return "" }
-        return ShortcutKit.display(
+              let binding = action.binding(settings) else {
+            return .workspaceShortcutMissing
+        }
+        guard binding.modifiers & DragSnapModifierMask.shift == 0 else {
+            return .unavailableWithIncludeShift
+        }
+        return .shortcut(ShortcutKit.display(
             keyCode: binding.keyCode,
-            modifiers: UInt32(truncatingIfNeeded: binding.modifiers) | UInt32(shiftKey))
+            modifiers: UInt32(truncatingIfNeeded: binding.modifiers) | UInt32(shiftKey)))
     }
 
     /// Refresh the in-memory recommendation before the first explicit edit. No config write occurs

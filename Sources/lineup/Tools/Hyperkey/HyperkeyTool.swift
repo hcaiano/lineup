@@ -246,7 +246,7 @@ final class HyperkeyTool: Tool {
             }
             sectionLoadError = nil
             settings = .disabled
-            try save()
+            try persistResetSettings()
             apply()
         } catch {
             sectionLoadError = sectionLoadError ?? "\(error)"
@@ -255,6 +255,21 @@ final class HyperkeyTool: Tool {
         services.refreshMenu()
         services.refreshSettings()
         paneModel.refresh()
+    }
+
+    /// An unreadable blob has no trustworthy previous mode. Compare sibling presets against the
+    /// legacy full-Hyper default before resetting to compact Hyper: exact full-Hyper presets can
+    /// adapt, while compact, customized and legacy-nil presets remain unchanged. Production uses
+    /// the shell's atomic envelope write; independently constructed tools keep the local fallback.
+    private func persistResetSettings() throws {
+        settings.enabled = isRunning
+        guard let persistIncludeShiftChange else {
+            try save()
+            return
+        }
+        var fullHyperFallback = settings
+        fullHyperFallback.includeShift = true
+        try persistIncludeShiftChange(fullHyperFallback, settings)
     }
 
     // MARK: - Settings edits (from the pane; valid whether or not the tool is running)

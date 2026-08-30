@@ -120,8 +120,8 @@ final class TilesSettingsModel: ObservableObject {
         return ShortcutKit.display(keyCode: binding.keyCode, modifiers: binding.modifiers)
     }
 
-    func workspaceMoveShortcutText(for workspace: Int) -> String {
-        tool?.workspaceMoveShortcutText(for: workspace) ?? ""
+    func workspaceMoveShortcutState(for workspace: Int) -> TilesTool.WorkspaceMoveShortcutState {
+        tool?.workspaceMoveShortcutState(for: workspace) ?? .workspaceShortcutMissing
     }
 
     func showAlert(title: String, message: String) {
@@ -320,18 +320,24 @@ private struct TilesSettingsPaneBody: View {
     @ViewBuilder
     private func workspaceMoveShortcutRow(_ workspace: Int) -> some View {
         let title = "Move Window to Workspace \(workspace)"
-        let shortcut = model.workspaceMoveShortcutText(for: workspace)
+        let state = model.workspaceMoveShortcutState(for: workspace)
         HStack(spacing: 12) {
             Text(title)
             Spacer(minLength: 18)
             Group {
-                if shortcut.isEmpty {
+                switch state {
+                case .shortcut(let shortcut):
+                    KeyCapRow(display: shortcut)
+                case .workspaceShortcutMissing:
+                    Text("Set Workspace \(workspace) first")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                case .unavailableWithIncludeShift:
                     Text("Unavailable with Include Shift")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                } else {
-                    KeyCapRow(display: shortcut)
                 }
             }
             .frame(minWidth: 164)
@@ -343,8 +349,21 @@ private struct TilesSettingsPaneBody: View {
         .padding(.vertical, 3)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(shortcut.isEmpty ? "Unavailable while Hyperkey includes Shift" : shortcut)
+        .accessibilityValue(workspaceMoveAccessibilityValue(state, workspace: workspace))
         Divider()
+    }
+
+    private func workspaceMoveAccessibilityValue(
+        _ state: TilesTool.WorkspaceMoveShortcutState,
+        workspace: Int
+    ) -> String {
+        switch state {
+        case .shortcut(let shortcut): return shortcut
+        case .workspaceShortcutMissing:
+            return "Unavailable until Workspace \(workspace) has a shortcut"
+        case .unavailableWithIncludeShift:
+            return "Unavailable while Hyperkey includes Shift"
+        }
     }
 
     private func record(_ action: String) {
