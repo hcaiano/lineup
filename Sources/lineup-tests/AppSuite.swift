@@ -1385,7 +1385,7 @@ private func runOnboardingTests() throws {
     check(addButtons == 2,
           "the Cycler pane declares the Add control twice — empty state and list footer — and shows exactly one at a time (got \(addButtons))")
     if let empty = cyclerPane.range(of: "if model.rows.isEmpty {"),
-       let footer = cyclerPane.range(of: "Add ⇧ to a shortcut to cycle backwards.") {
+       let footer = cyclerPane.range(of: "Use letters for app groups. Tiles uses 1–4 for workspaces. Add ⇧ to cycle backwards.") {
         check(empty.lowerBound < footer.lowerBound,
               "the list footer is on the non-empty branch, below the empty state")
     } else {
@@ -1395,6 +1395,8 @@ private func runOnboardingTests() throws {
           "the Cycler pane's loose instruction paragraph is gone — the hero summary carries it")
     check(!cyclerPane.contains("Use one app to cycle its windows, or add several apps to cycle between them. Add"),
           "the tripled guidance sentence is not repeated in the pane body")
+    check(cyclerPane.contains("Add one or several apps to a letter. Tiles uses 1–4 for workspaces."),
+          "the Cycler empty state teaches the shared letters-versus-workspaces shortcut model")
 
     let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
     check(zonesPane.contains("caption: \"Click a shortcut, then press a key combo."),

@@ -406,7 +406,7 @@ private struct CyclerSettingsPaneBody: View {
                         // it describes instead of floating in a footer bar.
                         SettingsSectionView(
                             "Shortcuts",
-                            caption: "Add ⇧ to a shortcut to cycle backwards.") {
+                            caption: "Use letters for app groups. Tiles uses 1–4 for workspaces. Add ⇧ to cycle backwards.") {
                             ForEach(model.rows) { row in
                                 VStack(spacing: 0) {
                                     CyclerBindingRow(row: row, model: model, recorder: recorder)
@@ -710,7 +710,7 @@ private struct CyclerEmptyState: View {
         VStack(spacing: 12) {
             Image(systemName: "command").font(.system(size: 40)).foregroundStyle(.tertiary)
             Text("No shortcuts yet").font(.system(size: 17, weight: .semibold))
-            Text("Add one app to cycle its windows, or add several apps to cycle between them.")
+            Text("Add one or several apps to a letter. Tiles uses 1–4 for workspaces.")
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 340)
             Button(action: onAdd) { Label("Add Shortcut", systemImage: "plus") }

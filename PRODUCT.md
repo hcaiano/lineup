@@ -67,9 +67,12 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 - Zones quick-action arrows use Hyper+arrows. Fresh defaults follow Hyperkey mode (`6400` when
   Include Shift is off, `6912` when it is on); existing full-Hyper bindings require physical
   Shift in the compact mode and are never rewritten. A stored legacy Zones section with no
-  shortcut fields keeps its historical full-Hyper defaults. Tiles H/J/K/L navigate focus between tiles.
+  shortcut fields keeps its historical full-Hyper defaults. Tiles H/J/K/L navigate focus between
+  tiles.
 - Cycler receives no new app bindings; H/J/K/L remain the recommended Tiles focus letters and
-  existing Cycler rows keep their explicit conflicts.
+  existing Cycler rows keep their explicit conflicts. The shared shortcut vocabulary is: numbers
+  for Tiles workspaces, letters for Cycler app groups, H/J/K/L for tile focus, arrows for Zones,
+  and physical Shift for move or reverse actions.
 - The full agreed behavior and safety gates are in `docs/tiles-implementation-plan.md`.
 
 ## Accessibility & Inclusion
