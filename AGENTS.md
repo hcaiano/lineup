@@ -6,7 +6,7 @@ independently:
 - **Zones** arranges windows in per-screen layouts.
 - **Tiles** automatically places windows into Zones, with workspaces and stacks.
 - **Cycler** moves through apps and windows with global shortcuts.
-- **Hyperkey** maps one physical key to Control + Option + Shift + Command.
+- **Hyperkey** maps one physical key to Control + Option + Command, with optional Shift.
 
 Read [PRODUCT.md](PRODUCT.md) before changing user-visible behavior or design. Read
 [BUILDING.md](BUILDING.md) for build, package, and architecture details. Read

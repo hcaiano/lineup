@@ -197,6 +197,17 @@ final class ZonesTool: Tool {
         }
     }
 
+    /// The shell calls this after one atomic Include Shift write. Reloading is safe for both
+    /// paths: a fresh section recomputes its in-memory preset from the new mode, while a stored
+    /// section reads either the atomically adapted preset or the user's unchanged shortcuts.
+    func hyperkeyModeDidChange() {
+        reloadConfig()
+        if isRunning { registerHotkeys() }
+        services?.refreshMenu()
+        services?.refreshSettings()
+        settingsModel?.refresh()
+    }
+
     /// Recovery from `.sectionUnreadable`: preserve the rejected blob FIRST, and abort if that
     /// fails — exactly 1.x's reset discipline, so a bad section is never silently destroyed.
     private func resetSection() {

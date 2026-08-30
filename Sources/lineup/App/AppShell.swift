@@ -4,6 +4,7 @@ import ApplicationServices
 import HyperkeyCore
 import os
 import Sparkle
+import TilesCore
 import ZonesCore
 
 /// The one `NSApplicationDelegate`.
@@ -119,7 +120,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 self?.currentHyperkeyIncludesShift() ?? HyperKeySettings().includeShift
             }))
         registry.register(CyclerTool())
-        registry.register(HyperkeyTool())
+        registry.register(HyperkeyTool(persistIncludeShiftChange: { [unowned self] previous, updated in
+            try self.persistHyperkeyIncludeShiftChange(from: previous, to: updated)
+        }))
         registry.startEnabledTools()
         statusItem.refresh()
 
@@ -164,11 +167,39 @@ final class AppShell: NSObject, NSApplicationDelegate {
             name: NSApplication.didBecomeActiveNotification, object: nil)
     }
 
-    /// Read-only shell seam for Tiles' first-use/reset shortcut preset. Hyperkey remains the owner
-    /// of its settings; Tiles never receives a sibling config scope or writes this value back.
+    /// Read-only shell seam for Tiles' and Zones' adaptive shortcut presets. Hyperkey remains the
+    /// owner of its settings; neither sibling receives a Hyperkey config scope.
     private func currentHyperkeyIncludesShift() -> Bool {
         (try? store.config.settings(HyperKeySettings.self, for: .hyperkey))?.includeShift
             ?? HyperKeySettings().includeShift
+    }
+
+    /// Include Shift changes which modifier mask the physical Hyper key emits. Commit that change
+    /// together with any still-untouched adaptive presets, so a disk error cannot leave Hyperkey
+    /// and its recommended shortcuts in different modes. Customized and legacy shortcuts stay
+    /// byte-for-byte unchanged.
+    private func persistHyperkeyIncludeShiftChange(from previous: HyperKeySettings,
+                                                   to updated: HyperKeySettings) throws {
+        try store.update { config in
+            try config.setSettings(updated, for: .hyperkey)
+
+            if var zones = try config.settings(LineupConfig.self, for: .zones),
+               zones.shortcuts == ShortcutKit.zonesDefaults(includeShift: previous.includeShift) {
+                zones.shortcuts = ShortcutKit.zonesDefaults(includeShift: updated.includeShift)
+                try zones.validate()
+                try config.setSettings(zones, for: .zones)
+            }
+
+            if let tiles = try config.settings(TilesSettings.self, for: .tiles),
+               let adapted = ShortcutKit.adaptingTilesDefaults(
+                   tiles, from: previous.includeShift, to: updated.includeShift) {
+                try adapted.validate()
+                try config.setSettings(adapted, for: .tiles)
+            }
+        }
+
+        (registry.tool(.zones) as? ZonesTool)?.hyperkeyModeDidChange()
+        (registry.tool(.tiles) as? TilesTool)?.hyperkeyModeDidChange()
     }
 
     // MARK: - Legacy import

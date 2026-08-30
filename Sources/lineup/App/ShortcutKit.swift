@@ -112,6 +112,32 @@ enum ShortcutKit {
             toggleTiled: binding("toggleTiled", kVK_Space, base))
     }
 
+    /// Rebase an untouched Tiles preset when Hyperkey changes its emitted modifier mask. Spacing
+    /// is independent user state and stays unchanged. One customized or cleared shortcut makes
+    /// the whole set user-owned, so this returns nil and leaves every row alone.
+    static func adaptingTilesDefaults(_ source: TilesSettings,
+                                      from oldIncludeShift: Bool,
+                                      to newIncludeShift: Bool) -> TilesSettings? {
+        let old = tilesDefaults(includeShift: oldIncludeShift)
+        guard tilesShortcutKeyPaths.allSatisfy({ source[keyPath: $0] == old[keyPath: $0] }) else {
+            return nil
+        }
+        let fresh = tilesDefaults(includeShift: newIncludeShift)
+        var adapted = source
+        for keyPath in tilesShortcutKeyPaths {
+            adapted[keyPath: keyPath] = fresh[keyPath: keyPath]
+        }
+        return adapted
+    }
+
+    private static let tilesShortcutKeyPaths: [WritableKeyPath<TilesSettings, ShortcutBinding?>] = [
+        \.workspace1, \.workspace2, \.workspace3, \.workspace4,
+        \.nextWorkspace, \.nextWindow, \.moveWindowToNextWorkspace,
+        \.focusTileLeft, \.focusTileRight, \.focusTileUp, \.focusTileDown,
+        \.moveWindowLeft, \.moveWindowRight, \.moveWindowUp, \.moveWindowDown,
+        \.toggleSplitOrientation, \.toggleTiled,
+    ]
+
     /// `Int` form, for the Zones shortcut model and the drag-snap masks.
     static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> Int {
         Int(carbonModifierMask(from: flags))

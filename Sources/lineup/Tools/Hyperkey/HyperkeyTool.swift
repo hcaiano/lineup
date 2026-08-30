@@ -4,8 +4,8 @@ import HyperkeyCore
 import SwiftUI
 import os
 
-/// The Hyperkey tool: turns one key into a system-wide ⌃⌥⇧⌘ modifier, so Lineup's own shortcuts
-/// (and everyone else's hyper-based ones) work without Karabiner or Raycast.
+/// The Hyperkey tool: turns one key into a system-wide ⌃⌥⌘ modifier, with optional Shift, so
+/// Lineup's own shortcuts (and everyone else's hyper-based ones) work without Karabiner or Raycast.
 ///
 /// Off by default, and it is the only tool that needs Input Monitoring — which is requested
 /// LAZILY, on the first enable, never at launch. `HyperKeyController.ensureListenEventAccess()`
@@ -21,7 +21,7 @@ import os
 final class HyperkeyTool: Tool {
     let id = ToolID.hyperkey
     let displayName = "Hyperkey"
-    let summary = "Turn one key into a system-wide ⌃⌥⇧⌘ modifier."
+    let summary = "Turn one key into a system-wide ⌃⌥⌘ modifier; Shift is optional."
     let iconSymbol = "capslock"
     let requiredPermissions: Set<Permission> = [.inputMonitoring]
     /// A silent auto-update must never spontaneously grab the user's Caps Lock.
@@ -35,6 +35,10 @@ final class HyperkeyTool: Tool {
     private(set) var sectionLoadError: String?
 
     private let controller = HyperKeyController()
+    /// The shell owns the one atomic config envelope, so an Include Shift edit can update an
+    /// untouched Zones/Tiles preset in the same write as Hyperkey. The default keeps the tool
+    /// independently constructible; production always supplies the coordinator.
+    private let persistIncludeShiftChange: ((HyperKeySettings, HyperKeySettings) throws -> Void)?
     private var log = Logger(subsystem: Product.logSubsystem, category: "hyperkey-tool")
     /// Handed over at REGISTRATION and kept for the whole process lifetime, `stop()` included: the
     /// pane is rendered even when the tool is off, and picking a trigger before turning Hyperkey on
@@ -54,6 +58,10 @@ final class HyperkeyTool: Tool {
     private var lastOrphanProbe: Date?
 
     private lazy var paneModel = HyperkeyPaneModel(tool: self)
+
+    init(persistIncludeShiftChange: ((HyperKeySettings, HyperKeySettings) throws -> Void)? = nil) {
+        self.persistIncludeShiftChange = persistIncludeShiftChange
+    }
 
     // MARK: - Lifecycle
 
@@ -290,9 +298,27 @@ final class HyperkeyTool: Tool {
         guard settings.includeShift != includeShift else { return }
         let previous = settings
         settings.includeShift = includeShift
-        guard persist(rollingBackTo: previous) else { return }
+        guard persistIncludeShift(rollingBackTo: previous) else { return }
         apply()
         paneModel.refresh()
+    }
+
+    /// Include Shift can change the physical meaning of every recommended shortcut. Production
+    /// delegates this one edit to the shell so Hyperkey and untouched sibling presets commit as a
+    /// single envelope write; a failed write rolls the visible toggle back before `apply()`.
+    private func persistIncludeShift(rollingBackTo previous: HyperKeySettings) -> Bool {
+        guard let persistIncludeShiftChange else { return persist(rollingBackTo: previous) }
+        do {
+            try persistIncludeShiftChange(previous, settings)
+            saveError = nil
+            return true
+        } catch {
+            settings = previous
+            saveError = error.localizedDescription
+            log.error("could not save Include Shift and adaptive shortcuts: \(error, privacy: .public)")
+            paneModel.refresh()
+            return false
+        }
     }
 
     /// Persist an edit, or put `settings` back exactly as it was and record why.

@@ -120,6 +120,10 @@ final class TilesSettingsModel: ObservableObject {
         return ShortcutKit.display(keyCode: binding.keyCode, modifiers: binding.modifiers)
     }
 
+    func workspaceMoveShortcutText(for workspace: Int) -> String {
+        tool?.workspaceMoveShortcutText(for: workspace) ?? ""
+    }
+
     func showAlert(title: String, message: String) {
         alert = AlertItem(title: title, message: message)
     }
@@ -297,9 +301,50 @@ private struct TilesSettingsPaneBody: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
-        ForEach(TilesTool.Action.allCases.filter { $0.group == group }, id: \.self) { row in
-            shortcutRow(row)
+        switch group {
+        case .workspaceAndStacks:
+            ForEach(TilesTool.Action.allCases.filter { $0.workspaceNumber != nil }, id: \.self) { row in
+                shortcutRow(row)
+            }
+            ForEach(1...4, id: \.self) { workspace in
+                workspaceMoveShortcutRow(workspace)
+            }
+            shortcutRow(.nextWindow)
+        case .focus, .move, .layout:
+            ForEach(TilesTool.Action.allCases.filter { $0.group == group }, id: \.self) { row in
+                shortcutRow(row)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func workspaceMoveShortcutRow(_ workspace: Int) -> some View {
+        let title = "Move Window to Workspace \(workspace)"
+        let shortcut = model.workspaceMoveShortcutText(for: workspace)
+        HStack(spacing: 12) {
+            Text(title)
+            Spacer(minLength: 18)
+            Group {
+                if shortcut.isEmpty {
+                    Text("Unavailable with Include Shift")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    KeyCapRow(display: shortcut)
+                }
+            }
+            .frame(minWidth: 164)
+            Color.clear
+                .frame(width: 16, height: 16)
+                .accessibilityHidden(true)
+        }
+        .frame(minHeight: SettingsMetrics.shortcutRowHeight)
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(shortcut.isEmpty ? "Unavailable while Hyperkey includes Shift" : shortcut)
+        Divider()
     }
 
     private func record(_ action: String) {

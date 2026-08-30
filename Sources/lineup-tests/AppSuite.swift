@@ -2499,7 +2499,8 @@ private func runTilesShellContractTests() throws {
         check(false, "Zones adaptive preset source is bounded")
     }
     guard let presetStart = shortcutKit.range(of: "static func tilesDefaults(includeShift: Bool)"),
-          let presetEnd = shortcutKit.range(of: "    /// `Int` form,", range: presetStart.upperBound..<shortcutKit.endIndex) else {
+          let presetEnd = shortcutKit.range(of: "    /// Rebase an untouched Tiles preset",
+                                            range: presetStart.upperBound..<shortcutKit.endIndex) else {
         check(false, "Tiles preset source is bounded for exact-map checks")
         return
     }
@@ -2517,6 +2518,36 @@ private func runTilesShellContractTests() throws {
             && !preset.contains("kVK_ANSI_Grave")
             && !preset.contains("moveWindowToNextWorkspace"),
           "Tiles preset keeps numbered workspaces, stack, split, toggle, and movement modifier map")
+    check(shortcutKit.contains("static func adaptingTilesDefaults(")
+            && shortcutKit.contains("tilesShortcutKeyPaths.allSatisfy")
+            && shortcutKit.contains("var adapted = source")
+            && shortcutKit.contains("adapted[keyPath: keyPath] = fresh[keyPath: keyPath]"),
+          "an exact untouched Tiles preset can follow an Include Shift mode change while preserving other settings")
+    check(shell.contains("persistHyperkeyIncludeShiftChange")
+            && shell.contains("try store.update { config in")
+            && shell.contains("try config.settings(LineupConfig.self, for: .zones)")
+            && shell.contains("try config.settings(TilesSettings.self, for: .tiles)")
+            && shell.contains("config.setSettings(updated, for: .hyperkey)")
+            && shell.contains("(registry.tool(.zones) as? ZonesTool)?.hyperkeyModeDidChange()")
+            && shell.contains("(registry.tool(.tiles) as? TilesTool)?.hyperkeyModeDidChange()"),
+          "Include Shift and untouched sibling presets commit atomically without restarting window runtimes")
+
+    let tilesTool = source("Sources/lineup/Tools/Tiles/TilesTool.swift")
+    let tilesPane = source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
+    check(tilesTool.contains("func hyperkeyModeDidChange()")
+            && tilesTool.contains("if runtimeReady { registerHotkeys() }")
+            && tilesTool.contains("workspaceMoveShortcutText(for workspace: Int)"),
+          "Tiles reloads atomically adapted shortcuts and exposes derived workspace moves")
+    check(tilesPane.contains("workspaceMoveShortcutRow")
+            && tilesPane.contains("Move Window to Workspace")
+            && tilesPane.contains("shortcutRow(.nextWindow)")
+            && !tilesPane.contains("shortcutRow(.nextWorkspace)")
+            && !tilesPane.contains("shortcutRow(.moveWindowToNextWorkspace)"),
+          "Tiles shows derived numbered moves and omits unfinished relative-workspace rows")
+    check(tilesTool.contains("private func menuTitle(")
+            && tilesTool.contains("addingShift: true")
+            && tilesTool.contains("The Carbon hotkey remains the single dispatcher"),
+          "the Tiles menu teaches configured shortcuts without adding a second dispatcher")
 
     let mutationCenter = source("Sources/lineup/App/ZoneLayoutMutationCenter.swift")
     check(mutationCenter.contains("@MainActor\nfinal class ZoneLayoutMutationCenter")

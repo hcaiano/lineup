@@ -55,8 +55,9 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 - Settings exposes the shared global switch, one fixed 8 pt tile-spacing switch, and editable
   shortcuts for workspaces, stacks, spatial focus, spatial movement, and split direction. There
   are no spacing values or layout policies to tune.
-- On first activation or shortcut edit, Tiles materializes an adaptive preset from Hyperkey mode;
-  stored shortcuts are never rewritten.
+- On first activation or shortcut edit, Tiles materializes an adaptive preset from Hyperkey mode.
+  When Include Shift changes, an untouched preset follows it atomically; customized or legacy
+  shortcuts are never rewritten.
 - In the recommended preset, number shortcuts switch Tiles workspaces and their physical
   Shift-number counterparts move the focused window; Include Shift leaves those move counterparts
   unassigned because the masks cannot be distinguished.
@@ -65,10 +66,10 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 - The Tiles Space shortcut toggles the focused window between its safe freeform frame and the
   active workspace tile.
 - Zones quick-action arrows use Hyper+arrows. Fresh defaults follow Hyperkey mode (`6400` when
-  Include Shift is off, `6912` when it is on); existing full-Hyper bindings require physical
-  Shift in the compact mode and are never rewritten. A stored legacy Zones section with no
-  shortcut fields keeps its historical full-Hyper defaults. Tiles H/J/K/L navigate focus between
-  tiles.
+  Include Shift is off, `6912` when it is on). An untouched adaptive preset follows an explicit
+  Include Shift change; customized bindings are never rewritten. A stored legacy Zones section
+  with no shortcut fields keeps its historical full-Hyper defaults. Tiles H/J/K/L navigate focus
+  between tiles.
 - Cycler receives no new app bindings; H/J/K/L remain the recommended Tiles focus letters and
   existing Cycler rows keep their explicit conflicts. The shared shortcut vocabulary is: numbers
   for Tiles workspaces, letters for Cycler app groups, H/J/K/L for tile focus, arrows for Zones,

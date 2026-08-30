@@ -403,6 +403,15 @@ private func runHyperkeySourceScanTests() throws {
     // this only has to prove the tool reaches the registry.
     check(shell.contains("registry.register(HyperkeyTool("),
           "HyperkeyTool is registered by the shell")
+    check(tool.contains("persistIncludeShiftChange")
+            && tool.contains("guard persistIncludeShift(rollingBackTo: previous) else { return }")
+            && tool.contains("try persistIncludeShiftChange(previous, settings)")
+            && tool.contains("settings = previous")
+            && tool.contains("apply()"),
+          "Include Shift delegates the atomic sibling update and rolls the visible setting back on failure")
+    check(tool.contains("system-wide ⌃⌥⌘ modifier; Shift is optional")
+            && !tool.contains("system-wide ⌃⌥⇧⌘ modifier"),
+          "Hyperkey's user-facing summary matches the compact default")
 
     // ---- The pane (plan §6.4 + the recovery affordance) ----
     check(pane.contains("Lineup leaves ⇧ available for move/reverse shortcuts."),

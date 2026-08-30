@@ -1323,6 +1323,11 @@ private func runZonesToolTests() throws {
             && tool.contains("return usingDefaults\n            ? ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())")
             && tool.contains(": ShortcutKit.defaults"),
           "a missing section uses adaptive defaults while stored shortcuts=nil keeps full Hyper")
+    check(tool.contains("func hyperkeyModeDidChange()")
+            && tool.contains("reloadConfig()")
+            && tool.contains("if isRunning { registerHotkeys() }")
+            && !tool.contains("registry.restart"),
+          "Zones reloads an atomically adapted preset and re-registers hotkeys without restarting")
 
     // ---- Persistence: write FIRST, assign only on success, and always behind canWrite ----
     for persist in ["applyLayouts", "applyShortcuts", "persistDragSnapEnabled", "applyDragSnapTrigger"] {

@@ -31,7 +31,7 @@ enum OnboardingCopy {
                        blurb: "One shortcut jumps to an app; press it again to cycle its windows.",
                        state: "Off by default", isOn: false),
         OnboardingTool(id: .hyperkey, name: "Hyperkey",
-                       blurb: "Turn Caps Lock into a system-wide ⌃⌥⇧⌘ modifier.",
+                       blurb: "Turn Caps Lock into ⌃⌥⌘; add ⇧ if you want full Hyper.",
                        state: "Off by default", isOn: false),
     ]
 

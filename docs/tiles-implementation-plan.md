@@ -519,10 +519,12 @@ The content has three compact sections:
 2. **Behavior**: one `Space between tiles` switch. On uses the fixed 8 pt product spacing; off
    uses the exact Zones frames. A caption explains the fixed fill-then-stack policy.
 3. **Shortcuts**: recorder rows grouped as workspace and stacks, focus tile, move window, and
-   layout. The groups include four numbered workspace actions, the three legacy workspace/stack
-   actions, four focus directions, four move directions, Switch Split Direction, and Toggle Tiled /
-   Freeform. Numbers switch workspaces; physical Shift-number moves the focused window without
-   switching. Shift-Tab reverses the stack when that generated reverse is available.
+   layout. The groups include four numbered workspace actions, their four read-only derived move
+   rows, the stack action, four focus directions, four move directions, Switch Split Direction,
+   and Toggle Tiled / Freeform. The two legacy relative-workspace fields stay in the schema but are
+   omitted from the opinionated pane. Numbers switch workspaces; physical Shift-number moves the
+   focused window without switching. Shift-Tab reverses the stack when that generated reverse is
+   available.
 
 Before first activation, Tiles has no settings section and shows its adaptive recommendation only
 in memory, so a disabled never-activated tool reserves no shortcut combinations. On first
@@ -533,8 +535,10 @@ toggle uses mask `6400` plus Tab/Return/Space. The legacy relative workspace row
 With `includeShift=true`, numbered workspace rows still select their workspace with full Hyper but
 do not generate a physical Shift move because that counterpart cannot be distinguished; focus uses
 full Hyper plus H/J/K/L, movement uses full Hyper plus U/I/O/P, and stack/split/toggle use full
-Hyper plus Tab/Return/Space. Existing settings,
-including explicit null bindings, are never normalized; reset creates the current adaptive preset.
+Hyper plus Tab/Return/Space. An exact untouched preset follows an explicit Include Shift change in
+the same atomic config write. Customized settings, including explicit null bindings, are never
+normalized; reset creates the current adaptive preset.
+
 Only the three cyclic workspace/stack actions can generate a Shift reverse, and the UI shows hints
 only for reverses that are available.
 
@@ -542,10 +546,9 @@ Cycler receives no new app bindings as part of this preset. H/J/K/L remain the r
 focus letters; any existing Cycler rows remain explicit and win normal conflict checks.
 
 Zones' fresh quick-action defaults use the current Hyperkey mask too: `6400` when Include Shift is
-off and `6912` when it is on. Existing saved or legacy `6912` bindings are preserved; in compact
-mode they therefore require a physical Shift with Caps+arrow. A live Include Shift change does not
-rewrite or re-register an existing Zones section; the current mode is used when fresh defaults are
-first registered or saved.
+off and `6912` when it is on. An exact untouched adaptive set follows an explicit Include Shift
+change and re-registers without restarting Zones. Customized saved bindings are preserved; a
+legacy `6912` set therefore still requires physical Shift with Caps+arrow in compact mode.
 
 Only a genuinely absent Zones section uses these adaptive defaults. A stored legacy
 `LineupConfig` whose `shortcuts` field is nil keeps the historical `ShortcutKit.defaults` full-Hyper
@@ -975,10 +978,10 @@ Control-Option-Command (`6400`) for numbered workspace selection, focus, and sta
 actions; its physical Shift-number counterparts move the focused window, while full Hyper (`6912`)
 plus H/J/K/L moves it spatially. The full-Shift mode uses full Hyper for focus, movement fallback
 U/I/O/P, and stack/split/toggle; numbered workspace rows still select workspaces but have no
-generated Shift move because that counterpart cannot be distinguished. Stored rows are preserved
-when Hyperkey mode changes, and
-reset uses the mode active at reset time. Shift reverse remains limited to the three cyclic actions
-and is generated only for bindings that do not already include Shift.
+generated Shift move because that counterpart cannot be distinguished. An exact untouched preset
+follows an explicit Hyperkey mode change; customized rows are preserved. Reset uses the mode active
+at reset time. Shift reverse remains limited to the three cyclic actions and is generated only for
+bindings that do not already include Shift.
 
 Swap, divider nudging, cross-display navigation, and custom gap values remain deferred. Swap had
 weak binding evidence in the inspected sample; divider nudging would extend the Zones editing

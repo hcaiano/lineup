@@ -93,8 +93,9 @@ final class TilesTool: Tool {
 
     private var services: ToolServices?
     private let coordinator: TilesCoordinatorProtocol
-    /// AppShell supplies this read-only view of Hyperkey's persisted mode. Tiles only consults it
-    /// while creating a first-use/reset preset; changing Hyperkey later never rewrites custom rows.
+    /// AppShell supplies this read-only view of Hyperkey's persisted mode. First-use/reset presets
+    /// use it directly; an explicit mode change only rebases a preset whose shortcut rows remain
+    /// untouched.
     private let hyperkeyIncludesShift: () -> Bool
     private var coordinatorStarted = false
     private(set) var runtimeReady = false
@@ -421,6 +422,17 @@ final class TilesTool: Tool {
             sectionLoadError = "\(error)"
             log.error("Tiles settings could not be decoded (left untouched): \(error, privacy: .public)")
         }
+    }
+
+    /// Refresh the recommendation or the atomically adapted stored preset after Hyperkey changes
+    /// its emitted modifier mask. Customized shortcuts were not changed by the shell and reload
+    /// unchanged here.
+    func hyperkeyModeDidChange() {
+        loadSettings()
+        if runtimeReady { registerHotkeys() }
+        settingsModel.refresh()
+        services?.refreshMenu()
+        services?.refreshSettings()
     }
 
     /// Persist the adaptive first-use preset once, immediately before runtime startup. The
@@ -958,7 +970,10 @@ final class TilesTool: Tool {
         let workspaceMenu = NSMenu()
         workspaceMenu.autoenablesItems = false
         for workspace in 1...4 {
-            let item = ToolMenu.item("Workspace \(workspace)", symbol: "square.fill") {
+            let action = Action.allCases.first { $0.workspaceNumber == workspace }
+            let title = action.map { menuTitle("Workspace \(workspace)", action: $0) }
+                ?? "Workspace \(workspace)"
+            let item = ToolMenu.item(title, symbol: "square.fill") {
                 [weak self] in self?.selectWorkspace(workspace)
             }
             item.state = activeWorkspace == workspace ? .on : .off
@@ -973,7 +988,11 @@ final class TilesTool: Tool {
         let moveMenu = NSMenu()
         moveMenu.autoenablesItems = false
         for workspace in 1...4 {
-            let item = ToolMenu.item("Workspace \(workspace)", symbol: "arrow.right.square") {
+            let action = Action.allCases.first { $0.workspaceNumber == workspace }
+            let title = action.map {
+                menuTitle("Workspace \(workspace)", action: $0, addingShift: true)
+            } ?? "Workspace \(workspace)"
+            let item = ToolMenu.item(title, symbol: "arrow.right.square") {
                 [weak self] in self?.moveFocusedWindowToWorkspace(workspace)
             }
             item.isEnabled = runtimeReady
@@ -981,7 +1000,8 @@ final class TilesTool: Tool {
         }
         move.submenu = moveMenu
 
-        let cycle = ToolMenu.item("Next Window in Tile", symbol: "arrow.triangle.2.circlepath") {
+        let cycle = ToolMenu.item(menuTitle("Next Window in Tile", action: .nextWindow),
+                                  symbol: "arrow.triangle.2.circlepath") {
             [weak self] in self?.cycleFocusedTile()
         }
         cycle.isEnabled = runtimeReady
@@ -992,7 +1012,8 @@ final class TilesTool: Tool {
         let focusMenu = NSMenu()
         focusMenu.autoenablesItems = false
         for (direction, title, symbol) in Self.directionMenuEntries {
-            let item = ToolMenu.item(title, symbol: symbol) { [weak self] in
+            let item = ToolMenu.item(menuTitle(title, action: focusAction(for: direction)),
+                                     symbol: symbol) { [weak self] in
                 self?.focusTile(direction)
             }
             item.isEnabled = runtimeReady
@@ -1008,7 +1029,8 @@ final class TilesTool: Tool {
         let moveTileMenu = NSMenu()
         moveTileMenu.autoenablesItems = false
         for (direction, title, symbol) in Self.directionMenuEntries {
-            let item = ToolMenu.item(title, symbol: symbol) { [weak self] in
+            let item = ToolMenu.item(menuTitle(title, action: moveAction(for: direction)),
+                                     symbol: symbol) { [weak self] in
                 self?.moveFocusedWindowToTile(direction)
             }
             item.isEnabled = runtimeReady
@@ -1017,12 +1039,16 @@ final class TilesTool: Tool {
         moveTile.submenu = moveTileMenu
         moveTile.isEnabled = runtimeReady
 
-        let toggleSplit = ToolMenu.item("Switch Split Direction", symbol: "rectangle.split.2x1") {
+        let toggleSplit = ToolMenu.item(
+            menuTitle("Switch Split Direction", action: .toggleSplitOrientation),
+            symbol: "rectangle.split.2x1") {
             [weak self] in self?.toggleFocusedSplitOrientation()
         }
         toggleSplit.isEnabled = runtimeReady
 
-        let toggleTiled = ToolMenu.item("Toggle Tiled / Freeform", symbol: "rectangle.inset.filled.and.person.filled") {
+        let toggleTiled = ToolMenu.item(
+            menuTitle("Toggle Tiled / Freeform", action: .toggleTiled),
+            symbol: "rectangle.inset.filled.and.person.filled") {
             [weak self] in self?.toggleFocusedTiled()
         }
         toggleTiled.isEnabled = runtimeReady
@@ -1044,6 +1070,37 @@ final class TilesTool: Tool {
         (.up, "Up", "arrow.up"),
         (.down, "Down", "arrow.down"),
     ]
+
+    /// Show configured global shortcuts as reference text without assigning AppKit key
+    /// equivalents. The Carbon hotkey remains the single dispatcher, including while this menu
+    /// is open, so an action cannot fire twice.
+    private func menuTitle(_ title: String, action: Action, addingShift: Bool = false) -> String {
+        guard let binding = action.binding(settings) else { return title }
+        var modifiers = UInt32(truncatingIfNeeded: binding.modifiers)
+        if addingShift {
+            guard modifiers & UInt32(shiftKey) == 0 else { return title }
+            modifiers |= UInt32(shiftKey)
+        }
+        return "\(title)  \(ShortcutKit.display(keyCode: binding.keyCode, modifiers: modifiers))"
+    }
+
+    private func focusAction(for direction: TileDirection) -> Action {
+        switch direction {
+        case .left: return .focusTileLeft
+        case .right: return .focusTileRight
+        case .up: return .focusTileUp
+        case .down: return .focusTileDown
+        }
+    }
+
+    private func moveAction(for direction: TileDirection) -> Action {
+        switch direction {
+        case .left: return .moveWindowLeft
+        case .right: return .moveWindowRight
+        case .up: return .moveWindowUp
+        case .down: return .moveWindowDown
+        }
+    }
 
     var warnings: [ToolWarning] {
         var out: [ToolWarning] = []
@@ -1110,6 +1167,15 @@ final class TilesTool: Tool {
     func binding(for action: String) -> ShortcutBinding? {
         guard let action = Action(rawValue: action) else { return nil }
         return action.binding(settings)
+    }
+
+    func workspaceMoveShortcutText(for workspace: Int) -> String {
+        guard let action = Action.allCases.first(where: { $0.workspaceNumber == workspace }),
+              let binding = action.binding(settings),
+              binding.modifiers & DragSnapModifierMask.shift == 0 else { return "" }
+        return ShortcutKit.display(
+            keyCode: binding.keyCode,
+            modifiers: UInt32(truncatingIfNeeded: binding.modifiers) | UInt32(shiftKey))
     }
 
     /// Refresh the in-memory recommendation before the first explicit edit. No config write occurs

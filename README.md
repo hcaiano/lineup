@@ -20,11 +20,20 @@ Lineup combines four tools. Enable only the tools you need:
   keyboard control, and optional 8 pt spacing.
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
-- **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
+- **Hyperkey:** Turn Caps Lock or another key into Control + Option + Command. You can include Shift.
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 Zones is on by default. Tiles, Cycler, and Hyperkey start off, so an update does not arrange
 windows or claim new keys without an explicit choice.
+
+## Recommended keyboard model
+
+The fresh preset keeps one meaning per key family. With Hyperkey on, Caps+1…4 switches Tiles
+workspaces and physical Shift+Caps+1…4 moves the focused window. Caps+H/J/K/L focuses tiles;
+Shift+Caps+H/J/K/L moves windows. Caps+Tab cycles a tile stack, Caps+Return changes the split,
+Caps+Space toggles tiled/freeform, and Caps+arrows keeps the Zones quick actions. Cycler app groups
+use letters. If Hyperkey includes Shift, Lineup adapts an untouched preset and keeps customized
+shortcuts unchanged.
 
 ## Install
 
