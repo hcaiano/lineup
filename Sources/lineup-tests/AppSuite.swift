@@ -62,6 +62,9 @@ private func runUpdateChannelTests() throws {
     let explicitStable = GeneralConfig(updateChannel: .stable)
     check(explicitStable.effectiveUpdateChannel(buildChannel: .nightly) == .stable,
           "an explicit Stable choice survives a Nightly install")
+    check(UpdateChannel.nightly.settingsDescription.contains("Returning to Stable waits")
+            && UpdateChannel.nightly.settingsDescription.contains("does not downgrade"),
+          "Nightly explains the return-to-Stable behavior before the user opts in")
 
     let encoded = try JSONEncoder().encode(GeneralConfig(updateChannel: .nightly))
     let decoded = try JSONDecoder().decode(GeneralConfig.self, from: encoded)

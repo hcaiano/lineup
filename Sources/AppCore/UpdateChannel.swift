@@ -32,7 +32,9 @@ public enum UpdateChannel: String, Codable, CaseIterable, Equatable, Identifiabl
     public var settingsDescription: String {
         switch self {
         case .stable: return "Tested releases."
-        case .nightly: return "Newest public builds, which may be less reliable."
+        case .nightly:
+            return "Newest public builds, which may be less reliable. Returning to Stable waits "
+                + "for a newer Stable release; Lineup does not downgrade automatically."
         }
     }
 
