@@ -69,6 +69,72 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Read the metadata from the actual DMG that will be signed. This catches a stale or mismatched
+# app bundle before the appcast can point users at it. Nightly also keeps the display version
+# numeric inside the bundle while exposing its date/sequence only in the public release version.
+command -v hdiutil >/dev/null 2>&1 || {
+  echo "error: hdiutil is required to inspect the embedded Lineup.app." >&2
+  exit 1
+}
+DMG_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/lineup-appcast-mount.XXXXXX")"
+if ! hdiutil attach -nobrowse -noverify -readonly -mountpoint "${DMG_MOUNT}" "${DMG}" >/dev/null; then
+  echo "error: could not mount ${DMG} to inspect its embedded Lineup.app." >&2
+  exit 1
+fi
+DMG_ATTACHED=1
+BUNDLE_PLIST="${DMG_MOUNT}/Lineup.app/Contents/Info.plist"
+[ -f "${BUNDLE_PLIST}" ] || {
+  echo "error: ${DMG} does not contain Lineup.app/Contents/Info.plist." >&2
+  exit 1
+}
+if ! DMG_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${BUNDLE_PLIST}")"; then
+  echo "error: embedded Lineup.app has no CFBundleVersion." >&2
+  exit 1
+fi
+if [ "${DMG_BUILD}" != "${BUILD}" ]; then
+  echo "error: embedded CFBundleVersion ${DMG_BUILD} does not match appcast build ${BUILD}." >&2
+  exit 1
+fi
+if ! DMG_SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${BUNDLE_PLIST}")"; then
+  echo "error: embedded Lineup.app has no CFBundleShortVersionString." >&2
+  exit 1
+fi
+DMG_SOURCE_SHA=""
+if [ "${MODE}" = "nightly" ]; then
+  NUMERIC_VERSION="${VERSION%%-nightly.*}"
+  if [ "${DMG_SHORT_VERSION}" != "${NUMERIC_VERSION}" ]; then
+    echo "error: embedded CFBundleShortVersionString ${DMG_SHORT_VERSION} does not match Nightly base ${NUMERIC_VERSION}." >&2
+    exit 1
+  fi
+  if ! DMG_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :LineupBuildChannel' "${BUNDLE_PLIST}")"; then
+    echo "error: embedded Lineup.app has no LineupBuildChannel marker." >&2
+    exit 1
+  fi
+  if [ "${DMG_CHANNEL}" != "nightly" ]; then
+    echo "error: embedded LineupBuildChannel ${DMG_CHANNEL} is not nightly." >&2
+    exit 1
+  fi
+  if DMG_SOURCE_DIRTY="$(/usr/libexec/PlistBuddy -c 'Print :LineupSourceDirty' "${BUNDLE_PLIST}" 2>/dev/null)"; then
+    if [ "${DMG_SOURCE_DIRTY}" = "true" ]; then
+      echo "error: embedded Nightly was built from a dirty checkout; refusing to appcast it." >&2
+    else
+      echo "error: embedded Nightly has an invalid LineupSourceDirty marker; refusing to appcast it." >&2
+    fi
+    exit 1
+  fi
+  if ! DMG_SOURCE_SHA="$(/usr/libexec/PlistBuddy -c 'Print :LineupSourceCommit' "${BUNDLE_PLIST}")"; then
+    echo "error: embedded Nightly Lineup.app has no LineupSourceCommit marker." >&2
+    exit 1
+  fi
+  if [[ ! "${DMG_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "error: embedded Nightly LineupSourceCommit must be exactly 40 lowercase hexadecimal characters." >&2
+    exit 1
+  fi
+elif [ "${DMG_SHORT_VERSION}" != "${VERSION}" ]; then
+  echo "error: embedded CFBundleShortVersionString ${DMG_SHORT_VERSION} does not match Stable appcast version ${VERSION}." >&2
+  exit 1
+fi
+
 if [ "${MODE}" = "nightly" ]; then
   # A Nightly enclosure must be immutable and tag-addressed. In particular, never use a moving
   # GitHub alias: Sparkle signs the local bytes while users fetch the URL later.
@@ -110,10 +176,12 @@ if [ "${MODE}" = "nightly" ]; then
   fi
 
   # Do not rely on a maintainer remembering to run the release audit first. The verifier proves
-  # the repository is public, the exact release is a non-draft immutable prerelease, the tag peels
-  # to this checkout's HEAD, and the exact asset URL/name is present before this feed can change.
+  # the repository is public, the exact release is a non-draft immutable prerelease, and the tag
+  # peels to the source commit embedded in this DMG. This remains valid after a previous appcast
+  # write makes the checkout dirty or advances its current HEAD.
   if ! NIGHTLY_VERIFY_OUTPUT="$(
-    LINEUP_GITHUB_REPOSITORY="${NIGHTLY_REPOSITORY}" ./Scripts/nightly-release.sh --verify "${NIGHTLY_TAG}" 2>&1
+    LINEUP_GITHUB_REPOSITORY="${NIGHTLY_REPOSITORY}" ./Scripts/nightly-release.sh --verify "${NIGHTLY_TAG}" \
+      --expected-source-sha "${DMG_SOURCE_SHA}" 2>&1
   )"; then
     printf '%s\n' "${NIGHTLY_VERIFY_OUTPUT}" >&2
     echo "error: public Nightly release verification failed; refusing to appcast." >&2
@@ -123,7 +191,8 @@ if [ "${MODE}" = "nightly" ]; then
       || ! grep -Fqx "tag=${NIGHTLY_TAG}" <<<"${NIGHTLY_VERIFY_OUTPUT}" \
       || ! grep -Fqx "asset_name=${expected_asset}" <<<"${NIGHTLY_VERIFY_OUTPUT}" \
       || ! grep -Fqx "asset_url=${REMOTE_URL}" <<<"${NIGHTLY_VERIFY_OUTPUT}" \
-      || ! grep -Fqx "immutable=true" <<<"${NIGHTLY_VERIFY_OUTPUT}"; then
+      || ! grep -Fqx "immutable=true" <<<"${NIGHTLY_VERIFY_OUTPUT}" \
+      || ! grep -Fqx "source_sha=${DMG_SOURCE_SHA}" <<<"${NIGHTLY_VERIFY_OUTPUT}"; then
     echo "error: Nightly verifier output does not match the requested public release asset." >&2
     exit 1
   fi
@@ -269,55 +338,6 @@ PY
   fi
 fi
 
-# Read the metadata from the actual DMG that will be signed. This catches a stale or mismatched
-# app bundle before the appcast can point users at it. Nightly also keeps the display version
-# numeric inside the bundle while exposing its date/sequence only in the public release version.
-command -v hdiutil >/dev/null 2>&1 || {
-  echo "error: hdiutil is required to inspect the embedded Lineup.app." >&2
-  exit 1
-}
-DMG_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/lineup-appcast-mount.XXXXXX")"
-if ! hdiutil attach -nobrowse -noverify -readonly -mountpoint "${DMG_MOUNT}" "${DMG}" >/dev/null; then
-  echo "error: could not mount ${DMG} to inspect its embedded Lineup.app." >&2
-  exit 1
-fi
-DMG_ATTACHED=1
-BUNDLE_PLIST="${DMG_MOUNT}/Lineup.app/Contents/Info.plist"
-[ -f "${BUNDLE_PLIST}" ] || {
-  echo "error: ${DMG} does not contain Lineup.app/Contents/Info.plist." >&2
-  exit 1
-}
-if ! DMG_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${BUNDLE_PLIST}")"; then
-  echo "error: embedded Lineup.app has no CFBundleVersion." >&2
-  exit 1
-fi
-if [ "${DMG_BUILD}" != "${BUILD}" ]; then
-  echo "error: embedded CFBundleVersion ${DMG_BUILD} does not match appcast build ${BUILD}." >&2
-  exit 1
-fi
-if ! DMG_SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${BUNDLE_PLIST}")"; then
-  echo "error: embedded Lineup.app has no CFBundleShortVersionString." >&2
-  exit 1
-fi
-if [ "${MODE}" = "nightly" ]; then
-  NUMERIC_VERSION="${VERSION%%-nightly.*}"
-  if [ "${DMG_SHORT_VERSION}" != "${NUMERIC_VERSION}" ]; then
-    echo "error: embedded CFBundleShortVersionString ${DMG_SHORT_VERSION} does not match Nightly base ${NUMERIC_VERSION}." >&2
-    exit 1
-  fi
-  if ! DMG_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :LineupBuildChannel' "${BUNDLE_PLIST}")"; then
-    echo "error: embedded Lineup.app has no LineupBuildChannel marker." >&2
-    exit 1
-  fi
-  if [ "${DMG_CHANNEL}" != "nightly" ]; then
-    echo "error: embedded LineupBuildChannel ${DMG_CHANNEL} is not nightly." >&2
-    exit 1
-  fi
-elif [ "${DMG_SHORT_VERSION}" != "${VERSION}" ]; then
-  echo "error: embedded CFBundleShortVersionString ${DMG_SHORT_VERSION} does not match Stable appcast version ${VERSION}." >&2
-  exit 1
-fi
-
 # FAIL CLOSED: only ever EdDSA-sign a real, notarized, stapled Developer ID DMG. Once an
 # enclosure lands in web/appcast.xml, Sparkle clients trust its archive signature and install it
 # without a Gatekeeper prompt — so appcasting an unsigned / pre-notarization / ad-hoc / stale DMG
@@ -347,8 +367,8 @@ if [ "${MODE}" = "stable" ]; then
   ENCLOSURE_URL="${SITE}/downloads/${FILENAME}"
 else
   # Sign the exact local bytes that the public release asset must contain. The helper verifies
-  # the exact tag and asset before this script is called; this script deliberately does not
-  # upload, create, or mutate a GitHub release.
+  # the exact tag, source commit marker, and asset before the feed changes; this script
+  # deliberately does not upload, create, or mutate a GitHub release.
   SIGN_PATH="${DMG}"
   ENCLOSURE_URL="${REMOTE_URL}"
 fi

@@ -9,7 +9,7 @@
 # Usage:
 #   ./Scripts/nightly-release.sh
 #   LINEUP_NIGHTLY_DATE=20260830 LINEUP_NIGHTLY_SEQUENCE=3 ./Scripts/nightly-release.sh
-#   ./Scripts/nightly-release.sh --verify <exact-nightly-tag>
+#   ./Scripts/nightly-release.sh --verify <exact-nightly-tag> [--expected-source-sha <40-hex-sha>]
 #
 # The default output is a shell-friendly plan. Pass the printed values explicitly:
 #   LINEUP_BUILD_CHANNEL=nightly \
@@ -18,7 +18,9 @@
 #
 # After a trusted, notarized DMG is attached to the exact public prerelease tag, use the printed
 # asset URL with `Scripts/sparkle-appcast.sh --nightly`. The enclosure is tag-addressed; it never
-# uses a moving GitHub alias.
+# uses a moving GitHub alias. The appcast helper passes the DMG's source marker through
+# `--expected-source-sha`, which is the only verification mode that does not require this checkout's
+# current HEAD and clean state to be unchanged after the appcast was written.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -31,17 +33,46 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
-SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null)" || {
+VERIFY_MODE=0
+TAG=""
+EXPECTED_SOURCE_SHA=""
+if [ "${1:-}" = "--verify" ]; then
+  VERIFY_MODE=1
+  TAG="${2:?usage: nightly-release.sh --verify vX.Y.Z-nightly.YYYYMMDD.sequence [--expected-source-sha <40-hex-sha>]}"
+  shift 2
+  if [ "${1:-}" = "--expected-source-sha" ]; then
+    EXPECTED_SOURCE_SHA="${2:?usage: nightly-release.sh --verify <tag> --expected-source-sha <40-hex-sha>}"
+    shift 2
+    [[ "${EXPECTED_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+      echo "error: --expected-source-sha must be exactly 40 lowercase hexadecimal characters." >&2
+      exit 1
+    }
+  fi
+  [ "$#" -eq 0 ] || {
+    echo "error: unknown --verify argument; expected only --expected-source-sha." >&2
+    exit 1
+  }
+elif [ "$#" -ne 0 ]; then
+  echo "error: unknown argument; use --verify <tag> for release verification." >&2
+  exit 1
+fi
+
+LOCAL_SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null)" || {
   echo "error: this helper must run inside the Lineup Git checkout." >&2
   exit 1
 }
-export NIGHTLY_SOURCE_SHA="${SOURCE_SHA}"
-WORKTREE_STATE="$(git status --porcelain --untracked-files=all)"
-if [ -n "${WORKTREE_STATE}" ] && [ "${LINEUP_ALLOW_DIRTY:-0}" != "1" ]; then
-  echo "error: the checkout is dirty; resolve it before planning a release." >&2
-  echo "       Set LINEUP_ALLOW_DIRTY=1 only for read-only local tests." >&2
-  exit 1
+SOURCE_SHA="${LOCAL_SOURCE_SHA}"
+if [ -n "${EXPECTED_SOURCE_SHA}" ]; then
+  SOURCE_SHA="${EXPECTED_SOURCE_SHA}"
+else
+  WORKTREE_STATE="$(git status --porcelain --untracked-files=all)"
+  if [ -n "${WORKTREE_STATE}" ] && [ "${LINEUP_ALLOW_DIRTY:-0}" != "1" ]; then
+    echo "error: the checkout is dirty; resolve it before planning a release." >&2
+    echo "       Set LINEUP_ALLOW_DIRTY=1 only for read-only local tests." >&2
+    exit 1
+  fi
 fi
+export NIGHTLY_SOURCE_SHA="${SOURCE_SHA}"
 
 REPOSITORY="${LINEUP_GITHUB_REPOSITORY:-hcaiano/lineup}"
 if [[ ! "${REPOSITORY}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
@@ -57,8 +88,7 @@ VISIBILITY="$(gh api "repos/${REPOSITORY}" --jq '.visibility')"
   exit 1
 }
 
-if [ "${1:-}" = "--verify" ]; then
-  TAG="${2:?usage: nightly-release.sh --verify vX.Y.Z-nightly.YYYYMMDD.sequence}"
+if [ "${VERIFY_MODE}" -eq 1 ]; then
   [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.[1-9][0-9]*$ ]] || {
     echo "error: tag must be vX.Y.Z-nightly.YYYYMMDD.sequence." >&2
     exit 1

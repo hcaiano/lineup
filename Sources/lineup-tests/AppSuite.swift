@@ -705,6 +705,7 @@ private func runReleaseToolingTests() throws {
     let publisher = try String(contentsOfFile: "Scripts/publish-appcast.sh", encoding: .utf8)
     let appcast = try String(contentsOfFile: "Scripts/sparkle-appcast.sh", encoding: .utf8)
     let nightly = try String(contentsOfFile: "Scripts/nightly-release.sh", encoding: .utf8)
+    let buildApp = try String(contentsOfFile: "Scripts/build-app.sh", encoding: .utf8)
     let building = try String(contentsOfFile: "BUILDING.md", encoding: .utf8)
     check(appcast.contains("--nightly") && appcast.contains("<sparkle:channel>nightly</sparkle:channel>"),
           "the appcast helper emits the Nightly Sparkle channel")
@@ -715,14 +716,18 @@ private func runReleaseToolingTests() throws {
             && appcast.contains("hdiutil attach")
             && appcast.contains("CFBundleVersion")
             && appcast.contains("CFBundleShortVersionString")
-            && appcast.contains("LineupBuildChannel"),
+            && appcast.contains("LineupBuildChannel")
+            && appcast.contains("LineupSourceCommit"),
           "the appcast helper proves remote bytes and embedded metadata while keeping Stable staging")
     check(appcast.contains("nightly-release.sh --verify")
             && appcast.contains("NIGHTLY_REPOSITORY")
             && appcast.contains("NIGHTLY_TAG")
             && appcast.contains("NIGHTLY_VERIFY_OUTPUT")
-            && appcast.contains("immutable=true"),
-          "the Nightly appcast helper performs the exact public release audit before writing")
+            && appcast.contains("--expected-source-sha")
+            && appcast.contains("DMG_SOURCE_SHA")
+            && appcast.contains("immutable=true")
+            && appcast.contains("source_sha=${DMG_SOURCE_SHA}"),
+          "the Nightly appcast helper audits the embedded source commit before writing")
     check(appcast.contains("NIGHTLY_SOURCE_STABLE_BUILD")
             && appcast.contains("EXPECTED_NIGHTLY_BUILD")
             && appcast.contains("ET.parse(path)")
@@ -731,8 +736,21 @@ private func runReleaseToolingTests() throws {
             && appcast.contains("candidate_url")
             && appcast.contains("candidate_key == existing_key")
             && appcast.contains("DMG_CHANNEL")
-            && appcast.contains("!= \"nightly\""),
+            && appcast.contains("!= \"nightly\"")
+            && appcast.contains("DMG_SOURCE_DIRTY")
+            && appcast.contains("dirty checkout"),
           "the Nightly appcast helper derives its build, enforces ordering, and permits exact reruns")
+    check(buildApp.contains("LineupSourceCommit")
+            && buildApp.contains("SOURCE_DIRTY")
+            && buildApp.contains("dirty-${SOURCE_SHA}")
+            && buildApp.contains("LineupSourceDirty")
+            && buildApp.contains("never release this build")
+            && buildApp.contains("git rev-parse HEAD")
+            && buildApp.contains("git status --porcelain --untracked-files=all")
+            && buildApp.contains("require a clean checkout")
+            && buildApp.contains("LINEUP_ALLOW_DIRTY=1")
+            && buildApp.contains("local Nightly bundle tests"),
+          "Nightly bundles embed a source commit only from a clean checkout")
     check(nightly.contains("gh api") && nightly.contains("--paginate --slurp")
             && nightly.contains("prerelease")
             && nightly.contains("releases/tags/${TAG}")
@@ -741,7 +759,11 @@ private func runReleaseToolingTests() throws {
             && nightly.contains("git/tags/${TAG_OBJECT_SHA}")
             && nightly.contains("source_sha=${SOURCE_SHA}") && nightly.contains("target_commitish")
             && nightly.contains("tag_commit_sha")
-            && nightly.contains("immutable=true"),
+            && nightly.contains("immutable=true")
+            && nightly.contains("expected-source-sha")
+            && nightly.contains("EXPECTED_SOURCE_SHA")
+            && nightly.contains("LOCAL_SOURCE_SHA")
+            && nightly.contains("SOURCE_SHA=\"${EXPECTED_SOURCE_SHA}\""),
           "the Nightly helper paginates metadata and proves immutable tag and asset identity")
     check(nightly.contains("does not match source Info.plist")
             && nightly.contains("offset <= 9998") && nightly.contains("a{sequence:03d}")

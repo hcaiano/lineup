@@ -51,6 +51,10 @@ UNIVERSAL=0 ./Scripts/build-app.sh dist/nightly
 `LINEUP_BUILD_CHANNEL=nightly` without both overrides fails closed. Run
 `./Scripts/nightly-release.sh` to resolve the next patch tag, date, sequence, and bundle version.
 The Nightly marker is written only to the assembled bundle; the checked-in plist remains Stable.
+Nightly assembly also embeds `LineupSourceCommit` from `git rev-parse HEAD` and requires a clean
+checkout, so the marker proves the source used for the artifact. `LINEUP_ALLOW_DIRTY=1` is a
+test-only escape for local bundle inspection: it writes a `dirty-<sha>` source marker and
+`LineupSourceDirty=true`, which the appcast gate rejects. It must never be used for a release.
 
 The helper is read-only. It reads the public repository with `gh api`, never creates or uploads a
 release, and never uses the moving `latest` alias. After the exact public prerelease exists and its
@@ -62,8 +66,12 @@ ref to the local source commit. The repository currently has immutable releases 
 verification (and any release publishing flow that depends on it) fails closed until the
 maintainer enables GitHub immutable releases. This change does not alter repository settings.
 
-It refuses a dirty checkout; `LINEUP_ALLOW_DIRTY=1` is reserved for explicitly read-only local
-tests and must not be used for a release plan.
+The default release audit and Nightly build refuse a dirty checkout; `LINEUP_ALLOW_DIRTY=1` is
+reserved for explicitly read-only local tests and must not be used for a release plan or release
+build. The appcast helper reads `LineupSourceCommit` from
+the mounted DMG and passes it to `--expected-source-sha`; this permits an exact appcast rerun after
+the feed commit changes the checkout, while still requiring the public tag to peel to the artifact's
+source commit.
 
 ```sh
 ./Scripts/nightly-release.sh --verify v2.0.2-nightly.20260830.1

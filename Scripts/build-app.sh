@@ -66,6 +66,32 @@ if [ -n "${VERSION_OVERRIDE}" ] && [[ ! "${VERSION_OVERRIDE}" =~ ^[0-9]+\.[0-9]+
   exit 1
 fi
 
+SOURCE_SHA=""
+SOURCE_DIRTY=0
+if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  # A Nightly artifact must carry proof of the exact source commit that the public tag names.
+  # Do not allow a dirty checkout: embedding HEAD while local edits are present would make the
+  # marker look authoritative even though those edits also went into the built app.
+  SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null)" || {
+    echo "error: Nightly builds must run inside the Lineup Git checkout." >&2
+    exit 1
+  }
+  [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "error: Nightly source commit is not a 40-character Git SHA." >&2
+    exit 1
+  }
+  WORKTREE_STATE="$(git status --porcelain --untracked-files=all)"
+  if [ -n "${WORKTREE_STATE}" ]; then
+    if [ "${LINEUP_ALLOW_DIRTY:-0}" = "1" ]; then
+      echo "WARNING: LINEUP_ALLOW_DIRTY=1 is for local Nightly bundle tests only; never release this build." >&2
+      SOURCE_DIRTY=1
+    else
+      echo "error: Nightly builds require a clean checkout; source edits would invalidate the embedded commit." >&2
+      exit 1
+    fi
+  fi
+fi
+
 # Build the release executable. Universal (arm64 + x86_64) by default so the app runs on every
 # supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
 # `--arch a --arch b` needs full Xcode (xcbuild); under Command Line Tools we build each slice
@@ -125,6 +151,19 @@ if [ -n "${BUILD_OVERRIDE}" ]; then
 fi
 /usr/libexec/PlistBuddy -c "Set :LineupBuildChannel ${BUILD_CHANNEL}" \
   "${APP}/Contents/Info.plist"
+if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  if [ "${SOURCE_DIRTY}" -eq 1 ]; then
+    # A dirty test bundle must remain useful for local inspection but can never pass the
+    # Nightly appcast proof. The prefix is deliberately not a Git SHA; the appcast rejects it.
+    SOURCE_MARKER="dirty-${SOURCE_SHA}"
+    /usr/libexec/PlistBuddy -c "Add :LineupSourceDirty bool true" \
+      "${APP}/Contents/Info.plist"
+  else
+    SOURCE_MARKER="${SOURCE_SHA}"
+  fi
+  /usr/libexec/PlistBuddy -c "Add :LineupSourceCommit string ${SOURCE_MARKER}" \
+    "${APP}/Contents/Info.plist"
+fi
 
 # Fail closed if the real Sparkle public key was never filled in: a placeholder SUPublicEDKey
 # ships an app that can never validate an update (users would have to reinstall by hand).
