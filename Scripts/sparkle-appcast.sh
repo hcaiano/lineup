@@ -157,6 +157,10 @@ if [ "${MODE}" = "nightly" ]; then
     echo "error: Nightly enclosure must be an exact tagged GitHub release asset URL." >&2
     exit 1
   fi
+  if [ "${NIGHTLY_REPOSITORY}" != "hcaiano/lineup" ]; then
+    echo "error: Nightly appcast publication must use the canonical GitHub repository hcaiano/lineup." >&2
+    exit 1
+  fi
   if [[ "${REMOTE_URL}" == *latest* ]]; then
     echo "error: Nightly enclosure may not use a moving GitHub release alias." >&2
     exit 1

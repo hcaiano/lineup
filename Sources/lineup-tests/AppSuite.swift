@@ -810,6 +810,10 @@ private func runReleaseToolingTests() throws {
             && nightly.contains("LOCAL_SOURCE_SHA")
             && nightly.contains("SOURCE_SHA=\"${EXPECTED_SOURCE_SHA}\""),
           "the Nightly helper paginates metadata and proves immutable tag and asset identity")
+    check(appcast.contains("NIGHTLY_REPOSITORY")
+            && appcast.contains("[ \"${NIGHTLY_REPOSITORY}\" != \"hcaiano/lineup\" ]")
+            && appcast.contains("canonical GitHub repository hcaiano/lineup"),
+          "the Nightly appcast accepts only the canonical public repository")
     check(nightly.contains("does not match source Info.plist")
             && nightly.contains("offset <= 9998") && nightly.contains("a{sequence:03d}")
             && nightly.contains("is not newer than public Nightly")

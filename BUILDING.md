@@ -65,6 +65,11 @@ release, and never uses the moving `latest` alias. After the exact public prerel
 asset is attached by the maintainer, the Nightly appcast command runs this verification itself
 before it can update the feed. Run `--verify` separately when an audit-only check is useful:
 
+Nightly appcast publication accepts only the exact canonical public repository
+`hcaiano/lineup`; a public fork or another repository is rejected even when its tag and asset
+bytes match. The metadata helper's repository override remains for read-only audits and tests,
+but it cannot bypass the appcast publication guard.
+
 `--verify` requires GitHub to report `immutable=true` for the exact release and peels its Git tag
 ref to the local source commit. The repository currently has immutable releases disabled, so
 verification (and any release publishing flow that depends on it) fails closed until the
