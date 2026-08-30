@@ -2,6 +2,11 @@ import AppKit
 import ApplicationServices
 import ZonesCore
 
+struct ConfirmedWindowPlacement {
+    let window: AXUIElement
+    let frame: CGRect
+}
+
 /// Remembers the frame a window had before WE snapped it, making every snap reversible:
 /// dragging a snapped window away brings its old size back, and the Restore shortcut puts
 /// it back where it was. Rectangle's WindowHistory semantics: the pre-snap frame is seeded
@@ -86,28 +91,28 @@ enum WindowMover {
 
     /// Snap the focused window via a quick-action id ("full"/"left"/.../"rightHalf"),
     /// resolved against the per-screen layout for the screen the window is on.
-    /// Returns false (silently) if there's no focused window or AX isn't trusted.
+    /// Returns nil if there is no focused window, AX is not trusted, or confirmation fails.
     @discardableResult
-    static func snapFocusedWindow(toQuickAction id: String, config: LineupConfig) -> Bool {
-        guard AXIsProcessTrusted() else { return false }
-        guard let window = focusedWindow() else { return false }
+    static func snapFocusedWindow(toQuickAction id: String, config: LineupConfig) -> ConfirmedWindowPlacement? {
+        guard AXIsProcessTrusted() else { return nil }
+        guard let window = focusedWindow() else { return nil }
 
         // Current window frame in Cocoa space, to decide which screen it's on.
-        guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
-        guard let screen = screen(for: currentCocoa) else { return false }
+        guard let currentCocoa = currentCocoaFrame(of: window) else { return nil }
+        guard let screen = screen(for: currentCocoa) else { return nil }
 
         let info = ScreenIdentity.info(for: screen)
         let root = config.layout(forKey: info.key)
         guard let target = QuickAction.rect(
             id, root: root,
             frame: screen.frame, visibleFrame: screen.visibleFrame,
-            pixelsWide: info.pixelsWide) else { return false }
+            pixelsWide: info.pixelsWide) else { return nil }
 
         // Record where the window was steered (fixed-size windows get centered, not the
         // zone rect) so the unsnap match works against where it really ends up.
         let landed = setFrame(target, of: window)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
-        return true
+        return confirmedPlacement(of: window, expected: landed)
     }
 
     // MARK: - AX element access
@@ -196,20 +201,20 @@ enum WindowMover {
     /// Snap the focused window into positional Zone `index` (0-based) of its screen's
     /// layout. No-op if that zone doesn't exist on this screen (out-of-range binding).
     @discardableResult
-    static func snapFocusedWindow(toZoneIndex index: Int, config: LineupConfig) -> Bool {
-        guard AXIsProcessTrusted() else { return false }
-        guard let window = focusedWindow() else { return false }
-        guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
-        guard let screen = screen(for: currentCocoa) else { return false }
+    static func snapFocusedWindow(toZoneIndex index: Int, config: LineupConfig) -> ConfirmedWindowPlacement? {
+        guard AXIsProcessTrusted() else { return nil }
+        guard let window = focusedWindow() else { return nil }
+        guard let currentCocoa = currentCocoaFrame(of: window) else { return nil }
+        guard let screen = screen(for: currentCocoa) else { return nil }
         let info = ScreenIdentity.info(for: screen)
         let root = config.layout(forKey: info.key)
         guard let target = Layout.zoneRect(
             index: index, root: root,
             frame: screen.frame, visibleFrame: screen.visibleFrame,
-            pixelsWide: info.pixelsWide) else { return false }
+            pixelsWide: info.pixelsWide) else { return nil }
         let landed = setFrame(target, of: window)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
-        return true
+        return confirmedPlacement(of: window, expected: landed)
     }
 
     /// Advance the left/right/center cycle for the focused window. Returns the new cycle
@@ -240,13 +245,14 @@ enum WindowMover {
 
     /// Snap a specific window element to a Cocoa-space rect (used by modifier-drag snapping,
     /// where the dragged window isn't necessarily the focused one yet).
-    static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
-        guard AXIsProcessTrusted() else { return }
+    static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) -> ConfirmedWindowPlacement? {
+        guard AXIsProcessTrusted() else { return nil }
         let before = currentCocoaFrame(of: window)
         let landed = setFrame(rect, of: window)
         if let before {
             SnapMemory.shared.recordSnap(of: window, from: before, to: landed)
         }
+        return confirmedPlacement(of: window, expected: landed)
     }
 
     /// The Restore shortcut: put the focused window back at its pre-snap frame. Only
@@ -279,6 +285,16 @@ enum WindowMover {
     /// The window's current Cocoa-space frame, if readable (drag-away restore needs it).
     static func frame(of window: AXUIElement) -> CGRect? {
         currentCocoaFrame(of: window)
+    }
+
+    private static func confirmedPlacement(of window: AXUIElement,
+                                           expected: CGRect) -> ConfirmedWindowPlacement? {
+        guard let actual = currentCocoaFrame(of: window),
+              abs(actual.minX - expected.minX) <= 4,
+              abs(actual.minY - expected.minY) <= 4,
+              abs(actual.width - expected.width) <= 4,
+              abs(actual.height - expected.height) <= 4 else { return nil }
+        return ConfirmedWindowPlacement(window: window, frame: actual)
     }
 
     /// Read the window's AX frame and convert to Cocoa space.

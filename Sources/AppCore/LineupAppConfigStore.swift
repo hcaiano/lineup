@@ -16,9 +16,25 @@ public enum LineupAppConfigError: Error, Equatable {
 /// - a reset preserves the rejected bytes FIRST and aborts if preservation fails
 /// - writes are atomic and stably formatted (`.prettyPrinted, .sortedKeys`)
 ///
-/// All three tools mutate through this one object (`update`/`setSettings`), so a save of one
+/// All tools mutate through this one object (`update`/`setSettings`), so a save of one
 /// section can never drop a sibling's — there is no second, stale envelope anywhere.
 public final class LineupAppConfigStore {
+    public final class ToolChangeObservation {
+        fileprivate let id = UUID()
+        private weak var store: LineupAppConfigStore?
+
+        fileprivate init(store: LineupAppConfigStore) {
+            self.store = store
+        }
+
+        public func cancel() {
+            store?.removeToolChangeObserver(id)
+            store = nil
+        }
+
+        deinit { cancel() }
+    }
+
     public enum State: Equatable {
         case ok
         case unreadable
@@ -34,6 +50,8 @@ public final class LineupAppConfigStore {
     public let url: URL
     public private(set) var config: LineupAppConfig
     public private(set) var state: State = .ok
+    private var toolChangeObservers: [UUID: (Set<ToolID>) -> Void] = [:]
+    private let toolChangeObserverLock = NSLock()
 
     /// Blocked whenever the on-disk file was rejected, so a later save cannot clobber it.
     public var canWrite: Bool { state == .ok }
@@ -91,10 +109,36 @@ public final class LineupAppConfigStore {
         try body(&copy)
         // A mutation that changes nothing writes nothing. Without this, everything that "saves
         // the current state" — a display change while an import is deferred, a status refresh —
-        // rewrites the file three tools share for no reason.
+        // rewrites the file all tools share for no reason.
         guard copy != config else { return }
+        let changedTools = Set(ToolID.all.filter { copy.section(for: $0) != config.section(for: $0) })
         try write(copy)
         config = copy
+        publishToolChanges(changedTools)
+    }
+
+    /// Observe successful tool-section writes. A failed or no-op write publishes nothing.
+    /// The caller retains the returned token for as long as it wants updates.
+    public func observeToolChanges(_ observer: @escaping (Set<ToolID>) -> Void) -> ToolChangeObservation {
+        let token = ToolChangeObservation(store: self)
+        toolChangeObserverLock.lock()
+        toolChangeObservers[token.id] = observer
+        toolChangeObserverLock.unlock()
+        return token
+    }
+
+    private func removeToolChangeObserver(_ id: UUID) {
+        toolChangeObserverLock.lock()
+        toolChangeObservers[id] = nil
+        toolChangeObserverLock.unlock()
+    }
+
+    private func publishToolChanges(_ changedTools: Set<ToolID>) {
+        guard !changedTools.isEmpty else { return }
+        toolChangeObserverLock.lock()
+        let observers = Array(toolChangeObservers.values)
+        toolChangeObserverLock.unlock()
+        for observer in observers { observer(changedTools) }
     }
 
     /// Replace one tool's settings blob. Siblings and every `enabled` flag are preserved.
@@ -137,8 +181,10 @@ public final class LineupAppConfigStore {
             try data.write(to: rejected, options: .atomic) // throws -> abort reset (no clobber)
         }
         let fresh = LineupAppConfig()
+        let changedTools = Set(ToolID.all.filter { fresh.section(for: $0) != config.section(for: $0) })
         try write(fresh)
         config = fresh
         state = .ok
+        publishToolChanges(changedTools)
     }
 }

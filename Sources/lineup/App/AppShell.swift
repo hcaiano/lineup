@@ -11,12 +11,13 @@ import ZonesCore
 /// Settings, Sparkle, permissions, launch at login, activation policy and termination. Tools own
 /// their hotkeys, taps, monitors, timers and observers, and nothing else.
 ///
-/// Phase 3 registers ZERO tools on purpose — the shell has to stand up by itself before Zones,
-/// Cycler and Hyperkey are built against it in parallel.
+/// The shell registers the tools in fixed order so Settings and the menu remain predictable.
 @MainActor
 final class AppShell: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: Product.logSubsystem, category: "shell")
     private let store = LineupAppConfigStore(url: Product.configURL)
+    private let placementCenter = WindowPlacementCenter()
+    private let layoutMutationCenter = ZoneLayoutMutationCenter()
     private lazy var registry = ToolRegistry(store: store)
     private lazy var statusItem = StatusItemController(registry: registry,
                                                        permissions: PermissionCenter.shared)
@@ -102,12 +103,32 @@ final class AppShell: NSObject, NSApplicationDelegate {
         statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
         statusItem.onShowAbout = { AboutWindowController.show() }
 
-        // Tools are registered here in phases 4-6. Order is the menu and sidebar order.
-        registry.register(ZonesTool())
+        // Order is the menu and sidebar order: Zones owns geometry, Tiles consumes it, then
+        // Cycler and Hyperkey remain independent tools.
+        registry.register(ZonesTool(
+            placementCenter: placementCenter,
+            layoutMutationCenter: layoutMutationCenter))
+        registry.register(TilesTool(coordinator: TilesCoordinator(
+            store: store, placementCenter: placementCenter,
+            layoutMutationCenter: layoutMutationCenter)))
         registry.register(CyclerTool())
         registry.register(HyperkeyTool())
         registry.startEnabledTools()
         statusItem.refresh()
+
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["LINEUP_OPEN_SETTINGS"] == "1" {
+            DispatchQueue.main.async { [weak self] in
+                self?.openSettings()
+            }
+        }
+        if ProcessInfo.processInfo.environment["LINEUP_SHOW_TILES_HUD_FAILURE"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                TilesHUD.shared.showFailure(
+                    "No other reachable window is available in the focused tile.")
+            }
+        }
+        #endif
 
         // The three audiences (plan §3 Phase 8), in the order they exclude each other:
         //
@@ -121,7 +142,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         if showingWelcome {
             showWelcome()
         } else if Onboarding.shouldShowWhatsNew(audience: audience,
-                                                didShowWhatsNew2: store.config.general.didShowWhatsNew2,
+                                                didShowCurrentWhatsNew: store.config.general.didShowWhatsNewTiles,
                                                 showingWelcome: showingWelcome,
                                                 canPersist: store.canWrite) {
             showWhatsNew()
@@ -315,6 +336,11 @@ final class AppShell: NSObject, NSApplicationDelegate {
             showMenuBarIcon: self.store.config.general.showMenuBarIcon,
             // A dead shell can't have changed anything, so report the value back unchanged.
             onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) ?? show })
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["LINEUP_OPEN_SETTINGS_SECTION"] == "tiles" {
+            store.selection = .tool(.tiles)
+        }
+        #endif
         let controller = SettingsWindowController(store: store)
         controller.onClose = { [weak self] in self?.settings = nil }
         settings = controller
@@ -364,7 +390,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
             onGrant: { PermissionCenter.shared.requestAccessibility() },
             onClose: { [weak self] in
                 UserDefaults.standard.set(true, forKey: AppShell.didOnboardKey)
-                // A brand-new user has just been introduced to all three tools; What's New would
+                // A brand-new user has just been introduced to the suite; What's New would
                 // repeat that at the next launch, so retire it here.
                 self?.markWhatsNewSeen()
                 ActivationCoordinator.shared.release("welcome")
@@ -393,11 +419,14 @@ final class AppShell: NSObject, NSApplicationDelegate {
     /// store means it may reappear at the next launch — the alternative is losing the note
     /// entirely for a user whose config is already broken.
     private func markWhatsNewSeen() {
-        guard !store.config.general.didShowWhatsNew2 else { return }
+        guard !store.config.general.didShowWhatsNewTiles else { return }
         do {
-            try store.update { $0.general.didShowWhatsNew2 = true }
+            try store.update {
+                $0.general.didShowWhatsNew2 = true
+                $0.general.didShowWhatsNewTiles = true
+            }
         } catch {
-            log.error("could not record didShowWhatsNew2: \(error, privacy: .public)")
+            log.error("could not record current What's New: \(error, privacy: .public)")
         }
     }
 

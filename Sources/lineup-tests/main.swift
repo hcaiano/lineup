@@ -18,6 +18,8 @@ runSuite("ZonesSuite", runZonesTests)
 runSuite("CyclerSuite", runCyclerTests)
 runSuite("HyperkeySuite", runHyperkeyTests)
 runSuite("AppSuite", runAppTests)
+runSuite("TilesSuite", runTilesTests)
+runSuite("TilesRuntimeSuite", runTilesRuntimeTests)
 
 // ---- Report ----
 if failures == 0 {

@@ -14,14 +14,16 @@ the only UI most users ever see is the on-screen layout editor (once) and the dr
 
 ## Product Purpose
 
-Lineup snaps windows into per-screen zones the user draws themselves. It replaces Magnet/Rectangle
-with something you can shape: recursive zone layouts per display, snapping by shift-drag or global
-shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
-instructions, and the app then disappears into muscle memory.
+Lineup arranges windows with per-screen zones the user draws themselves. Zones replaces
+Magnet/Rectangle with something you can shape: recursive layouts per display, snapping by
+shift-drag or global shortcuts. The optional Tiles tool uses those same layouts for automatic
+placement, four lightweight workspaces, and window stacks. Success: a first-time user builds a
+multi-zone layout with no instructions, chooses manual or automatic placement, and the app then
+disappears into muscle memory.
 
 ## Brand Personality
 
-Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in `Sources/lineup/Theme.swift`)
+Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in `Sources/lineup/App/Brand.swift`)
 carries the identity; everything else defers to macOS conventions (system fonts, vibrancy, standard
 controls). The app should feel like Apple shipped it.
 
@@ -42,6 +44,20 @@ controls). The app should feel like Apple shipped it.
 3. **Numbers users can act on.** Pixel readouts, placed where the eye already is; no unit soup.
 4. **Defer to the platform.** AppKit controls, system behaviors, native About/Settings idioms.
 5. **One blue.** Selection, highlight, accent, icon: all `Brand.blue`. No second accent.
+
+## Tiles Product Contract
+
+- Tiles is a separate tool and is off by default.
+- Zones owns layout geometry. Tiles never has a second layout editor.
+- Each Zones leaf is one tile. Each tile can hold an ordered stack of windows.
+- Four fixed workspaces switch as one context across all connected displays.
+- Tiles uses only public Accessibility operations, never native Space control or off-screen hiding.
+- Settings exposes the shared global switch, one fixed 8 pt tile-spacing switch, and optional
+  shortcuts for workspaces, stacks, spatial focus, spatial movement, and split direction. There
+  are no spacing values or layout policies to tune.
+- A Zones freeform quick action temporarily floats a managed window. Dropping it into a zone
+  adopts it again.
+- The full agreed behavior and safety gates are in `docs/tiles-implementation-plan.md`.
 
 ## Accessibility & Inclusion
 

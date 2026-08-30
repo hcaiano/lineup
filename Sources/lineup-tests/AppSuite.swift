@@ -5,7 +5,7 @@ import HyperkeyCore
 import ZonesCore
 
 // Shell-level checks: the config envelope, its write discipline, the legacy import/split, and
-// source-scan invariants that keep the three tools from stepping on each other.
+// source-scan invariants that keep the tools from stepping on each other.
 
 // A scratch directory that is removed when the closure returns. Named per-case so a failure
 // leaves a readable trail in /tmp.
@@ -37,6 +37,7 @@ func runAppTests() throws {
     try runToolWriteDisciplineTests()
     try runUIStateContractTests()
     try runVisualDesignTests()
+    try runTilesShellContractTests()
 }
 
 // MARK: - Envelope
@@ -46,6 +47,7 @@ private func runEnvelopeTests() throws {
     do {
         var cfg = LineupAppConfig()
         cfg.general.didShowWhatsNew2 = true
+        cfg.general.didShowWhatsNewTiles = true
         try cfg.setSettings(CyclerToolSettings(bindings: [
             AppBinding(keyCode: 18, modifiers: sampleHyperMask, bundleIdentifier: "com.apple.Safari"),
         ]), for: .cycler)
@@ -79,6 +81,8 @@ private func runEnvelopeTests() throws {
         check(!fresh.general.didImportLegacyZones, "fresh envelope has not imported zones")
         check(!fresh.general.didImportLegacyCycler, "fresh envelope has not imported cycler")
         check(!fresh.general.didShowWhatsNew2, "fresh envelope has not shown What's New")
+        check(!fresh.general.didShowWhatsNewTiles,
+              "fresh envelope has not shown the Tiles introduction")
         check(fresh.isEnabled(.zones) == nil, "no section -> nil enabled (caller uses Tool.defaultEnabled)")
     }
 
@@ -699,7 +703,7 @@ private func runShellSourceScanTests() throws {
 
     // SettingsStore is the SOLE route to the global recording suspension. A pane that reached for
     // HotkeyManager itself would bypass the ref count and the cancel-on-blur/close path, and
-    // could strand all three tools' hotkeys unregistered.
+    // could strand all tools' hotkeys unregistered.
     let suspendFiles = files.filter {
         $0.text.contains("HotkeyManager.shared.suspendAll") || $0.text.contains("HotkeyManager.shared.resumeAll")
     }.map(\.path)
@@ -1113,27 +1117,27 @@ private func runOnboardingTests() throws {
           "a returning 2.0 user never sees Welcome")
 
     // ---- What's New: existing users only, once, and never alongside Welcome ----
-    check(Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: false,
+    check(Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowCurrentWhatsNew: false,
                                         showingWelcome: false, canPersist: true),
           "a 1.x upgrade sees What's New")
-    check(!Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: true,
+    check(!Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowCurrentWhatsNew: true,
                                          showingWelcome: false, canPersist: true),
           "What's New is shown once — didShowWhatsNew2 retires it")
-    check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowWhatsNew2: false,
+    check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowCurrentWhatsNew: false,
                                          showingWelcome: true, canPersist: true),
           "a brand-new user gets Welcome INSTEAD of What's New, never both")
-    check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowWhatsNew2: false,
+    check(!Onboarding.shouldShowWhatsNew(audience: .brandNew, didShowCurrentWhatsNew: false,
                                          showingWelcome: false, canPersist: true),
           "a brand-new user never gets What's New even if Welcome was suppressed")
-    check(Onboarding.shouldShowWhatsNew(audience: .returning, didShowWhatsNew2: false,
+    check(Onboarding.shouldShowWhatsNew(audience: .returning, didShowCurrentWhatsNew: false,
                                         showingWelcome: false, canPersist: true),
           "a 2.0 user who has not seen the note yet still gets it")
     // An unreadable config.json reads as `.returning` with the flag false and cannot be written,
     // so without this gate the window came back at every single launch.
-    check(!Onboarding.shouldShowWhatsNew(audience: .returning, didShowWhatsNew2: false,
+    check(!Onboarding.shouldShowWhatsNew(audience: .returning, didShowCurrentWhatsNew: false,
                                          showingWelcome: false, canPersist: false),
           "a write-blocked store suppresses What's New instead of showing it every launch")
-    check(!Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowWhatsNew2: false,
+    check(!Onboarding.shouldShowWhatsNew(audience: .upgradingFrom1x, didShowCurrentWhatsNew: false,
                                          showingWelcome: false, canPersist: false),
           "a 1.x upgrade with a rejected config.json is not shown a note that cannot be retired")
 
@@ -1271,7 +1275,7 @@ private func runOnboardingTests() throws {
     // The import must run BEFORE any tool starts, or a tool reads an empty section, runs on
     // defaults, and has to be told to reload.
     if let importCall = shell.range(of: "runLegacyImport()"),
-       let register = shell.range(of: "registry.register(ZonesTool())"),
+       let register = shell.range(of: "registry.register(ZonesTool("),
        let start = shell.range(of: "registry.startEnabledTools()") {
         check(importCall.lowerBound < register.lowerBound && register.lowerBound < start.lowerBound,
               "the legacy import runs before the tools are registered and started")
@@ -1290,8 +1294,8 @@ private func runOnboardingTests() throws {
     for call in ["Onboarding.audience(", "Onboarding.shouldShowWelcome(", "Onboarding.shouldShowWhatsNew("] {
         check(shell.contains(call), "the shell gates onboarding through \(call)")
     }
-    check(shell.contains("$0.general.didShowWhatsNew2 = true"),
-          "dismissing What's New persists didShowWhatsNew2")
+    check(shell.contains("$0.general.didShowWhatsNewTiles = true"),
+          "dismissing What's New persists the Tiles introduction flag")
 
     // The 1.x UserDefaults keys are untouched — an existing user must not be re-onboarded or
     // re-taught the drag-snap edge hint.
@@ -1319,10 +1323,14 @@ private func runOnboardingTests() throws {
     for path in ["Sources/lineup/App/WelcomeWindow.swift",
                  "Sources/lineup/App/WhatsNewWindow.swift"] {
         check(source(path).contains("ToolTileRow()"),
-              "\(path) shows the three tool tiles")
+              "\(path) shows the shared tool tiles")
     }
-    check(source("Sources/lineup/App/OnboardingKit.swift").contains("ToolIcon(id: tool.id"),
+    let onboardingKit = source("Sources/lineup/App/OnboardingKit.swift")
+    check(onboardingKit.contains("ToolIcon(id: tool.id"),
           "the tiles reuse the Settings ToolIcon rather than inventing a second icon set")
+    check(onboardingKit.contains("OnboardingTool(id: .tiles")
+            && onboardingKit.contains("state: \"Off by default\", isOn: false"),
+          "onboarding introduces Tiles without enabling it")
     let whatsNew = source("Sources/lineup/App/WhatsNewWindow.swift")
     check(whatsNew.contains("Your window snapping is now the Zones tool"),
           "What's New leads with the rename")
@@ -1716,7 +1724,7 @@ private func runConfigCorrectnessTests() throws {
         try marker.write(to: url)
         try store.update { $0.general.showMenuBarIcon = true }
         check(try Data(contentsOf: url) == marker,
-              "an update that changes nothing does not rewrite the file three tools share")
+              "an update that changes nothing does not rewrite the file all tools share")
         try store.update { $0.general.showMenuBarIcon = false }
         check(try Data(contentsOf: url) != marker, "a change that IS a change still writes")
     }
@@ -1766,7 +1774,8 @@ private func runConfigCorrectnessTests() throws {
               "the unknown general key survives a rewrite")
         check(back.tools["zones"]?.extra["futureSectionKey"] == .int(7),
               "the unknown section key survives a rewrite")
-        check(!back.general.showMenuBarIcon && back.general.didShowWhatsNew2 == false,
+        check(!back.general.showMenuBarIcon && back.general.didShowWhatsNew2 == false
+              && back.general.didShowWhatsNewTiles == false,
               "the known general keys are unchanged by the catch-all")
         check(String(decoding: try back.encoded(), as: UTF8.self)
               == String(decoding: try cfg.encoded(), as: UTF8.self),
@@ -2401,4 +2410,145 @@ private func runVisualDesignTests() throws {
           "the app picker focuses its search field on open")
     check(picker.contains(".onSubmit { pickFirstMatch() }") && picker.contains("private func pickFirstMatch()"),
           "Return picks the first match, and does nothing when there is none")
+}
+
+// MARK: - Tiles shell and Settings (Phase 2)
+
+/// Tiles' shell lives in the AppKit executable, so these contracts are source scans. The scans
+/// keep the Phase 2 seam narrow: config and hotkeys belong to TilesTool, window work belongs to an
+/// injected coordinator, and Settings remains usable while the tool is off.
+private func runTilesShellContractTests() throws {
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        guard let text = files.first(where: { $0.path == path })?.text else {
+            check(false, "\(path) exists")
+            return ""
+        }
+        return text
+    }
+
+    check(ToolID.all == [.zones, .tiles, .cycler, .hyperkey],
+          "ToolID order is Zones, Tiles, Cycler, Hyperkey")
+
+    let shell = source("Sources/lineup/App/AppShell.swift")
+    guard let zones = shell.range(of: "registry.register(ZonesTool("),
+          let tiles = shell.range(of: "registry.register(TilesTool("),
+          let cycler = shell.range(of: "registry.register(CyclerTool())") else {
+        check(false, "AppShell registers Zones, Tiles and Cycler")
+        return
+    }
+    check(zones.lowerBound < tiles.lowerBound && tiles.lowerBound < cycler.lowerBound,
+          "Tiles is registered after Zones and before Cycler")
+
+    let mutationCenter = source("Sources/lineup/App/ZoneLayoutMutationCenter.swift")
+    check(mutationCenter.contains("@MainActor\nfinal class ZoneLayoutMutationCenter")
+            && mutationCenter.contains("screenKey: String")
+            && mutationCenter.contains("leafIndex: Int"),
+          "Zones and Tiles share a narrow main-actor layout mutation center")
+    check(shell.contains("layoutMutationCenter: layoutMutationCenter"),
+          "AppShell injects the same layout mutation center into both tools")
+    let tilesCoordinator = source("Sources/lineup/Tools/Tiles/TilesCoordinator.swift")
+    check(!tilesCoordinator.contains("LayoutEdit.") && !tilesCoordinator.contains("config.save"),
+          "Tiles does not write Zones geometry directly")
+
+    let tool = source("Sources/lineup/Tools/Tiles/TilesTool.swift")
+    check(tool.contains("final class TilesTool: Tool"), "TilesTool conforms to Tool")
+    check(tool.contains("let id = ToolID.tiles") && tool.contains("let displayName = \"Tiles\""),
+          "Tiles has the stable id and user-facing name")
+    check(tool.contains("let defaultEnabled = false"), "Tiles is disabled by default")
+    check(tool.contains("let requiredPermissions: Set<Permission> = [.accessibility]"),
+          "Tiles requests Accessibility only")
+    check(tool.contains("func attach(_ services: ToolServices)")
+            && tool.contains("func start(_ services: ToolServices)")
+            && tool.contains("func stop()"),
+          "Tiles implements the complete lifecycle")
+    check(tool.contains("protocol TilesCoordinatorProtocol")
+            && tool.contains("private let coordinator: TilesCoordinatorProtocol"),
+          "Tiles injects its runtime through the coordinator protocol")
+    check(tool.contains("func start(settings: TilesSettings) throws")
+            && tool.contains("func perform(_ action: TilesRuntimeAction)")
+            && tool.contains("var onPresentation: ((TilesPresentation) -> Void)?"),
+          "the coordinator boundary has runtime actions and confirmed presentation feedback")
+    check(tool.contains("services.hotkeys.unregisterAll()")
+            && tool.contains("TilesHUD.shared.dismiss()"),
+          "stop releases hotkeys and HUD resources")
+    check(tool.contains("private(set) var sectionLoadError: String?")
+            && tool.contains("func resetSection()")
+            && tool.contains("config.tiles-rejected-"),
+          "an invalid Tiles section is blocked and reset preserves a rejected copy")
+    check(tool.contains("guard services.config.canWrite")
+            && tool.contains("runtimeBlockedMessage"),
+          "a blocked config or preflight leaves Tiles paused without runtime resources")
+    check(tool.contains("func persistedCombos()")
+            && tool.contains("UInt32(shiftKey)")
+            && tool.contains("conflictOwner(keyCode:"),
+          "persistedCombos includes generated reverse bindings and sibling conflicts")
+    check(tool.contains("func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure])"),
+          "Tiles receives shortcut restore failures for retry")
+
+    let pane = source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
+    check(pane.contains("SettingsSectionView(\"Workspace\")")
+            && pane.contains("SettingsSectionView(\"Behavior\")")
+            && pane.contains("SettingsSectionView(\"Shortcuts\""),
+          "Tiles Settings has Workspace, Behavior and Shortcuts sections")
+    check(pane.contains("ForEach(1...4")
+            && pane.contains(".pickerStyle(.segmented)")
+            && pane.contains("Uses your Zones layouts. Workspaces are separate from macOS Spaces."),
+          "the pane exposes four segmented workspaces and explains native Spaces")
+    for label in ["Next Workspace", "Next Window in Tile", "Move Window to Next Workspace",
+                  "Focus Tile Left", "Focus Tile Right", "Focus Tile Up", "Focus Tile Down",
+                  "Move Window Left", "Move Window Right", "Move Window Up", "Move Window Down",
+                  "Switch Split Direction"] {
+        check(pane.contains(label), "Tiles Settings includes the \(label) shortcut row")
+    }
+    check(pane.contains("Space between tiles")
+            && pane.contains("tileSpacingEnabled")
+            && pane.contains("tileSpacingPoints"),
+          "Tiles Settings exposes one switch for 8 pt tile spacing")
+    check(tool.contains("let focus = NSMenuItem(title: \"Focus Tile\"")
+            && tool.contains("let moveTile = NSMenuItem(title: \"Move Focused Window\"")
+            && tool.contains("Switch Split Direction"),
+          "Tiles menu exposes directional focus, move and split controls")
+    check(pane.contains("ShortcutRecorder")
+            && pane.contains("RecorderButton(")
+            && pane.contains("Set shortcut")
+            && pane.contains("For workspace and stack shortcuts without Shift, hold Shift for previous"),
+          "Tiles shortcuts start unassigned and use the shared recorder")
+    check(pane.contains("BlockedBanner(message: message")
+            && pane.contains("model.canEdit")
+            && pane.contains("model.canUseRuntime"),
+          "Tiles Settings has blocked states and disables the correct controls")
+    check(pane.contains("accessibilityLabel(model.canUseRuntime")
+            && pane.contains("\"Active workspace\"")
+            && pane.contains("\"Starting workspace\""),
+          "workspace picker explains its active and disabled states")
+
+    let icon = source("Sources/lineup/Settings/Components/ToolIcon.swift")
+    check(icon.contains("case .tiles: return \"square.grid.3x3.fill\""),
+          "Tiles uses the generated AppStyleIcon fallback")
+    let brand = source("Sources/lineup/App/Brand.swift")
+    check(brand.contains("case .tiles: return blue"), "Tiles uses Brand.blue")
+
+    let hud = source("Sources/lineup/Tools/Tiles/TilesHUD.swift")
+    check(hud.contains("styleMask: [.borderless, .nonactivatingPanel]")
+            && hud.contains("canJoinAllSpaces")
+            && hud.contains("fullScreenAuxiliary")
+            && hud.contains("ignoresCycle")
+            && hud.contains("ignoresMouseEvents = true"),
+          "Tiles HUD is non-activating and click-through")
+    check(hud.contains("func showWorkspace") && hud.contains("func showStack")
+            && hud.contains("func showConfirmation")
+            && hud.contains("func showFailure")
+            && hud.contains("HUDMotion.duration(HUDMotion.fadeIn)")
+            && hud.contains("HUDMotion.duration(HUDMotion.fadeOut)")
+            && hud.contains("Brand.blue"),
+          "Tiles HUD covers workspace, stack and failure states with shared motion")
+    check(tool.contains("private func handle(_ presentation: TilesPresentation)")
+            && !tool.contains("coordinator.perform(.switchWorkspace(workspace))\n        hudWasUsed"),
+          "Tiles shows the HUD from confirmed coordinator feedback, not stale action state")
+
+    let tilesFiles = files.filter { $0.path.contains("/Tiles/") }
+    let forbidden = ["CGSMainConnectionID", "CGSSetWorkspace", "SkyLight", "offscreen"]
+    check(!tilesFiles.contains { file in forbidden.contains { file.text.contains($0) } },
+          "Tiles shell contains no private Space API or off-screen staging")
 }

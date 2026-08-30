@@ -20,6 +20,9 @@ let package = Package(
         // Depends on HyperkeyCore only to re-export TriggerKey/HyperKeySettings for that
         // legacy file shape (see Sources/CyclerCore/Bindings.swift).
         .target(name: "CyclerCore", dependencies: ["HyperkeyCore"]),
+        // Pure Tiles state, allocation, rebase, effects, settings, and
+        // recovery models.  Foundation + ZonesCore only; no AppKit/AX/Carbon.
+        .target(name: "TilesCore", dependencies: ["ZonesCore"]),
         // Product identity, tool identity, and the unified ~/.config/lineup/config.json
         // envelope + legacy import. Needs all three tool models to do the import.
         .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore"]),
@@ -32,6 +35,7 @@ let package = Package(
                 "ZonesCore",
                 "CyclerCore",
                 "HyperkeyCore",
+                "TilesCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             // Per-tool app icons for the Settings sidebar and pane headers. `.copy` (not
@@ -49,7 +53,7 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "TilesCore"]
         ),
     ]
 )

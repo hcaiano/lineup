@@ -766,6 +766,88 @@ func runZonesTests() throws {
         try flatDragged.validate()
     }
 
+    do { // toggleParentAxis: change only the closest split and keep valid units
+        let pixelRoot = Node.split(axis: .vertical,
+                                   dividers: [Boundary(2560, .pixels)],
+                                   children: [.leaf, .leaf])
+        let horizontal = LayoutEdit.toggleParentAxis(
+            pixelRoot, at: [1], rootPixelsWide: 5120, rootPointsWide: 5120)
+        if case let .split(axis, dividers, children) = horizontal {
+            check(axis == .horizontal, "toggle: root pixels -> horizontal")
+            check(dividers == [Boundary(0.5, .fraction)], "toggle: pixels -> fraction")
+            check(children == [.leaf, .leaf], "toggle: child order is preserved")
+        } else {
+            check(false, "toggle: root pixels returns a split")
+        }
+        try horizontal.validate()
+
+        let verticalAgain = LayoutEdit.toggleParentAxis(
+            horizontal, at: [1], rootPixelsWide: 5120, rootPointsWide: 5120)
+        if case let .split(axis, dividers, _) = verticalAgain {
+            check(axis == .vertical, "toggle: horizontal -> vertical")
+            check(dividers == [Boundary(2560, .pixels)], "toggle: fraction -> root pixels")
+        } else {
+            check(false, "toggle: horizontal returns a split")
+        }
+        try verticalAgain.validate()
+
+        let pointRoot = Node.split(axis: .vertical,
+                                   dividers: [Boundary(400, .points)],
+                                   children: [.leaf, .leaf])
+        let pointHorizontal = LayoutEdit.toggleParentAxis(
+            pointRoot, at: [0], rootPixelsWide: 2000, rootPointsWide: 1000)
+        if case let .split(axis, dividers, _) = pointHorizontal {
+            check(axis == .horizontal, "toggle: root points -> horizontal")
+            check(dividers == [Boundary(0.4, .fraction)], "toggle: points -> fraction")
+        } else {
+            check(false, "toggle: root points returns a split")
+        }
+        try pointHorizontal.validate()
+
+        let nestedRoot = Node.split(axis: .vertical,
+                                    dividers: [Boundary(0.6, .fraction)],
+                                    children: [
+                                        .leaf,
+                                        .split(axis: .vertical,
+                                               dividers: [Boundary(0.5, .fraction)],
+                                               children: [.leaf, .leaf]),
+                                    ])
+        let nestedHorizontal = LayoutEdit.toggleParentAxis(
+            nestedRoot, at: [1, 0], rootPixelsWide: 2000, rootPointsWide: 2000)
+        if case let .split(rootAxis, rootDividers, children) = nestedHorizontal,
+           case let .split(innerAxis, innerDividers, innerChildren) = children[1] {
+            check(rootAxis == .vertical && rootDividers == [Boundary(0.6, .fraction)],
+                  "toggle: nested leaves keep the root split unchanged")
+            check(innerAxis == .horizontal && innerDividers == [Boundary(0.5, .fraction)],
+                  "toggle: nested split changes axis and keeps fractions")
+            check(innerChildren == [.leaf, .leaf], "toggle: nested child order is preserved")
+        } else {
+            check(false, "toggle: nested split returns the expected tree")
+        }
+        check(Layout.leaves(nestedHorizontal,
+                           container: CGRect(x: 0, y: 0, width: 2000, height: 1000),
+                           pixelsWide: 2000).count == 3,
+              "toggle: nested leaf count is preserved")
+        try nestedHorizontal.validate()
+
+        // Invalid paths, a root leaf, and malformed/invalid geometry must be no-ops.
+        check(LayoutEdit.toggleParentAxis(pixelRoot, at: [9], rootPixelsWide: 5120,
+                                          rootPointsWide: 5120) == pixelRoot,
+              "toggle: invalid leaf path is a no-op")
+        check(LayoutEdit.toggleParentAxis(.leaf, at: [], rootPixelsWide: 5120,
+                                          rootPointsWide: 5120) == .leaf,
+              "toggle: root leaf is a no-op")
+        let bad = Node.split(axis: .vertical, dividers: [Boundary(Double.nan, .pixels)],
+                             children: [.leaf, .leaf])
+        let badResult = LayoutEdit.toggleParentAxis(bad, at: [0], rootPixelsWide: 5120,
+                                                    rootPointsWide: 5120)
+        if case let .split(_, dividers, _) = badResult {
+            check(dividers[0].value.isNaN, "toggle: invalid geometry is a no-op")
+        } else {
+            check(false, "toggle: invalid geometry keeps the original tree")
+        }
+    }
+
     // ---- P4: shortcuts model ----
     do {
         var sc = Shortcuts()
@@ -1254,7 +1336,10 @@ private func runZonesToolTests() throws {
 
     // ---- Registration + tool contract ----
     let shell = zonesFile("Sources/lineup/App/AppShell.swift") ?? ""
-    check(shell.contains("registry.register(ZonesTool())"), "AppShell registers the Zones tool")
+    check(shell.contains("registry.register(ZonesTool(")
+            && shell.contains("placementCenter: placementCenter")
+            && shell.contains("layoutMutationCenter: layoutMutationCenter"),
+          "AppShell registers Zones with the shared mutation boundaries")
     check(tool.contains("let defaultEnabled = true"), "Zones is on by default (1.x's incumbent behaviour)")
     check(tool.contains("let requiredPermissions: Set<Permission> = [.accessibility]"),
           "Zones declares its Accessibility requirement")

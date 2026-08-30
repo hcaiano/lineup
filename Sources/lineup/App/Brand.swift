@@ -27,12 +27,13 @@ enum Brand {
 
     /// A tool's accent, for its Settings sidebar icon and any pane chrome that wants it.
     ///
-    /// The three tools are told apart by colour + SF Symbol rather than by three separate marks:
-    /// the menu-bar logo stays Lineup's, so the suite still reads as one app. Unknown ids (a
+    /// The tools are told apart by colour + SF Symbol rather than by separate marks: the menu-bar
+    /// logo stays Lineup's, so the suite still reads as one app. Unknown ids (a
     /// future tool, or a section written by a newer build) fall back to the app accent.
     static func accent(for id: ToolID) -> NSColor {
         switch id {
         case .zones: return zonesBlue
+        case .tiles: return blue
         case .cycler: return cyclerAccent
         case .hyperkey: return hyperkeyAccent
         default: return blue

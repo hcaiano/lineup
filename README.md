@@ -10,18 +10,20 @@
 
 ---
 
-Lineup is Henrique's personal macOS utility suite. It lives in the menu bar and bundles three
+Lineup is Henrique's personal macOS utility suite. It lives in the menu bar and bundles four
 tools:
 
 - **Zones** — draw your own window-snapping zone layouts, per screen, and drop windows into them
   with a drag or a keyboard shortcut.
+- **Tiles** — automatically place windows in those Zones, with four lightweight workspaces,
+  stacked windows, keyboard tile control, and optional 8 pt spacing.
 - **Cycler** — cycle through apps and windows with keyboard shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey** — turn Caps Lock (or another key) into a "Hyper" key (Control + Option + Shift +
-  Command), so a single keypress drives the other two tools' shortcuts.
+  Command), so a single keypress drives Lineup's shortcuts.
 
-Each tool can be turned on or off independently in Settings. Zones is on by default; Cycler and
-Hyperkey start off so an automatic update never silently grabs new hotkeys or Caps Lock.
+Each tool can be turned on or off independently in Settings. Zones is on by default. Tiles,
+Cycler, and Hyperkey start off, so an automatic update never arranges windows or grabs new keys.
 
 ## Status
 

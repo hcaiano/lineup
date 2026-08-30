@@ -3,18 +3,18 @@ import AppCore
 import SwiftUI
 
 /// Shared parts of the two onboarding windows (Welcome for a brand-new user, What's New for a
-/// 1.x upgrade). Both have to answer "what are the three tools and which are on?", so the tile
+/// 1.x upgrade). Both have to answer "what are the tools and which are on?", so the tile
 /// row and the banners are written once here rather than twice in slightly different words.
 
 /// One tool as the onboarding windows describe it. The blurbs are shorter than the tools'
-/// `summary` strings on purpose: three of them are read side by side.
+/// `summary` strings on purpose: all of them are read side by side.
 struct OnboardingTool: Identifiable {
     let id: ToolID
     let name: String
     let blurb: String
     /// "On" / "Off by default" — the honest default state after a 2.0 install. A silent
-    /// auto-update must never spontaneously start an event tap or grab Caps Lock, so Cycler and
-    /// Hyperkey ship off and say so.
+    /// auto-update must never spontaneously arrange windows, start an event tap, or grab Caps
+    /// Lock, so Tiles, Cycler and Hyperkey ship off and say so.
     let state: String
     let isOn: Bool
 }
@@ -24,6 +24,9 @@ enum OnboardingCopy {
         OnboardingTool(id: .zones, name: "Zones",
                        blurb: "Snap and resize windows with a shortcut, or drag one onto a zone.",
                        state: "On", isOn: true),
+        OnboardingTool(id: .tiles, name: "Tiles",
+                       blurb: "Fill your Zones automatically, with four workspaces and stacks.",
+                       state: "Off by default", isOn: false),
         OnboardingTool(id: .cycler, name: "Cycler",
                        blurb: "One shortcut jumps to an app; press it again to cycle its windows.",
                        state: "Off by default", isOn: false),
@@ -35,13 +38,13 @@ enum OnboardingCopy {
     /// Accessibility is the one permission Lineup asks for up front. Input Monitoring is named
     /// here only so a new user knows it exists and knows it is not being asked for yet.
     static let accessibilityBody =
-        "Zones and Cycler need Accessibility to move and focus your windows. That is the only "
+        "Zones, Tiles and Cycler need Accessibility to move and focus your windows. That is the only "
         + "permission Lineup asks for now, and it never collects your data."
     static let inputMonitoringNote =
         "Input Monitoring is asked for only when you turn Hyperkey on."
 }
 
-/// The three tools as a row of app-icon tiles. This is the one view that makes Lineup 2.0 read
+/// The tools as a row of app-icon tiles. This is the one view that makes Lineup read
 /// as a suite rather than as "the window app, with extras".
 struct ToolTileRow: View {
     var body: some View {

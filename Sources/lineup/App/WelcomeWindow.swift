@@ -8,7 +8,7 @@ import SwiftUI
 /// why it needs permission, instead of being dropped cold into an OS dialog for an app whose
 /// window they never saw — Lineup is a menu-bar agent with no window of its own.
 ///
-/// Rewritten for 2.0: the product is now three tools, so the window has to say what each one does
+/// The window says what each tool does
 /// and which of them are off by default, and it must be explicit that Input Monitoring is NOT
 /// being asked for here. An existing 1.x user never sees this window (they see What's New).
 @MainActor
@@ -42,7 +42,7 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
         return host
     }
 
-    private static let width: CGFloat = 520
+    private static let width: CGFloat = 620
 
     func show() {
         let (win, _) = OnboardingWindow.make(title: "Welcome to \(Product.name)", width: Self.width) {
@@ -85,7 +85,7 @@ private struct WelcomeView: View {
                         .accessibilityHidden(true)
                     Text("Welcome to \(Product.name)")
                         .font(.system(size: 22, weight: .semibold))
-                    Text("Three tools for your windows and your keyboard, in one menu-bar app.")
+                    Text("Four tools for your windows and your keyboard, in one menu-bar app.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

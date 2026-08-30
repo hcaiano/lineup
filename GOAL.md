@@ -1,5 +1,10 @@
 # Lineup — Production-Readiness & Design Goal
 
+> Scope update, 2026-08-30: this document records the completed production-readiness phase. The
+> new Tiles phase in `docs/tiles-implementation-plan.md` supersedes only the old capability
+> non-goals below. Its agreed scope adds automatic tiling, four Lineup workspaces, and stacked
+> window cycling while preserving Zones as the only layout editor.
+
 **One-liner:** Lineup is a tiny, native macOS menu-bar window manager that snaps windows into
 per-screen, user-defined zones — built for ultrawide monitors (Samsung G9) but useful to anyone.
 This phase makes it **beautiful, minimal, discoverable, and production-ready** for a public GitHub

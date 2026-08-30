@@ -112,6 +112,8 @@ public struct GeneralConfig: Codable, Equatable {
     public var didImportLegacyCycler: Bool
     /// Gates the one-time 1.x -> 2.0 "What's New" window.
     public var didShowWhatsNew2: Bool
+    /// Gates the one-time introduction of the optional Tiles tool for existing 2.x users.
+    public var didShowWhatsNewTiles: Bool
     /// General keys this build has never heard of, re-emitted verbatim on encode — a newer
     /// build's setting must survive an older build rewriting the file.
     public var extra: [String: JSONValue]
@@ -120,19 +122,23 @@ public struct GeneralConfig: Codable, Equatable {
                 didImportLegacyZones: Bool = false,
                 didImportLegacyCycler: Bool = false,
                 didShowWhatsNew2: Bool = false,
+                didShowWhatsNewTiles: Bool = false,
                 extra: [String: JSONValue] = [:]) {
         self.showMenuBarIcon = showMenuBarIcon
         self.didImportLegacyZones = didImportLegacyZones
         self.didImportLegacyCycler = didImportLegacyCycler
         self.didShowWhatsNew2 = didShowWhatsNew2
+        self.didShowWhatsNewTiles = didShowWhatsNewTiles
         self.extra = extra
     }
 
     private enum CodingKeys: String, CodingKey {
-        case showMenuBarIcon, didImportLegacyZones, didImportLegacyCycler, didShowWhatsNew2
+        case showMenuBarIcon, didImportLegacyZones, didImportLegacyCycler, didShowWhatsNew2,
+             didShowWhatsNewTiles
     }
     private static let knownKeys: Set<String> = [
         "showMenuBarIcon", "didImportLegacyZones", "didImportLegacyCycler", "didShowWhatsNew2",
+        "didShowWhatsNewTiles",
     ]
 
     // Every key is optional so a file written by an older 2.x build keeps loading.
@@ -142,6 +148,7 @@ public struct GeneralConfig: Codable, Equatable {
         didImportLegacyZones = try c.decodeIfPresent(Bool.self, forKey: .didImportLegacyZones) ?? false
         didImportLegacyCycler = try c.decodeIfPresent(Bool.self, forKey: .didImportLegacyCycler) ?? false
         didShowWhatsNew2 = try c.decodeIfPresent(Bool.self, forKey: .didShowWhatsNew2) ?? false
+        didShowWhatsNewTiles = try c.decodeIfPresent(Bool.self, forKey: .didShowWhatsNewTiles) ?? false
         extra = try decoder.container(keyedBy: AnyCodingKey.self)
             .unknownValues(besides: GeneralConfig.knownKeys)
     }
@@ -152,6 +159,7 @@ public struct GeneralConfig: Codable, Equatable {
         try c.encode(didImportLegacyZones, forKey: AnyCodingKey("didImportLegacyZones"))
         try c.encode(didImportLegacyCycler, forKey: AnyCodingKey("didImportLegacyCycler"))
         try c.encode(didShowWhatsNew2, forKey: AnyCodingKey("didShowWhatsNew2"))
+        try c.encode(didShowWhatsNewTiles, forKey: AnyCodingKey("didShowWhatsNewTiles"))
         try c.encodeExtra(extra)
     }
 }

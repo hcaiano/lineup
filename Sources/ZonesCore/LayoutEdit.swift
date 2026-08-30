@@ -42,6 +42,117 @@ public enum LayoutEdit {
         return root.replacingNode(at: parentPath, with: .leaf)
     }
 
+    /// Toggle the axis of the split that contains the leaf at `leafPath`.
+    ///
+    /// The Zones tree remains the source of truth for geometry. This operation only changes the
+    /// closest parent split, keeps its children in the same order, and returns a new tree. Root
+    /// vertical splits are special because their boundaries may be stored in physical pixels or
+    /// AppKit points: changing that root to horizontal converts every boundary to a fraction. A
+    /// horizontal root is converted back to pixel boundaries when it becomes vertical, preserving
+    /// seam precision for the next Zones edit. Nested splits always use fractions.
+    ///
+    /// `rootPointsWide` is the root container width in AppKit points. It is required when a root
+    /// vertical split contains `.points` boundaries; without it, that edit is unsafe and is a
+    /// no-op. Invalid trees, paths, geometry, and a leaf without a parent are all no-ops.
+    public static func toggleParentAxis(_ root: Node, at leafPath: [Int],
+                                        rootPixelsWide: Int,
+                                        rootPointsWide: Double? = nil) -> Node {
+        guard !leafPath.isEmpty else { return root }
+        let parentPath = Array(leafPath.dropLast())
+        guard root.node(at: leafPath) == .leaf,
+              case let .split(axis, dividers, children) = root.node(at: parentPath),
+              children.count >= 2,
+              dividers.count == children.count - 1,
+              rootPixelsWide > 0,
+              Double(rootPixelsWide).isFinite else { return root }
+
+        // `Node.validate()` checks the structural and unit contract. The additional geometry
+        // check below rejects NaN, infinities, out-of-range cuts, and crossing boundaries that
+        // the resolver would otherwise have to sort silently.
+        guard (try? root.validate()) != nil,
+              validGeometry(root, rootPixelsWide: rootPixelsWide,
+                            rootPointsWide: rootPointsWide) else { return root }
+
+        let newDividers: [Boundary]
+        if parentPath.isEmpty, axis == .vertical {
+            let fractions = dividers.compactMap {
+                rootFraction($0, rootPixelsWide: rootPixelsWide, rootPointsWide: rootPointsWide)
+            }
+            guard fractions.count == dividers.count, fractions.allSatisfy({ $0.isFinite }) else {
+                return root
+            }
+            newDividers = fractions.map { Boundary($0, .fraction) }
+        } else if parentPath.isEmpty, axis == .horizontal {
+            newDividers = dividers.map { Boundary($0.value * Double(rootPixelsWide), .pixels) }
+            guard newDividers.allSatisfy({ $0.value.isFinite }) else { return root }
+        } else {
+            // Nested splits are fraction-only by validation, so changing their axis does not
+            // require a unit conversion.
+            newDividers = dividers
+        }
+
+        let toggledAxis: Axis = axis == .vertical ? .horizontal : .vertical
+        let result = root.replacingNode(at: parentPath,
+                                        with: .split(axis: toggledAxis,
+                                                    dividers: newDividers,
+                                                    children: children))
+        guard (try? result.validate()) != nil,
+              validGeometry(result, rootPixelsWide: rootPixelsWide,
+                            rootPointsWide: rootPointsWide) else { return root }
+        return result
+    }
+
+    /// Convert one root-vertical boundary to a fraction of the root's point width.
+    private static func rootFraction(_ boundary: Boundary, rootPixelsWide: Int,
+                                     rootPointsWide: Double?) -> Double? {
+        switch boundary.unit {
+        case .fraction:
+            return boundary.value
+        case .pixels:
+            guard rootPixelsWide > 0 else { return nil }
+            return boundary.value / Double(rootPixelsWide)
+        case .points:
+            guard let rootPointsWide, rootPointsWide > 0, rootPointsWide.isFinite else { return nil }
+            return boundary.value / rootPointsWide
+        }
+    }
+
+    /// Validate geometry independently of `Node.validate()`, whose job is the tree/unit contract.
+    /// A boundary's normalized distance must be strictly inside the container and ordered with
+    /// its siblings. This makes the orientation edit safe even for hand-authored configs.
+    private static func validGeometry(_ node: Node, rootPixelsWide: Int,
+                                      rootPointsWide: Double?, isRoot: Bool = true) -> Bool {
+        switch node {
+        case .leaf:
+            return true
+        case let .split(axis, dividers, children):
+            guard children.count >= 2, dividers.count == children.count - 1 else { return false }
+            var previous = 0.0
+            for boundary in dividers {
+                let fraction: Double?
+                switch boundary.unit {
+                case .fraction:
+                    fraction = boundary.value
+                case .pixels:
+                    guard isRoot, axis == .vertical, rootPixelsWide > 0 else { return false }
+                    fraction = boundary.value / Double(rootPixelsWide)
+                case .points:
+                    guard isRoot, axis == .vertical,
+                          let rootPointsWide, rootPointsWide > 0,
+                          rootPointsWide.isFinite else { return false }
+                    fraction = boundary.value / rootPointsWide
+                }
+                guard let fraction, fraction.isFinite,
+                      fraction > previous, fraction < 1 else { return false }
+                previous = fraction
+            }
+            return children.allSatisfy {
+                validGeometry($0, rootPixelsWide: rootPixelsWide,
+                              rootPointsWide: rootPointsWide, isRoot: false)
+            }
+        }
+    }
+
     /// Set divider `index` of the split at `path` to `fraction` of its container. The root
     /// vertical split keeps PIXEL units (seam precision) using `rootPixelsWide`; every other
     /// split uses fractions. The fraction is clamped to (0.01, 0.99) AND kept strictly

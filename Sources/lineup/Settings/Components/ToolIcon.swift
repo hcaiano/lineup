@@ -35,7 +35,7 @@ struct AppStyleIcon: View {
 /// - Zones is Lineup itself (window snapping was 1.x's whole product), so it uses the running
 ///   app's own icon — correct in the bundle and in a bare `swift run`.
 /// - Cycler ships the standalone app's icon as a package resource.
-/// - Hyperkey never had an app, so it gets an `AppStyleIcon`.
+/// - Tiles and Hyperkey have no separate app artwork, so they get an `AppStyleIcon`.
 ///
 /// Every branch falls back to a drawn tile, so a missing resource degrades to something that
 /// still reads as an icon instead of an empty gap.
@@ -74,6 +74,7 @@ enum ToolIconLibrary {
     static func fallbackSymbol(for id: ToolID) -> String {
         switch id {
         case .zones: return "square.grid.2x2.fill"
+        case .tiles: return "square.grid.3x3.fill"
         case .cycler: return "arrow.triangle.2.circlepath"
         case .hyperkey: return "capslock.fill"
         default: return "wrench.and.screwdriver.fill"

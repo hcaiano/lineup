@@ -43,10 +43,19 @@ final class ZonesTool: Tool {
     /// Held so the open pane keeps its published state across SwiftUI rebuilds, and so the tool
     /// can push changes it makes itself (a menu toggle) into an open Settings window.
     private var settingsModel: ZonesSettingsModel?
+    private let placementCenter: WindowPlacementCenter
+    private let layoutMutationCenter: ZoneLayoutMutationCenter
+
+    init(placementCenter: WindowPlacementCenter,
+         layoutMutationCenter: ZoneLayoutMutationCenter) {
+        self.placementCenter = placementCenter
+        self.layoutMutationCenter = layoutMutationCenter
+    }
 
     private lazy var dragSnap = DragSnapController(
         configProvider: { [weak self] in self?.config ?? LineupConfig() },
-        triggerProvider: { [weak self] in self?.dragSnapTrigger ?? .default })
+        triggerProvider: { [weak self] in self?.dragSnapTrigger ?? .default },
+        placementCenter: placementCenter)
 
     private enum ConfigState: Equatable {
         case ok
@@ -69,6 +78,13 @@ final class ZonesTool: Tool {
     func attach(_ services: ToolServices) {
         self.services = services
         reloadConfig()
+        // Tiles can remain enabled while Zones is stopped. Keep this shell seam installed for
+        // the lifetime of the attached tool, but capture Zones weakly so a restart/deallocation
+        // cannot leave the center retaining the tool or its resources.
+        layoutMutationCenter.installHandler { [weak self] screenKey, leafIndex in
+            self?.toggleParentSplit(screenKey: screenKey, leafIndex: leafIndex)
+                ?? .unavailable("Zones is unavailable.")
+        }
     }
 
     func start(_ services: ToolServices) {
@@ -313,6 +329,52 @@ final class ZonesTool: Tool {
         settingsModel?.refresh()
     }
 
+    // MARK: - Layout mutations requested by Tiles
+
+    /// Toggle the split containing the requested live leaf. Zones remains the only owner of the
+    /// persisted tree: Tiles supplies only a screen key and leaf index through the center.
+    private func toggleParentSplit(screenKey: String, leafIndex: Int) -> ZoneLayoutMutationResult {
+        guard editorOverlay == nil else {
+            return .unavailable("Close the layout editor before changing orientation.")
+        }
+        guard let screen = NSScreen.screens.first(where: {
+            ScreenIdentity.info(for: $0).key == screenKey
+        }) else {
+            return .unavailable("That display is no longer available.")
+        }
+
+        let info = ScreenIdentity.info(for: screen)
+        let root = config.layout(forKey: info.key)
+        let container = Layout.rootContainer(frame: screen.frame, visibleFrame: screen.visibleFrame)
+        guard container.width > 0, container.height > 0, info.pixelsWide > 0 else {
+            return .unavailable("That display has no usable layout area.")
+        }
+        let leaves = Layout.leaves(root, container: container, pixelsWide: info.pixelsWide)
+        guard leaves.indices.contains(leafIndex) else {
+            return .unavailable("That tile is no longer available.")
+        }
+        let leafPath = leaves[leafIndex].path
+        guard !leafPath.isEmpty else {
+            return .unavailable("The layout has no split to change.")
+        }
+
+        let changed = LayoutEdit.toggleParentAxis(
+            root, at: leafPath, rootPixelsWide: info.pixelsWide,
+            rootPointsWide: Double(container.width))
+        guard changed != root else {
+            return .unavailable("The layout could not change orientation.")
+        }
+        guard case let .split(newAxis, _, _) = changed.node(at: Array(leafPath.dropLast())) else {
+            return .unavailable("The layout could not change orientation.")
+        }
+        // `applyLayouts` validates the whole config, saves atomically, and only then updates the
+        // live copy. Do not report a changed orientation before that persistence succeeds.
+        guard applyLayouts([(screen: info, layout: changed)]) else {
+            return .unavailable("The layout could not be saved.")
+        }
+        return .changed(newAxis)
+    }
+
     // MARK: - Hotkeys
 
     private func registerHotkeys() {
@@ -384,9 +446,18 @@ final class ZonesTool: Tool {
         default:
             cycleState = nil // any other action breaks an in-progress cycle
             if let zoneIndex = ZoneAction.zeroBasedIndex(from: action) {
-                WindowMover.snapFocusedWindow(toZoneIndex: zoneIndex, config: config)
+                if let placement = WindowMover.snapFocusedWindow(toZoneIndex: zoneIndex, config: config),
+                   let screen = NSScreen.screens.first(where: { $0.frame.intersects(placement.frame) }) {
+                    let key = ScreenIdentity.info(for: screen).key
+                    placementCenter.publish(WindowPlacementEvent(
+                        window: placement.window,
+                        target: .zone(screenKey: key, index: zoneIndex, frame: placement.frame)))
+                }
             } else {
-                WindowMover.snapFocusedWindow(toQuickAction: action, config: config)
+                if let placement = WindowMover.snapFocusedWindow(toQuickAction: action, config: config) {
+                    placementCenter.publish(WindowPlacementEvent(
+                        window: placement.window, target: .freeform(frame: placement.frame)))
+                }
             }
         }
     }

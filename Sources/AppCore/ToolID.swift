@@ -7,11 +7,12 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
     public init(rawValue: String) { self.rawValue = rawValue }
 
     public static let zones = ToolID(rawValue: "zones")
+    public static let tiles = ToolID(rawValue: "tiles")
     public static let cycler = ToolID(rawValue: "cycler")
     public static let hyperkey = ToolID(rawValue: "hyperkey")
 
-    /// Registry/sidebar order. Fixed: Zones, Cycler, Hyperkey.
-    public static let all: [ToolID] = [.zones, .cycler, .hyperkey]
+    /// Registry/sidebar order. Fixed: Zones, Tiles, Cycler, Hyperkey.
+    public static let all: [ToolID] = [.zones, .tiles, .cycler, .hyperkey]
 }
 
 extension ToolID: CustomStringConvertible {

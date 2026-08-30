@@ -23,6 +23,7 @@ final class DragSnapController {
     private var monitor: Any?
     private let configProvider: () -> LineupConfig
     private let triggerProvider: () -> DragSnapTrigger
+    private let placementCenter: WindowPlacementCenter
 
     private var captured: AXUIElement?   // the window grabbed at drag start
     private var armed = false            // trigger modifier held + a window captured
@@ -31,6 +32,7 @@ final class DragSnapController {
     private static let maxPreArmFrameChecks = 10
     private var highlight: HighlightWindow?
     private var lastTargetRect: CGRect?  // what release will snap to (zone or half)
+    private var lastZoneAddress: (screenKey: String, index: Int, frame: CGRect)?
 
     // Linger hint: if the cursor stays in the same zone a moment without targeting a half,
     // teach the feature. A timer is required — a stationary cursor emits no drag events.
@@ -51,9 +53,12 @@ final class DragSnapController {
     private var restoreCandidate: (window: AXUIElement, preFrame: CGRect, frameAtMatch: CGRect)?
     private var restoreRetries = 0
 
-    init(configProvider: @escaping () -> LineupConfig, triggerProvider: @escaping () -> DragSnapTrigger) {
+    init(configProvider: @escaping () -> LineupConfig,
+         triggerProvider: @escaping () -> DragSnapTrigger,
+         placementCenter: WindowPlacementCenter) {
         self.configProvider = configProvider
         self.triggerProvider = triggerProvider
+        self.placementCenter = placementCenter
     }
 
     var isEnabled: Bool { monitor != nil }
@@ -105,7 +110,17 @@ final class DragSnapController {
             if armed { updateHighlight() }
         case .leftMouseUp:
             if armed, let win = captured, let rect = lastTargetRect {
-                WindowMover.snap(win, toCocoaRect: rect)
+                if let placement = WindowMover.snap(win, toCocoaRect: rect) {
+                    let target: PlacementTarget
+                    if let zone = lastZoneAddress {
+                        target = .zone(screenKey: zone.screenKey, index: zone.index,
+                                       frame: zone.frame)
+                    } else {
+                        target = .freeform(frame: placement.frame)
+                    }
+                    placementCenter.publish(WindowPlacementEvent(window: placement.window,
+                                                                 target: target))
+                }
             }
             reset()
         default:
@@ -220,18 +235,34 @@ final class DragSnapController {
         let root = configProvider().layout(forKey: info.key)
         // The leaf zone whose rect contains the cursor; fall back to the nearest by center.
         let zones = Layout.zones(root, frame: screen.frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
-        if let hit = zones.first(where: { $0.contains(p) }) { return hit }
-        return zones.min(by: { hypot($0.midX - p.x, $0.midY - p.y) < hypot($1.midX - p.x, $1.midY - p.y) })
+        let index = zones.firstIndex(where: { $0.contains(p) })
+            ?? zones.indices.min(by: {
+                hypot(zones[$0].midX - p.x, zones[$0].midY - p.y)
+                    < hypot(zones[$1].midX - p.x, zones[$1].midY - p.y)
+            })
+        guard let index else { return nil }
+        lastZoneAddress = (info.key, index, zones[index])
+        return zones[index]
     }
 
     private func updateHighlight() {
         guard let zone = currentZoneRect() else { hideHighlight(); return }
-        let target = DragTarget.rect(zone: zone, cursor: NSEvent.mouseLocation)
-        trackLinger(zone: zone, targetingHalf: target != zone)
+        let normalizesPlacement = placementCenter.normalizesPlacements
+        let target = normalizesPlacement
+            ? zone
+            : DragTarget.rect(zone: zone, cursor: NSEvent.mouseLocation)
+        if normalizesPlacement {
+            clearLinger()
+        } else {
+            trackLinger(zone: zone, targetingHalf: target != zone)
+        }
         if target == lastTargetRect, highlight != nil { return } // unchanged — skip redraw
         lastTargetRect = target
         if highlight == nil { highlight = HighlightWindow() }
-        highlight?.show(at: target, hint: hintShown && target == zone ? HighlightWindow.halfHint : nil)
+        let hint = !normalizesPlacement && hintShown && target == zone
+            ? HighlightWindow.halfHint
+            : nil
+        highlight?.show(at: target, hint: hint)
         // A tactile tick each time the target changes (zone to zone, zone to half, half to
         // quarter) — trackpads only, free elsewhere. You feel the snap before you drop it.
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .drawCompleted)
@@ -285,6 +316,7 @@ final class DragSnapController {
     private func hideHighlight() {
         highlight?.orderOut(nil)
         lastTargetRect = nil
+        lastZoneAddress = nil
         clearLinger()
     }
 

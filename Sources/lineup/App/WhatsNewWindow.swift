@@ -39,7 +39,7 @@ final class WhatsNewWindowController: NSObject, NSWindowDelegate {
         return host
     }
 
-    private static let width: CGFloat = 520
+    private static let width: CGFloat = 620
 
     func show() {
         let (win, _) = OnboardingWindow.make(title: "What’s New in \(Product.name)",
@@ -82,10 +82,10 @@ private struct WhatsNewView: View {
                         .scaledToFit()
                         .frame(width: 64, height: 64)
                         .accessibilityHidden(true)
-                    Text("\(Product.name) 2.0")
+                    Text("What’s New in \(Product.name)")
                         .font(.system(size: 22, weight: .semibold))
-                    Text("Your window snapping is now the Zones tool. Two new tools are available, "
-                         + "off by default: Cycler and Hyperkey.")
+                    Text("Your window snapping is now the Zones tool. Tiles, Cycler and Hyperkey "
+                         + "are available and off by default.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

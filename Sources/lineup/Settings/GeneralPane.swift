@@ -4,7 +4,7 @@ import SwiftUI
 /// General: Startup · Menu bar · Permissions · Updates.
 ///
 /// Built on the shared `SettingsSectionView` / `SettingsRow` pair rather than a pane-local card
-/// style, so General, Zones, Cycler and Hyperkey all line up on the same content column and the
+/// style, so General, Zones, Tiles, Cycler and Hyperkey all line up on the same content column and the
 /// same row rhythm — whichever tool drew the pane. (This resolves Phase 7a's open question: the
 /// card helper that lived here is gone; there is exactly one section style in the window.)
 struct GeneralPane: View {

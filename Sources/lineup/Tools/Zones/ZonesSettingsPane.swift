@@ -8,7 +8,7 @@ import ZonesCore
 /// login, About) belongs to the shell now.
 ///
 /// Capture goes through one `ShortcutRecorder`, which routes the global hotkey suspension through
-/// `SettingsStore` — that is what lets a recorder here receive a combo any of the three tools
+/// `SettingsStore` — that is what lets a recorder here receive a combo any tool
 /// owns, and hand every one of them back afterwards. The pane never touches `HotkeyManager`.
 /// The window's `SettingsStore` arrives through the environment (injected by
 /// `SettingsStore.pane(for:)`). It has to be read here and passed down by value, because the

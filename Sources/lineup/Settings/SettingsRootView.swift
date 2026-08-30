@@ -4,7 +4,7 @@ import SwiftUI
 /// The Settings window's content: a fixed-order sidebar with a per-tool on/off switch, and the
 /// selected pane on the right.
 ///
-/// Order is fixed — General, then the tools in registry order (Zones, Cycler, Hyperkey), then
+/// Order is fixed — General, then the tools in registry order (Zones, Tiles, Cycler, Hyperkey), then
 /// About — so the window never reshuffles under a user who has learned where things are.
 ///
 /// The sidebar is a plain navigator: icon + name, nothing to hit by accident. The enable switch
@@ -73,7 +73,7 @@ private struct HiddenSidebarToggle: ViewModifier {
 ///
 /// The icon is the real artwork (Lineup's own for Zones, Cycler's for Cycler, a drawn tile for
 /// Hyperkey) rather than an SF Symbol, so the Tools group reads as a list of small apps — the
-/// tools ARE three former apps. General and About keep plain symbols: they are parts of this
+/// tools are independent parts of the suite. General and About keep plain symbols: they are parts of this
 /// window, not products.
 ///
 /// A tool that is switched off is muted — partly desaturated, not greyscale, so it reads as
