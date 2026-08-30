@@ -671,8 +671,9 @@ private func runReleaseToolingTests() throws {
     }
     check(deploy.contains("permissions:\n  contents: read")
             && deploy.contains("cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd")
+            && deploy.contains("wranglerVersion: '4.127.1'")
             && deploy.contains("persist-credentials: false"),
-          "web deploy uses least privilege and a pinned Wrangler action")
+          "web deploy uses least privilege and pinned action and CLI versions")
 }
 
 private func runShellSourceScanTests() throws {

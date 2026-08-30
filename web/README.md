@@ -43,7 +43,7 @@ Current deploys are a maintainer-only manual step from an authenticated Wrangler
 
 ```sh
 cd web
-npx wrangler deploy
+npx wrangler@4.127.1 deploy
 ```
 
 Changes go live in seconds.

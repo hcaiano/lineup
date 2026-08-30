@@ -21,17 +21,16 @@ instructions, and the app then disappears into muscle memory.
 
 ## Brand Personality
 
-Native, precise, calm. The app identity and Zones use a fixed blue (#2F6BFF, `Brand.blue` in
-`Sources/lineup/App/Brand.swift`). Cycler uses orange and Hyperkey uses violet so each tool stays
-distinct inside the suite. Everything else defers to macOS conventions: system fonts, vibrancy, and
-standard controls. The app should feel like Apple shipped it.
+Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
+`Sources/lineup/App/Brand.swift`) carries the identity; everything else defers to macOS conventions
+(system fonts, vibrancy, standard controls). The app should feel like Apple shipped it.
 
 ## Anti-references
 
 - Amateur floating chrome: bare SF Symbol buttons in white boxes, mismatched sizes, arbitrary
   placement. The editor overlay must read as one designed surface, not controls sprinkled on glass.
 - Electron-app density and web-style cards. No faux-material design on macOS.
-- Red as the main app or Zones accent. Tool accents must come from `Brand`.
+- Red as an accent anywhere (explicit user rule). Warnings are orange; everything else is the blue.
 - "AI-made" tells in copy or UI: em dashes, generic icon-plus-label grids, hedging microcopy.
 
 ## Design Principles
@@ -42,8 +41,7 @@ standard controls. The app should feel like Apple shipped it.
    support, never substitute. Non-native English speakers must understand them.
 3. **Numbers users can act on.** Pixel readouts, placed where the eye already is; no unit soup.
 4. **Defer to the platform.** AppKit controls, system behaviors, native About/Settings idioms.
-5. **One app identity.** The app and Zones use `Brand.blue`; other tool accents stay scoped to their
-   tool.
+5. **One blue.** Selection, highlight, accent, icon: all `Brand.blue`. No second accent.
 
 ## Accessibility & Inclusion
 

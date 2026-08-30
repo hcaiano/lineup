@@ -39,8 +39,9 @@ swift build
 swift run lineup-tests
 ```
 
-The test suite needs Xcode Command Line Tools, not full Xcode. See [BUILDING.md](BUILDING.md) to
-assemble the app, keep a stable local Accessibility grant, and understand the project layout.
+Building needs the macOS 26 SDK. Command Line Tools 26 are enough; full Xcode is optional. See
+[BUILDING.md](BUILDING.md) to assemble the app, keep a stable local Accessibility grant, and
+understand the project layout.
 
 ## Contribute
 

@@ -6,9 +6,9 @@ contribution workflow.
 
 ## Requirements
 
-- macOS 13 or later
 - Swift 5.9 or later
-- Xcode **Command Line Tools** (`xcode-select --install`). Full Xcode is optional.
+- Xcode 26 or Xcode **Command Line Tools 26**, so the macOS 26 SDK is available. Full Xcode is
+  optional. The built app still supports macOS 13 or later.
 
 ## Build and test
 
