@@ -2525,11 +2525,15 @@ private func runTilesShellContractTests() throws {
             && pane.contains(".pickerStyle(.segmented)")
             && pane.contains("Uses your Zones layouts. Workspaces are separate from macOS Spaces."),
           "the pane exposes four segmented workspaces and explains native Spaces")
+    // The pane renders one row per `TilesTool.Action`, so the labels live on the
+    // action and the pane only has to iterate every case.
+    check(pane.contains("TilesTool.Action.allCases"),
+          "Tiles Settings renders a shortcut row for every action")
     for label in ["Next Workspace", "Next Window in Tile", "Move Window to Next Workspace",
                   "Focus Tile Left", "Focus Tile Right", "Focus Tile Up", "Focus Tile Down",
                   "Move Window Left", "Move Window Right", "Move Window Up", "Move Window Down",
                   "Switch Split Direction"] {
-        check(pane.contains(label), "Tiles Settings includes the \(label) shortcut row")
+        check(tool.contains(label), "Tiles Settings includes the \(label) shortcut row")
     }
     check(pane.contains("Space between tiles")
             && pane.contains("tileSpacingEnabled")

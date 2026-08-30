@@ -8,7 +8,6 @@ import ZonesCore
 enum SnapshotScope: Sendable {
     case all
     case pid(pid_t)
-    case tokens(Set<WindowToken>)
 }
 
 enum WindowSystemEvent: Sendable {
@@ -110,9 +109,40 @@ final class AXWindowSystem: TilesWindowSystem {
         let bridge: TilesAXObserverBridge
     }
 
+    /// `AXUIElement` is a CF type with no Swift `Hashable` conformance, so an
+    /// element-keyed index needs an explicit `CFHash`/`CFEqual` wrapper.  Every
+    /// AX lookup by element goes through this instead of a linear scan; the
+    /// notification stream during a drag hits those lookups continuously.
+    private struct ElementKey: Hashable {
+        let element: AXUIElement
+
+        init(_ element: AXUIElement) { self.element = element }
+
+        static func == (lhs: ElementKey, rhs: ElementKey) -> Bool {
+            CFEqual(lhs.element, rhs.element)
+        }
+
+        func hash(into hasher: inout Hasher) { hasher.combine(CFHash(element)) }
+    }
+
+    /// One live AX read of the two values every correlation and snapshot pass
+    /// needs, so a window costs one frame read and one minimized read per pass.
+    private struct EntryObservation {
+        let entry: Entry
+        let frame: CGRect?
+        let minimized: Bool
+    }
+
     private let queue = DispatchQueue(label: "com.caiano.lineup.tiles.ax", qos: .userInitiated)
     private let ownPID = ProcessInfo.processInfo.processIdentifier
     private var entries: [WindowToken: Entry] = [:]
+    /// Element-keyed index over `entries`.  Mutate both only through
+    /// `insertEntry` and `removeEntry` so they cannot drift apart.
+    private var entriesByElement: [ElementKey: Entry] = [:]
+    /// Windows whose per-window AX notifications are already registered.  A
+    /// repeat `AXObserverAddNotification` returns `notificationAlreadyRegistered`
+    /// but still costs a cross-process round trip on every discover pass.
+    private var registeredElements: Set<ElementKey> = []
     private var pendingGoneTokens: [WindowToken: pid_t] = [:]
     private var observers: [pid_t: ObserverEntry] = [:]
     private var workspaceObservers: [NSObjectProtocol] = []
@@ -178,22 +208,23 @@ final class AXWindowSystem: TilesWindowSystem {
         return queue.sync {
             let applications = Self.regularApplications(NSWorkspace.shared.runningApplications,
                                                         excluding: ownPID)
-            discover(applications: applications, cancellationGeneration: generation)
             let selected: [Entry]
             let gone: Set<WindowToken>
             let consumesGone: Bool
             switch scope {
             case .all:
+                discover(applications: applications, cancellationGeneration: generation)
                 selected = Array(entries.values)
                 gone = Set(pendingGoneTokens.keys)
                 consumesGone = true
             case .pid(let pid):
+                // A scoped snapshot only reports one application's windows, so
+                // only that application needs the AX window sweep.  The full
+                // application list still drives the dead-process pruning.
+                discover(applications: applications, cancellationGeneration: generation,
+                         scanning: [pid])
                 selected = entries.values.filter { $0.pid == pid }
                 gone = Set(pendingGoneTokens.compactMap { $0.value == pid ? $0.key : nil })
-                consumesGone = false
-            case .tokens(let tokens):
-                selected = tokens.compactMap { entries[$0] }
-                gone = Set(pendingGoneTokens.keys).intersection(tokens)
                 consumesGone = false
             }
             if consumesGone {
@@ -203,12 +234,19 @@ final class AXWindowSystem: TilesWindowSystem {
             // snapshot scope.  A scoped snapshot must not make two windows
             // sharing a frame look uniquely correlated simply because one peer
             // was omitted from the output.
-            let correlated = correlatedTokens(entries: Array(entries.values))
+            let observations = liveObservations()
+            let correlated = correlatedTokens(observations)
+            var observationsByToken: [WindowToken: EntryObservation] = [:]
+            observationsByToken.reserveCapacity(observations.count)
+            for observation in observations { observationsByToken[observation.entry.token] = observation }
+            let screenFrames = screens.map(\.frame)
             var output: [WindowToken: WindowSnapshotEntry] = [:]
             for entry in selected {
-                guard let frame = cocoaFrame(of: entry.element) else { continue }
-                let minimized = bool(entry.element, kAXMinimizedAttribute) ?? false
-                let screenKey = bestScreen(for: frame)?.key ?? ""
+                guard let observation = observationsByToken[entry.token],
+                      let frame = observation.frame else { continue }
+                let minimized = observation.minimized
+                let screenKey = ScreenPicker.bestScreenIndex(forWindow: frame, screens: screenFrames)
+                    .map { screens[$0].key } ?? ""
                 // A retained minimized AX window is still a valid mutation target even
                 // though `optionOnScreenOnly` cannot correlate it. Keep current-Space
                 // correlation as the reachability gate only for non-minimized windows.
@@ -225,7 +263,7 @@ final class AXWindowSystem: TilesWindowSystem {
     func apply(_ effects: [WindowEffect]) -> [WindowEffectResult] {
         let generation = currentCancellationGeneration()
         return queue.sync {
-            var correlated = correlatedTokens(entries: Array(entries.values))
+            var correlated = correlatedTokens(liveObservations())
             return effects.map { effect in
                 guard !isCancelled(generation) else { return .failure(effect, .cancelled) }
                 guard let entry = entries[effect.token] else {
@@ -240,7 +278,7 @@ final class AXWindowSystem: TilesWindowSystem {
                         // absent from the current on-screen CG snapshot. Wait for bounded public
                         // CG correlation before any following frame/raise/focus effect.
                         for attempt in 0..<3 {
-                            correlated = correlatedTokens(entries: Array(entries.values))
+                            correlated = correlatedTokens(liveObservations())
                             if correlated.contains(entry.token) { break }
                             if attempt < 2 { usleep(40_000) }
                         }
@@ -287,7 +325,7 @@ final class AXWindowSystem: TilesWindowSystem {
     }
 
     func token(for element: AXUIElement) -> WindowToken? {
-        queue.sync { entries.values.first(where: { CFEqual($0.element, element) })?.token }
+        queue.sync { entriesByElement[ElementKey(element)]?.token }
     }
 
     func stackPreview(tokens: [WindowToken], selected: WindowToken) -> TilesStackPreview? {
@@ -315,14 +353,7 @@ final class AXWindowSystem: TilesWindowSystem {
     func recoveryRecord(for token: WindowToken, managed: ManagedWindow,
                         stageIntent: Bool) -> RecoveryRecord? {
         queue.sync {
-            guard let entry = entries[token] else { return nil }
-            return RecoveryRecord(bundleIdentifier: entry.bundleIdentifier, pid: entry.pid,
-                                  role: entry.role, subrole: entry.subrole,
-                                  titleDigest: entry.titleDigest,
-                                  ordinalAmongExactPeers: entry.ordinalAmongExactPeers,
-                                  adoptionFrame: managed.adoptionFrame,
-                                  lastAppliedFrame: managed.lastAppliedFrame,
-                                  stageIntent: stageIntent)
+            recoveryRecordUnlocked(for: token, managed: managed, stageIntent: stageIntent)
         }
     }
 
@@ -370,6 +401,8 @@ final class AXWindowSystem: TilesWindowSystem {
             }
             observers.removeAll()
             entries.removeAll()
+            entriesByElement.removeAll()
+            registeredElements.removeAll()
             pendingGoneTokens.removeAll()
             receive = nil
         }
@@ -378,13 +411,13 @@ final class AXWindowSystem: TilesWindowSystem {
     fileprivate func receivedAXNotification(pid: pid_t, element: AXUIElement, notification: String) {
         queue.async { [weak self] in
             guard let self, self.acceptingEvents else { return }
-            let token = self.entries.values.first(where: { CFEqual($0.element, element) })?.token
+            let token = self.entriesByElement[ElementKey(element)]?.token
             switch notification {
             case kAXWindowCreatedNotification:
                 self.emit(.windowCreated(pid))
             case kAXUIElementDestroyedNotification:
                 if let token {
-                    self.entries[token] = nil
+                    self.removeEntry(token)
                     self.emit(.windowDestroyed(token))
                 } else {
                     self.emit(.applicationChanged(pid))
@@ -424,7 +457,7 @@ final class AXWindowSystem: TilesWindowSystem {
             }
             let removed = self.entries.values.filter { $0.pid == pid }.map(\.token)
             for token in removed {
-                self.entries[token] = nil
+                self.removeEntry(token)
                 self.emit(.windowDestroyed(token))
             }
         }
@@ -465,16 +498,18 @@ final class AXWindowSystem: TilesWindowSystem {
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
     }
 
-    private func discover(applications: [ApplicationDescriptor]) {
-        discover(applications: applications, cancellationGeneration: nil)
-    }
-
+    /// Sweeps the AX window list of every application in `scanning`, or of all
+    /// `applications` when `scanning` is nil.  The full `applications` list
+    /// always defines which retained entries belong to a live process, so a
+    /// scoped sweep never prunes another application's windows.
     private func discover(applications: [ApplicationDescriptor],
-                          cancellationGeneration: UInt64?) {
+                          cancellationGeneration: UInt64? = nil,
+                          scanning: Set<pid_t>? = nil) {
         let validPIDs = Set(applications.map(\.pid))
         for application in applications {
             if let cancellationGeneration, isCancelled(cancellationGeneration) { return }
             installObserver(for: application)
+            if let scanning, !scanning.contains(application.pid) { continue }
             let app = tame(AXUIElementCreateApplication(application.pid))
             var raw: CFTypeRef?
             guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw) == .success,
@@ -494,12 +529,13 @@ final class AXWindowSystem: TilesWindowSystem {
                 if a.minY != b.minY { return a.minY < b.minY }
                 return a.width * a.height < b.width * b.height
             }
+            let peerKeys = Set(peers.map { ElementKey($0.0) })
             let disappeared = entries.values.filter { entry in
-                entry.pid == application.pid && !peers.contains(where: { CFEqual($0.0, entry.element) })
+                entry.pid == application.pid && !peerKeys.contains(ElementKey(entry.element))
             }.map(\.token)
             for token in disappeared {
                 pendingGoneTokens[token] = application.pid
-                entries[token] = nil
+                removeEntry(token)
             }
             var ordinalByFingerprint: [String: Int] = [:]
             for peer in peers {
@@ -507,7 +543,7 @@ final class AXWindowSystem: TilesWindowSystem {
                 let key = [peer.1 ?? "", peer.2 ?? "", peer.3].joined(separator: "\u{1f}")
                 let ordinal = ordinalByFingerprint[key, default: 0]
                 ordinalByFingerprint[key] = ordinal + 1
-                if let existing = entries.values.first(where: { CFEqual($0.element, peer.0) }) {
+                if let existing = entriesByElement[ElementKey(peer.0)] {
                     existing.bundleIdentifier = application.bundleIdentifier
                     if let role = peer.1 { existing.role = role }
                     if let subrole = peer.2 { existing.subrole = subrole }
@@ -542,21 +578,45 @@ final class AXWindowSystem: TilesWindowSystem {
                                   eligibleAtDiscovery: observation.eligible,
                                   eligibilityResolved: observation.complete,
                                   initiallyMinimized: observation.initiallyMinimized)
-                entries[entry.token] = entry
+                insertEntry(entry)
             }
         }
         let dead = entries.values.filter { !validPIDs.contains($0.pid) }.map(\.token)
-        for token in dead { entries[token] = nil }
+        for token in dead { removeEntry(token) }
+    }
+
+    private func insertEntry(_ entry: Entry) {
+        entries[entry.token] = entry
+        entriesByElement[ElementKey(entry.element)] = entry
+    }
+
+    @discardableResult
+    private func removeEntry(_ token: WindowToken) -> Entry? {
+        guard let entry = entries.removeValue(forKey: token) else { return nil }
+        let key = ElementKey(entry.element)
+        entriesByElement[key] = nil
+        registeredElements.remove(key)
+        return entry
     }
 
     private func registerWindowNotifications(_ window: AXUIElement, pid: pid_t) {
-        guard let item = observers[pid] else { return }
+        let key = ElementKey(window)
+        guard !registeredElements.contains(key), let item = observers[pid] else { return }
         let pointer = Unmanaged.passUnretained(item.bridge).toOpaque()
+        var complete = true
         for notification in [kAXUIElementDestroyedNotification, kAXMovedNotification,
                              kAXResizedNotification, kAXWindowMiniaturizedNotification,
                              kAXWindowDeminiaturizedNotification, kAXTitleChangedNotification] {
-            _ = AXObserverAddNotification(item.observer, window, notification as CFString, pointer)
+            let error = AXObserverAddNotification(
+                item.observer, window, notification as CFString, pointer)
+            if error != .success && error != .notificationAlreadyRegistered {
+                complete = false
+            }
         }
+        // A transient AX failure must remain retryable on the next discovery.
+        // Calls that already succeeded return `notificationAlreadyRegistered`
+        // and therefore do not block a later complete registration pass.
+        if complete { registeredElements.insert(key) }
     }
 
     private func eligibilityObservation(of window: AXUIElement, role: String?, subrole: String?,
@@ -587,12 +647,17 @@ final class AXWindowSystem: TilesWindowSystem {
         return result.boolValue
     }
 
-    private func eligibility(of window: AXUIElement, role: String, subrole: String,
-                             frame: CGRect?) -> Bool {
-        eligibilityObservation(of: window, role: role, subrole: subrole, frame: frame).eligible
+    /// Reads the frame and minimized flag of every retained entry once.  Both
+    /// correlation and the snapshot output need them, so they must not be read
+    /// twice per window per pass.
+    private func liveObservations() -> [EntryObservation] {
+        entries.values.map { entry in
+            EntryObservation(entry: entry, frame: cocoaFrame(of: entry.element),
+                             minimized: bool(entry.element, kAXMinimizedAttribute) == true)
+        }
     }
 
-    private func correlatedTokens(entries selected: [Entry]) -> Set<WindowToken> {
+    private func correlatedTokens(_ observations: [EntryObservation]) -> Set<WindowToken> {
         guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                     kCGNullWindowID) as? [[String: Any]] else { return [] }
         let candidates: [(pid: pid_t, frame: CGRect, title: String, windowID: UInt32)] = info.compactMap { row in
@@ -600,7 +665,7 @@ final class AXWindowSystem: TilesWindowSystem {
                   let bounds = row[kCGWindowBounds as String] as? [String: Any],
                   let cgFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary)
             else { return nil }
-            return (pid.int32Value, cocoaRect(fromTopLeft: cgFrame),
+            return (pid.int32Value, Coord.cocoaRect(fromAX: cgFrame, primaryMaxY: primaryMaxY),
                     row[kCGWindowName as String] as? String ?? "",
                     (row[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0)
         }
@@ -610,10 +675,9 @@ final class AXWindowSystem: TilesWindowSystem {
         // when macOS returned several same-frame windows with empty CG titles.
         // A candidate can still be consumed only once, so two AX entries are
         // never correlated to one CG window.
-        let usable: [(entry: Entry, frame: CGRect)] = selected.compactMap { entry in
-            guard let frame = cocoaFrame(of: entry.element),
-                  bool(entry.element, kAXMinimizedAttribute) != true else { return nil }
-            return (entry, frame)
+        let usable: [(entry: Entry, frame: CGRect)] = observations.compactMap { observation in
+            guard let frame = observation.frame, !observation.minimized else { return nil }
+            return (observation.entry, frame)
         }
         guard !usable.isEmpty, !candidates.isEmpty else { return [] }
 
@@ -650,11 +714,14 @@ final class AXWindowSystem: TilesWindowSystem {
             return left.windowID < right.windowID
         }
 
+        // Rank once instead of searching `candidateOrder` inside the sort of
+        // every recursion step; the resulting edge order is identical.
+        var candidateRank = [Int](repeating: 0, count: candidates.count)
+        for (rank, candidateIndex) in candidateOrder.enumerated() { candidateRank[candidateIndex] = rank }
+
         var candidateToEntry = Array(repeating: -1, count: candidates.count)
         func assign(_ entryIndex: Int, _ visited: inout Set<Int>) -> Bool {
-            let orderedEdges = edges[entryIndex].sorted {
-                candidateOrder.firstIndex(of: $0)! < candidateOrder.firstIndex(of: $1)!
-            }
+            let orderedEdges = edges[entryIndex].sorted { candidateRank[$0] < candidateRank[$1] }
             for candidateIndex in orderedEdges where visited.insert(candidateIndex).inserted {
                 if candidateToEntry[candidateIndex] == -1 ||
                     assign(candidateToEntry[candidateIndex], &visited) {
@@ -670,9 +737,7 @@ final class AXWindowSystem: TilesWindowSystem {
         }
 
         var result = Set<WindowToken>()
-        for (candidateIndex, entryIndex) in candidateToEntry.enumerated()
-            where entryIndex >= 0 {
-            _ = candidateIndex
+        for entryIndex in candidateToEntry where entryIndex >= 0 {
             result.insert(usable[entryIndex].entry.token)
         }
         return result
@@ -690,9 +755,8 @@ final class AXWindowSystem: TilesWindowSystem {
                                              kAXFocusedWindowAttribute as CFString,
                                              &raw) == .success,
               let focused = AXExtract.element(raw) else { return nil }
-        return entries.values.first(where: {
-            $0.pid == pid && CFEqual($0.element, focused)
-        })?.token
+        guard let entry = entriesByElement[ElementKey(focused)], entry.pid == pid else { return nil }
+        return entry.token
     }
 
     private func restoreRecords(_ records: [RecoveryRecord], deadline: DispatchTime) -> TilesRecoveryResult {
@@ -746,7 +810,7 @@ final class AXWindowSystem: TilesWindowSystem {
     }
 
     private func setFrame(_ cocoa: CGRect, on window: AXUIElement) -> AXError {
-        let ax = axRect(fromCocoa: cocoa)
+        let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY)
         var size = ax.size
         var position = ax.origin
         guard let sizeValue = AXValueCreate(.cgSize, &size),
@@ -799,48 +863,24 @@ final class AXWindowSystem: TilesWindowSystem {
         return raw as? Bool
     }
 
-    private func isSettable(_ element: AXUIElement, _ attribute: String) -> Bool {
-        var result = DarwinBoolean(false)
-        return AXUIElementIsAttributeSettable(element, attribute as CFString, &result) == .success
-            && result.boolValue
-    }
-
     private func cocoaFrame(of element: AXUIElement) -> CGRect? {
         var positionRaw: CFTypeRef?, sizeRaw: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionRaw) == .success,
               AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRaw) == .success,
               let position = AXExtract.point(positionRaw), let size = AXExtract.size(sizeRaw) else { return nil }
-        return cocoaRect(fromTopLeft: CGRect(origin: position, size: size))
+        return Coord.cocoaRect(fromAX: CGRect(origin: position, size: size),
+                               primaryMaxY: primaryMaxY)
     }
 
-    private func cocoaRect(fromTopLeft rect: CGRect) -> CGRect {
-        let primaryMaxY = screens.first?.frame.maxY ?? 0
-        return CGRect(x: rect.minX, y: primaryMaxY - rect.maxY,
-                      width: rect.width, height: rect.height)
-    }
-
-    private func axRect(fromCocoa rect: CGRect) -> CGRect {
-        let primaryMaxY = screens.first?.frame.maxY ?? 0
-        return CGRect(x: rect.minX, y: primaryMaxY - rect.maxY,
-                      width: rect.width, height: rect.height)
-    }
-
-    private func bestScreen(for frame: CGRect) -> LiveScreen? {
-        screens.max { lhs, rhs in
-            intersectionArea(lhs.frame, frame) < intersectionArea(rhs.frame, frame)
-        }
-    }
+    /// The primary display's top edge in Cocoa space, the pivot for every
+    /// AX/Cocoa flip.  Zero without a known screen list keeps reads inert.
+    private var primaryMaxY: CGFloat { screens.first?.frame.maxY ?? 0 }
 
     private func isSafeOnScreen(_ frame: CGRect) -> Bool {
         frame.origin.x.isFinite && frame.origin.y.isFinite &&
             frame.width.isFinite && frame.height.isFinite &&
             frame.width > 0 && frame.height > 0 &&
             screens.contains { $0.frame.intersects(frame) }
-    }
-
-    private func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
-        let intersection = lhs.intersection(rhs)
-        return intersection.isNull ? 0 : intersection.width * intersection.height
     }
 
     private func approximately(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = 4) -> Bool {

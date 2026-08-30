@@ -65,6 +65,20 @@ func runTilesTests() throws {
         check(stack.selected == a, "stack: closing selected chooses nearest remaining member")
         _ = stack.remove(a)
         check(stack.order.isEmpty && stack.selected == nil, "stack: empty stack clears selection")
+
+        var incomplete = TilesSession.empty
+        incomplete.workspaces[.workspace4] = nil
+        let repairPlan = TilesReducer.plan(
+            state: incomplete,
+            event: .switchWorkspace(.workspace4),
+            snapshot: WindowSnapshot(),
+            layouts: layout())
+        let repaired = TilesReducer.commit(
+            state: incomplete,
+            plan: repairPlan,
+            results: successful(repairPlan))
+        check(repaired.activeWorkspace == .workspace4 && repaired.isValid,
+              "tiles: planning repairs a missing workspace before switching")
     }
 
     // ---- allocator and cycle ----
@@ -73,18 +87,21 @@ func runTilesTests() throws {
             TileStack(address: TileAddress(screenKey: "main", leafIndex: index,
                                            normalizedCenter: CGPoint(x: CGFloat(index) / 3 + 0.1, y: 0.5)))
         }
-        check(TileAllocator.destination(stacks: stacks, focusedTile: nil)?.leafIndex == 0,
+        check(TileAllocator.destinationIndex(stacks: stacks, focusedTile: nil)
+                .map { stacks[$0].address.leafIndex } == 0,
               "allocator: first empty tile wins")
 
         let filled = stacks.map { TileStack(address: $0.address, order: [token($0.address.leafIndex + 1)]) }
-        check(TileAllocator.destination(stacks: filled, focusedTile: filled[2].address)?.leafIndex == 2,
+        check(TileAllocator.destinationIndex(stacks: filled, focusedTile: filled[2].address)
+                .map { filled[$0].address.leafIndex } == 2,
               "allocator: focused tile wins after all tiles are occupied")
         let uneven = [
             TileStack(address: stacks[0].address, order: [token(1), token(2)]),
             TileStack(address: stacks[1].address, order: [token(3)]),
             TileStack(address: stacks[2].address, order: [token(4)])
         ]
-        check(TileAllocator.destination(stacks: uneven, focusedTile: nil)?.leafIndex == 1,
+        check(TileAllocator.destinationIndex(stacks: uneven, focusedTile: nil)
+                .map { uneven[$0].address.leafIndex } == 1,
               "allocator: shortest stack wins with visual tie-breaker")
 
         let cycleStack = TileStack(address: stacks[0].address,

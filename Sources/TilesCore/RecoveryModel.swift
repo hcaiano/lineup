@@ -73,11 +73,6 @@ public enum RecoveryMatch: Equatable, Sendable {
     case unique(Int)
     case ambiguous([Int])
 
-    public var index: Int? {
-        if case .unique(let value) = self { return value }
-        return nil
-    }
-
     public var isAmbiguous: Bool {
         if case .ambiguous = self { return true }
         return false
@@ -109,42 +104,39 @@ public struct RecoveryJournal: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        // The schema is checked before the records are decoded so a future
+        // document reports its schema rather than a decoding failure.
         let schema = try container.decode(Int.self, forKey: .schemaVersion)
-        guard schema == Self.currentSchema else {
-            if schema > Self.currentSchema { throw RecoveryJournalError.unsupportedSchema(schema) }
-            throw RecoveryJournalError.invalidSchema(schema)
-        }
+        try Self.validateSchema(schema)
         self.schemaVersion = schema
         self.records = try container.decode([RecoveryRecord].self, forKey: .records)
-        guard Set(records.map(\.identityKey)).count == records.count else {
-            throw RecoveryJournalError.duplicateIdentity
-        }
+        try Self.validateIdentities(records)
     }
 
     public func encode(to encoder: Encoder) throws {
-        guard schemaVersion == Self.currentSchema else {
-            if schemaVersion > Self.currentSchema { throw RecoveryJournalError.unsupportedSchema(schemaVersion) }
-            throw RecoveryJournalError.invalidSchema(schemaVersion)
-        }
-        guard Set(records.map(\.identityKey)).count == records.count else {
-            throw RecoveryJournalError.duplicateIdentity
-        }
+        try validate()
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encode(records, forKey: .records)
     }
 
-    public func validate() throws {
-        guard schemaVersion == Self.currentSchema else {
-            if schemaVersion > Self.currentSchema { throw RecoveryJournalError.unsupportedSchema(schemaVersion) }
-            throw RecoveryJournalError.invalidSchema(schemaVersion)
+    private static func validateSchema(_ version: Int) throws {
+        guard version == currentSchema else {
+            if version > currentSchema { throw RecoveryJournalError.unsupportedSchema(version) }
+            throw RecoveryJournalError.invalidSchema(version)
         }
+    }
+
+    private static func validateIdentities(_ records: [RecoveryRecord]) throws {
         guard Set(records.map(\.identityKey)).count == records.count else {
             throw RecoveryJournalError.duplicateIdentity
         }
     }
 
-    public var pending: [RecoveryRecord] { records.filter(\.stageIntent) }
+    public func validate() throws {
+        try Self.validateSchema(schemaVersion)
+        try Self.validateIdentities(records)
+    }
 
     public func adding(_ record: RecoveryRecord) -> RecoveryJournal {
         var copy = self
@@ -153,18 +145,10 @@ public struct RecoveryJournal: Codable, Equatable, Sendable {
         return copy
     }
 
-    public func updating(_ record: RecoveryRecord) -> RecoveryJournal {
-        adding(record)
-    }
-
     public func removing(identityKey: String) -> RecoveryJournal {
         var copy = self
         copy.records.removeAll { $0.identityKey == identityKey }
         return copy
-    }
-
-    public func removing(_ record: RecoveryRecord) -> RecoveryJournal {
-        removing(identityKey: record.identityKey)
     }
 
     public func encoded() throws -> Data {
@@ -176,16 +160,6 @@ public struct RecoveryJournal: Codable, Equatable, Sendable {
     public static func decode(_ data: Data) throws -> RecoveryJournal {
         try JSONDecoder().decode(RecoveryJournal.self, from: data)
     }
-
-    public static func decodeSafely(_ data: Data) -> Result<RecoveryJournal, RecoveryJournalError> {
-        do {
-            return .success(try decode(data))
-        } catch let error as RecoveryJournalError {
-            return .failure(error)
-        } catch {
-            return .failure(.malformed)
-        }
-    }
 }
 
 public enum RecoveryModel {
@@ -193,7 +167,7 @@ public enum RecoveryModel {
     /// remain compatible with the frame Tiles owned.  Exact matches are
     /// intentionally conservative; a moved window must be surfaced instead
     /// of being mutated by an ambiguous recovery.
-    public static func matchingIndices(
+    private static func matchingIndices(
         record: RecoveryRecord,
         candidates: [RecoveryCandidate],
         tolerance: CGFloat = 4
@@ -234,15 +208,5 @@ public enum RecoveryModel {
             abs(current.minY - expected.minY) <= tolerance &&
             abs(current.width - expected.width) <= tolerance &&
             abs(current.height - expected.height) <= tolerance
-    }
-
-    public static func actionableRecords(
-        journal: RecoveryJournal,
-        candidates: [RecoveryCandidate],
-        tolerance: CGFloat = 4
-    ) -> [(record: RecoveryRecord, match: RecoveryMatch)] {
-        journal.pending.map { record in
-            (record, match(record: record, candidates: candidates, tolerance: tolerance))
-        }
     }
 }

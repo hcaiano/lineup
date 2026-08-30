@@ -25,15 +25,15 @@ public struct WorkspaceID: RawRepresentable, Codable, Hashable, Sendable {
     public static let workspace4 = WorkspaceID(rawValue: 4)
     public static let all: [WorkspaceID] = [.workspace1, .workspace2, .workspace3, .workspace4]
 
-    // Readable aliases for clients that model workspaces as ordinal values.
-    public static let first = workspace1
-    public static let second = workspace2
-    public static let third = workspace3
-    public static let fourth = workspace4
-    public static let one = workspace1
-    public static let two = workspace2
-    public static let three = workspace3
-    public static let four = workspace4
+    /// The wrap rule for 1...4 lives here so every caller that steps through
+    /// workspaces agrees on it.  An out-of-range value wraps to `workspace1`.
+    public var next: WorkspaceID {
+        rawValue >= 4 || rawValue < 1 ? .workspace1 : WorkspaceID(rawValue: rawValue + 1)
+    }
+
+    public var previous: WorkspaceID {
+        rawValue <= 1 || rawValue > 4 ? .workspace4 : WorkspaceID(rawValue: rawValue - 1)
+    }
 
     public static func from(_ rawValue: Int) -> WorkspaceID? {
         let value = WorkspaceID(rawValue: rawValue)
@@ -107,6 +107,29 @@ public struct TileAddress: Equatable, Sendable {
     public var leafIndex: Int { id.leafIndex }
 }
 
+/// Small shared geometry helpers for TilesCore.  Navigation, rebase, spacing,
+/// and reconciliation all need the same primitives; one owner keeps their
+/// tolerance and tie-breaking behavior identical everywhere.
+enum TileGeometry {
+    static func distanceSquared(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+        let dx = lhs.x - rhs.x
+        let dy = lhs.y - rhs.y
+        return dx * dx + dy * dy
+    }
+
+    static func overlapLength(_ lhsMin: CGFloat, _ lhsMax: CGFloat,
+                              _ rhsMin: CGFloat, _ rhsMax: CGFloat) -> CGFloat {
+        max(0, min(lhsMax, rhsMax) - max(lhsMin, rhsMin))
+    }
+
+    /// Zero for a null or degenerate intersection, so callers can compare
+    /// areas without checking `isNull` first.
+    static func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        return intersection.isNull ? 0 : intersection.width * intersection.height
+    }
+}
+
 /// A leaf's normalized geometry.  `rect` uses a 0...1 coordinate space for
 /// one display.  `screenKey` is optional in practice because callers may build
 /// a per-display list; when omitted, the surrounding stack supplies it.
@@ -115,26 +138,10 @@ public struct NormalizedLeaf: Equatable, Sendable {
     public let index: Int
     public let rect: CGRect
 
-    public init(index: Int, rect: CGRect, screenKey: String = "") {
+    public init(screenKey: String = "", index: Int, rect: CGRect) {
         self.screenKey = screenKey
         self.index = index
         self.rect = rect
-    }
-
-    public init(_ index: Int, _ rect: CGRect, screenKey: String = "") {
-        self.init(index: index, rect: rect, screenKey: screenKey)
-    }
-
-    public init(index: Int, center: CGPoint, screenKey: String = "") {
-        self.init(screenKey: screenKey, index: index, normalizedCenter: center)
-    }
-
-    public init(screenKey: String, index: Int, rect: CGRect) {
-        self.init(index: index, rect: rect, screenKey: screenKey)
-    }
-
-    public init(index: Int, normalizedRect: CGRect, screenKey: String = "") {
-        self.init(index: index, rect: normalizedRect, screenKey: screenKey)
     }
 
     public init(screenKey: String = "", index: Int, normalizedCenter: CGPoint) {
@@ -142,20 +149,17 @@ public struct NormalizedLeaf: Equatable, Sendable {
         // integrations that only expose centers.  A tiny non-zero rect makes
         // center containment and intersection deterministic.
         let epsilon: CGFloat = 0.000001
-        self.init(index: index,
+        self.init(screenKey: screenKey,
+                  index: index,
                   rect: CGRect(x: normalizedCenter.x - epsilon,
                                y: normalizedCenter.y - epsilon,
                                width: epsilon * 2,
-                               height: epsilon * 2),
-                  screenKey: screenKey)
+                               height: epsilon * 2))
     }
 
-    public var normalizedRect: CGRect { rect }
-    public var rectInNormalizedSpace: CGRect { rect }
     public var center: CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
     public var normalizedCenter: CGPoint { center }
-    public var tileID: TileID { TileID(screenKey: screenKey, leafIndex: index) }
-    public var id: TileID { tileID }
+    public var id: TileID { TileID(screenKey: screenKey, leafIndex: index) }
     public var leafIndex: Int { index }
 
     public func address(screenKey fallbackScreenKey: String? = nil) -> TileAddress {
@@ -190,43 +194,6 @@ public struct LayoutSnapshot: Equatable, Sendable {
         self.gapPoints = gapPoints.isFinite ? max(0, gapPoints) : 0
     }
 
-    public init(_ screens: [String: [NormalizedLeaf]]) {
-        self.init(screens: screens)
-    }
-
-    public init(leaves: [String: [NormalizedLeaf]], frames: [String: [CGRect]] = [:],
-                gapPoints: CGFloat = 0) {
-        self.init(screens: leaves, frames: frames,
-                  primaryScreenKey: frames.keys.sorted().first, gapPoints: gapPoints)
-    }
-
-    /// Convenience for integrations that already have resolved frames.  The
-    /// frames are normalized against their union so rebase remains usable.
-    public init(frames: [String: [CGRect]], gapPoints: CGFloat = 0) {
-        var leaves: [String: [NormalizedLeaf]] = [:]
-        for (screen, rects) in frames {
-            guard !rects.isEmpty else {
-                leaves[screen] = []
-                continue
-            }
-            let bounds = rects.reduce(CGRect.null) { partial, rect in
-                partial.isNull ? rect : partial.union(rect)
-            }
-            let width = bounds.width > 0 ? bounds.width : 1
-            let height = bounds.height > 0 ? bounds.height : 1
-            leaves[screen] = rects.enumerated().map { index, rect in
-                NormalizedLeaf(
-                    index: index,
-                    rect: CGRect(x: (rect.minX - bounds.minX) / width,
-                                 y: (rect.minY - bounds.minY) / height,
-                                 width: rect.width / width,
-                                 height: rect.height / height),
-                    screenKey: screen)
-            }
-        }
-        self.init(screens: leaves, frames: frames, gapPoints: gapPoints)
-    }
-
     public func leaves(for screenKey: String) -> [NormalizedLeaf] {
         screens[screenKey] ?? []
     }
@@ -256,14 +223,6 @@ public struct LayoutSnapshot: Equatable, Sendable {
         return spacedFrame(at: address.leafIndex, in: screenFrames, gap: gapPoints)
     }
 
-    public func address(for leaf: NormalizedLeaf, on screenKey: String? = nil) -> TileAddress {
-        leaf.address(screenKey: screenKey)
-    }
-
-    public func allLeaves() -> [NormalizedLeaf] {
-        screenKeys.flatMap { leaves(for: $0) }
-    }
-
     // MARK: - Tile spacing
 
     /// Apply half the requested gap to each side that touches another leaf.
@@ -289,19 +248,19 @@ public struct LayoutSnapshot: Equatable, Sendable {
         for (otherIndex, other) in rawFrames.enumerated() where otherIndex != index {
             guard !other.isNull, other.width > 0, other.height > 0 else { continue }
             if approximatelyEqual(raw.minX, other.maxX, tolerance: tolerance),
-               overlapLength(raw.minY...raw.maxY, other.minY...other.maxY) > tolerance {
+               TileGeometry.overlapLength(raw.minY, raw.maxY, other.minY, other.maxY) > tolerance {
                 insetLeft = halfGap
             }
             if approximatelyEqual(raw.maxX, other.minX, tolerance: tolerance),
-               overlapLength(raw.minY...raw.maxY, other.minY...other.maxY) > tolerance {
+               TileGeometry.overlapLength(raw.minY, raw.maxY, other.minY, other.maxY) > tolerance {
                 insetRight = halfGap
             }
             if approximatelyEqual(raw.minY, other.maxY, tolerance: tolerance),
-               overlapLength(raw.minX...raw.maxX, other.minX...other.maxX) > tolerance {
+               TileGeometry.overlapLength(raw.minX, raw.maxX, other.minX, other.maxX) > tolerance {
                 insetBottom = halfGap
             }
             if approximatelyEqual(raw.maxY, other.minY, tolerance: tolerance),
-               overlapLength(raw.minX...raw.maxX, other.minX...other.maxX) > tolerance {
+               TileGeometry.overlapLength(raw.minX, raw.maxX, other.minX, other.maxX) > tolerance {
                 insetTop = halfGap
             }
         }
@@ -331,10 +290,6 @@ public struct LayoutSnapshot: Equatable, Sendable {
         let requested = leading + trailing
         guard requested > 0 else { return 1 }
         return min(1, max(0, (length - 1) / requested))
-    }
-
-    private func overlapLength(_ lhs: ClosedRange<CGFloat>, _ rhs: ClosedRange<CGFloat>) -> CGFloat {
-        max(0, min(lhs.upperBound, rhs.upperBound) - max(lhs.lowerBound, rhs.lowerBound))
     }
 
     private func approximatelyEqual(_ lhs: CGFloat, _ rhs: CGFloat,
@@ -420,30 +375,6 @@ public struct TileStack: Equatable, Sendable {
         selected = token
         if let epoch { selectionEpoch = epoch }
         return true
-    }
-
-    public func appending(_ token: WindowToken, selecting: Bool = false, epoch: UInt64? = nil) -> TileStack {
-        var copy = self
-        _ = copy.append(token, selecting: selecting, epoch: epoch)
-        return copy
-    }
-
-    public func inserting(_ token: WindowToken, at index: Int, selecting: Bool = false, epoch: UInt64? = nil) -> TileStack {
-        var copy = self
-        _ = copy.insert(token, at: index, selecting: selecting, epoch: epoch)
-        return copy
-    }
-
-    public func removing(_ token: WindowToken) -> TileStack {
-        var copy = self
-        _ = copy.remove(token)
-        return copy
-    }
-
-    public func selecting(_ token: WindowToken, epoch: UInt64? = nil) -> TileStack {
-        var copy = self
-        _ = copy.select(token, epoch: epoch)
-        return copy
     }
 }
 
@@ -615,19 +546,6 @@ public struct TilesSession: Equatable, Sendable {
     }
 
     public var isValid: Bool { (try? validate()) != nil }
-
-    /// Validate membership against the current Zones leaves as well as the
-    /// in-memory uniqueness rules.
-    public func validate(layouts: LayoutSnapshot) throws {
-        try validate()
-        for managed in windows.values {
-            guard layouts.screens[managed.tile.screenKey]?.contains(where: {
-                $0.index == managed.tile.leafIndex
-            }) == true else {
-                throw TilesModelError.unresolvedTile(managed.tile.id)
-            }
-        }
-    }
 }
 
 public enum TilesModelError: Error, Equatable, Sendable {
@@ -686,26 +604,6 @@ public struct WindowSnapshotEntry: Equatable, Sendable {
     public var isAvailableForPlacement: Bool {
         isEligible && isReachable && isVisible && !isMinimized
     }
-
-    public var visible: Bool {
-        get { isVisible }
-        set { isVisible = newValue }
-    }
-
-    public var minimized: Bool {
-        get { isMinimized }
-        set { isMinimized = newValue }
-    }
-
-    public var eligible: Bool {
-        get { isEligible }
-        set { isEligible = newValue }
-    }
-
-    public var reachable: Bool {
-        get { isReachable }
-        set { isReachable = newValue }
-    }
 }
 
 public struct WindowSnapshot: Equatable, Sendable {
@@ -726,37 +624,15 @@ public struct WindowSnapshot: Equatable, Sendable {
                   focused: focused, goneTokens: goneTokens)
     }
 
-    public var focusedEntry: WindowSnapshotEntry? {
-        guard let focused else { return nil }
-        return windows[focused]
-    }
-
-    public var focusedWindow: WindowToken? {
-        get { focused }
-        set { focused = newValue }
-    }
-
-    public var entries: [WindowToken: WindowSnapshotEntry] {
-        get { windows }
-        set { windows = newValue }
-    }
-
-    public func entry(for token: WindowToken) -> WindowSnapshotEntry? { windows[token] }
-
     public var eligible: [WindowSnapshotEntry] {
         windows.values.filter(\.isEligible).sorted { $0.token.rawValue.uuidString < $1.token.rawValue.uuidString }
     }
 }
 
-public typealias LiveWindow = WindowSnapshotEntry
-public typealias SnapshotWindow = WindowSnapshotEntry
-
 public enum TileCycleDirection: Equatable, Sendable {
     case forward
     case reverse
 }
-
-public typealias CycleDirection = TileCycleDirection
 
 public enum TilesEvent: Equatable, Sendable {
     case reconcile
@@ -853,8 +729,6 @@ public struct WindowEffectResult: Equatable, Sendable {
         return false
     }
 
-    public var isSuccess: Bool { succeeded }
-
     public var isGone: Bool {
         if case .failed(.goneWindow) = status { return true }
         return false
@@ -885,9 +759,4 @@ public struct TilesPlan: Equatable, Sendable {
         self.nextState = nextState
         self.isNoOp = isNoOp
     }
-
-    public var generation: UInt64 { mutationID.rawValue }
-    public var requiredEffects: [WindowEffect] { effects }
-    public var proposedState: TilesSession { nextState }
-    public var windowEffects: [WindowEffect] { effects }
 }

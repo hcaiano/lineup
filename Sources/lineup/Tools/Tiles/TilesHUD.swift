@@ -7,13 +7,6 @@ import AppKit
 final class TilesHUD {
     static let shared = TilesHUD()
 
-    private enum Mode {
-        case workspace
-        case stack
-        case confirmation
-        case failure
-    }
-
     private let panel: TilesHUDPanel
     private let titleLabel = NSTextField(labelWithString: "")
     private let subtitleLabel = NSTextField(labelWithString: "")
@@ -24,7 +17,6 @@ final class TilesHUD {
     private var contentViewForMeasurement: NSView!
     private var dismissWorkItem: DispatchWorkItem?
     private var generation = 0
-    private var mode: Mode = .workspace
 
     private let width: CGFloat = 360
     private let cornerRadius: CGFloat = 14
@@ -46,41 +38,50 @@ final class TilesHUD {
         panel.contentView = buildContainer()
     }
 
-    func showWorkspace(number: Int) {
-        let workspace = min(max(number, 1), 4)
+    /// One presentation preamble for every HUD state. Each `show*` method then
+    /// supplies only the text and the rows that make it different.
+    private func configure(icon: NSImage?, tint: NSColor, titleFont: NSFont,
+                           lineBreakMode: NSLineBreakMode, maximumLines: Int,
+                           titleMaxLayoutWidth: CGFloat, subtitleAlpha: CGFloat?) {
         generation += 1
         dismissWorkItem?.cancel()
-        mode = .workspace
-        iconView.image = NSImage(systemSymbolName: "square.grid.3x3.fill",
-                                 accessibilityDescription: "Tiles")
-        iconView.contentTintColor = Brand.blue
-        titleLabel.font = .monospacedDigitSystemFont(ofSize: 34, weight: .bold)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.maximumNumberOfLines = 1
-        titleLabel.preferredMaxLayoutWidth = 0
+        iconView.image = icon
+        iconView.contentTintColor = tint
+        titleLabel.font = titleFont
+        titleLabel.lineBreakMode = lineBreakMode
+        titleLabel.maximumNumberOfLines = maximumLines
+        titleLabel.preferredMaxLayoutWidth = titleMaxLayoutWidth
+        if let subtitleAlpha {
+            subtitleLabel.textColor = NSColor.white.withAlphaComponent(subtitleAlpha)
+        }
+        clearRows()
+    }
+
+    func showWorkspace(number: Int) {
+        let workspace = min(max(number, 1), 4)
+        configure(icon: NSImage(systemSymbolName: "square.grid.3x3.fill",
+                                accessibilityDescription: "Tiles"),
+                  tint: Brand.blue,
+                  titleFont: .monospacedDigitSystemFont(ofSize: 34, weight: .bold),
+                  lineBreakMode: .byTruncatingTail, maximumLines: 1,
+                  titleMaxLayoutWidth: 0, subtitleAlpha: 0.72)
         titleLabel.stringValue = "\(workspace)"
         titleLabel.textColor = .white
         subtitleLabel.stringValue = "Workspace"
-        subtitleLabel.textColor = NSColor.white.withAlphaComponent(0.72)
         subtitleLabel.isHidden = false
         setIndicators(selected: workspace)
-        clearRows()
         present()
         announce("Workspace \(workspace)")
     }
 
     func showStack(appIcon: NSImage?, titles: [String], selectedIndex: Int) {
         guard !titles.isEmpty else { return }
-        generation += 1
-        dismissWorkItem?.cancel()
-        mode = .stack
-        iconView.image = appIcon ?? NSImage(systemSymbolName: "square.stack.3d.up",
-                                            accessibilityDescription: "Window stack")
-        iconView.contentTintColor = Brand.blue
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.maximumNumberOfLines = 1
-        titleLabel.preferredMaxLayoutWidth = 0
+        configure(icon: appIcon ?? NSImage(systemSymbolName: "square.stack.3d.up",
+                                           accessibilityDescription: "Window stack"),
+                  tint: Brand.blue,
+                  titleFont: .systemFont(ofSize: 13, weight: .semibold),
+                  lineBreakMode: .byTruncatingTail, maximumLines: 1,
+                  titleMaxLayoutWidth: 0, subtitleAlpha: 0.58)
         let selectedInStack = min(max(selectedIndex, 0), titles.count - 1)
         let visibleStart = titles.count <= maxVisibleRows
             ? 0
@@ -90,7 +91,6 @@ final class TilesHUD {
         titleLabel.stringValue = "Focused tile"
         titleLabel.textColor = .white
         subtitleLabel.stringValue = "Window \(selectedInStack + 1) of \(titles.count)"
-        subtitleLabel.textColor = NSColor.white.withAlphaComponent(0.58)
         subtitleLabel.isHidden = false
         indicatorStack.isHidden = true
         rebuildRows(visibleTitles.count)
@@ -104,45 +104,34 @@ final class TilesHUD {
 
     func showFailure(_ message: String) {
         guard !message.isEmpty else { return }
-        generation += 1
-        dismissWorkItem?.cancel()
-        mode = .failure
-        iconView.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
-                                 accessibilityDescription: "Warning")
-        iconView.contentTintColor = .systemOrange
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.lineBreakMode = .byWordWrapping
-        titleLabel.maximumNumberOfLines = 2
-        titleLabel.preferredMaxLayoutWidth = 300
+        configure(icon: NSImage(systemSymbolName: "exclamationmark.triangle.fill",
+                                accessibilityDescription: "Warning"),
+                  tint: .systemOrange,
+                  titleFont: .systemFont(ofSize: 13, weight: .semibold),
+                  lineBreakMode: .byWordWrapping, maximumLines: 2,
+                  titleMaxLayoutWidth: 300, subtitleAlpha: 0.72)
         titleLabel.stringValue = message
         titleLabel.textColor = .systemOrange
         subtitleLabel.stringValue = "Tiles could not complete this action."
-        subtitleLabel.textColor = NSColor.white.withAlphaComponent(0.72)
         subtitleLabel.isHidden = false
         indicatorStack.isHidden = true
-        clearRows()
         present(duration: 2.5)
         announce(message)
     }
 
     func showConfirmation(_ message: String) {
         guard !message.isEmpty else { return }
-        generation += 1
-        dismissWorkItem?.cancel()
-        mode = .confirmation
-        iconView.image = NSImage(systemSymbolName: "checkmark.circle.fill",
-                                 accessibilityDescription: "Complete")
-        iconView.contentTintColor = .systemGreen
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.maximumNumberOfLines = 1
-        titleLabel.preferredMaxLayoutWidth = 0
+        configure(icon: NSImage(systemSymbolName: "checkmark.circle.fill",
+                                accessibilityDescription: "Complete"),
+                  tint: .systemGreen,
+                  titleFont: .systemFont(ofSize: 13, weight: .semibold),
+                  lineBreakMode: .byTruncatingTail, maximumLines: 1,
+                  titleMaxLayoutWidth: 0, subtitleAlpha: nil)
         titleLabel.stringValue = message
         titleLabel.textColor = .white
         subtitleLabel.stringValue = ""
         subtitleLabel.isHidden = true
         indicatorStack.isHidden = true
-        clearRows()
         present()
         announce(message)
     }

@@ -116,6 +116,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.startEnabledTools()
         statusItem.refresh()
 
+        // Generic Settings entry point for screenshot evidence: `LINEUP_OPEN_SETTINGS=1`
+        // opens Settings, and `LINEUP_OPEN_SETTINGS_SECTION=<tool id>` (read in
+        // `openSettings`) picks the pane.
         #if DEBUG
         if ProcessInfo.processInfo.environment["LINEUP_OPEN_SETTINGS"] == "1" {
             DispatchQueue.main.async { [weak self] in
@@ -337,8 +340,11 @@ final class AppShell: NSObject, NSApplicationDelegate {
             // A dead shell can't have changed anything, so report the value back unchanged.
             onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) ?? show })
         #if DEBUG
-        if ProcessInfo.processInfo.environment["LINEUP_OPEN_SETTINGS_SECTION"] == "tiles" {
-            store.selection = .tool(.tiles)
+        // Any tool id, resolved through `ToolID` rather than a per-tool string literal.
+        // `ToolID.init(rawValue:)` never fails, so check membership before selecting a pane.
+        if let raw = ProcessInfo.processInfo.environment["LINEUP_OPEN_SETTINGS_SECTION"],
+           let tool = ToolID.all.first(where: { $0.rawValue == raw }) {
+            store.selection = .tool(tool)
         }
         #endif
         let controller = SettingsWindowController(store: store)

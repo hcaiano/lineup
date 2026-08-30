@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Pure tree-editing operations used by the layout editor. A `path` is a list of child
@@ -102,19 +103,32 @@ public enum LayoutEdit {
         return result
     }
 
-    /// Convert one root-vertical boundary to a fraction of the root's point width.
+    /// The single boundary -> fraction-of-container conversion in this file.
+    ///
+    /// Built on `Boundary.distance`, the same primitive the resolver uses, so a clamped or
+    /// converted value can never disagree with where the boundary actually lands. `length` is
+    /// picked per unit to make `distance / length` exact (no round-trip through a scale
+    /// factor): 1 for a fraction, the pixel count for `.pixels` (scale becomes exactly 1), and
+    /// the container's point length for `.points`.
+    ///
+    /// `rootPointsWide` is the container extent in points along the split axis. Only a ROOT
+    /// VERTICAL split may carry `.points` (see `Node.validate`), so for every other split the
+    /// argument is unused and nil is a safe omission. Returns nil when the unit cannot be
+    /// normalized with the geometry given.
     private static func rootFraction(_ boundary: Boundary, rootPixelsWide: Int,
                                      rootPointsWide: Double?) -> Double? {
+        let length: Double
         switch boundary.unit {
         case .fraction:
-            return boundary.value
+            length = 1
         case .pixels:
             guard rootPixelsWide > 0 else { return nil }
-            return boundary.value / Double(rootPixelsWide)
+            length = Double(rootPixelsWide)
         case .points:
             guard let rootPointsWide, rootPointsWide > 0, rootPointsWide.isFinite else { return nil }
-            return boundary.value / rootPointsWide
+            length = rootPointsWide
         }
+        return Double(boundary.distance(alongLength: CGFloat(length), pixelsTotal: rootPixelsWide)) / length
     }
 
     /// Validate geometry independently of `Node.validate()`, whose job is the tree/unit contract.
@@ -129,20 +143,14 @@ public enum LayoutEdit {
             guard children.count >= 2, dividers.count == children.count - 1 else { return false }
             var previous = 0.0
             for boundary in dividers {
-                let fraction: Double?
-                switch boundary.unit {
-                case .fraction:
-                    fraction = boundary.value
-                case .pixels:
-                    guard isRoot, axis == .vertical, rootPixelsWide > 0 else { return false }
-                    fraction = boundary.value / Double(rootPixelsWide)
-                case .points:
-                    guard isRoot, axis == .vertical,
-                          let rootPointsWide, rootPointsWide > 0,
-                          rootPointsWide.isFinite else { return false }
-                    fraction = boundary.value / rootPointsWide
+                // Absolute units are legal only on the root vertical split; everything else
+                // must already be a fraction. `rootFraction` then does the conversion.
+                if boundary.unit != .fraction {
+                    guard isRoot, axis == .vertical else { return false }
                 }
-                guard let fraction, fraction.isFinite,
+                guard let fraction = rootFraction(boundary, rootPixelsWide: rootPixelsWide,
+                                                  rootPointsWide: rootPointsWide),
+                      fraction.isFinite,
                       fraction > previous, fraction < 1 else { return false }
                 previous = fraction
             }
@@ -182,13 +190,7 @@ public enum LayoutEdit {
         // regardless of unit (root vertical stores pixels; nested/horizontal store fractions;
         // a root vertical split may also carry absolute points).
         func siblingFraction(_ b: Boundary) -> Double? {
-            switch b.unit {
-            case .fraction: return b.value
-            case .pixels:   return rootPixelsWide > 0 ? b.value / Double(rootPixelsWide) : nil
-            case .points:
-                guard let len = containerLength, len > 0 else { return nil }
-                return b.value / len
-            }
+            rootFraction(b, rootPixelsWide: rootPixelsWide, rootPointsWide: containerLength)
         }
         let gap = 0.01
         let leftEdge = index > 0 ? (siblingFraction(dividers[index - 1]) ?? 0) : 0

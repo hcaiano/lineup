@@ -88,7 +88,7 @@ func runTilesRuntimeTests() throws {
 
     check(axSource.contains("DispatchQueue(label: \"com.caiano.lineup.tiles.ax\""),
           "tiles runtime: AX work has a dedicated serial queue")
-    check(axSource.contains("CFEqual($0.element, element)"),
+    check(axSource.contains("CFEqual(lhs.element, rhs.element)"),
           "tiles runtime: AX identity uses ephemeral CFEqual matching")
     check(axSource.contains("AXUIElementSetMessagingTimeout(element, 0.25)"),
           "tiles runtime: every retained AX element receives a bounded timeout")
@@ -154,9 +154,12 @@ func runTilesRuntimeTests() throws {
           reducerSource.contains("layouts.frame(for: managed.tile)"),
           "tiles runtime: placement uses raw geometry while AX effects use spaced frames")
     check(coordinatorSource.contains("case .focusTile(let direction)") &&
-          coordinatorSource.contains("case .moveFocusedWindowToTile(let direction)") &&
-          coordinatorSource.contains("case .toggleFocusedSplitOrientation"),
+           coordinatorSource.contains("case .moveFocusedWindowToTile(let direction)") &&
+           coordinatorSource.contains("case .toggleFocusedSplitOrientation"),
           "tiles runtime: all directional and split actions reach the coordinator")
+    check(coordinatorSource.contains("enqueueRelativeWorkspaceMove(forward:") &&
+           coordinatorSource.contains("let source = self.session.activeWorkspace"),
+          "tiles runtime: relative window moves resolve from serialized workspace state")
     check(coordinatorSource.contains("toggleParentSplit(") &&
           coordinatorSource.contains("screenKey: screenKey") &&
           coordinatorSource.contains("leafIndex: leafIndex") &&
@@ -172,9 +175,9 @@ func runTilesRuntimeTests() throws {
           "tiles runtime: shortcuts map to all four directional runtime actions")
     check(paneSource.contains("Space between tiles") &&
           paneSource.contains("Keep \\(Int(TilesSettings.tileSpacingPoints)) pt") &&
-          paneSource.contains("Focus Tile Left") &&
-          paneSource.contains("Move Window Down") &&
-          paneSource.contains("Switch Split Direction"),
+          toolSource.contains("Focus Tile Left") &&
+          toolSource.contains("Move Window Down") &&
+          toolSource.contains("Switch Split Direction"),
           "tiles runtime: Settings exposes the concise spacing and shortcut controls")
     check(paneSource.contains("Workspace and stacks") &&
           paneSource.contains("Focus tile") &&

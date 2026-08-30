@@ -59,19 +59,17 @@ public enum TilesReducer {
                             mutationID: mutationID, effects: &effects)
 
         case .nextWorkspace:
-            let destination = WorkspaceID(rawValue: working.activeWorkspace.rawValue == 4
-                                          ? 1 : working.activeWorkspace.rawValue + 1)
+            let destination = working.activeWorkspace.next
             switchWorkspace(&working, to: destination, snapshot: snapshot, layouts: layouts,
                             mutationID: mutationID, effects: &effects)
 
         case .previousWorkspace:
-            let destination = WorkspaceID(rawValue: working.activeWorkspace.rawValue == 1
-                                          ? 4 : working.activeWorkspace.rawValue - 1)
+            let destination = working.activeWorkspace.previous
             switchWorkspace(&working, to: destination, snapshot: snapshot, layouts: layouts,
                             mutationID: mutationID, effects: &effects)
 
         case let .moveFocusedWindow(destination):
-            moveFocusedWindow(&working, to: destination, snapshot: snapshot, layouts: layouts,
+            moveFocusedWindow(&working, to: destination, snapshot: snapshot,
                               mutationID: mutationID, effects: &effects)
 
         case let .moveFocusedWindowToTile(direction):
@@ -114,13 +112,11 @@ public enum TilesReducer {
             case .nextWorkspace:
                 transition = Transition(mutationID: mutationID,
                                         from: before.activeWorkspace,
-                                        to: WorkspaceID(rawValue: before.activeWorkspace.rawValue == 4
-                                                         ? 1 : before.activeWorkspace.rawValue + 1))
+                                        to: before.activeWorkspace.next)
             case .previousWorkspace:
                 transition = Transition(mutationID: mutationID,
                                         from: before.activeWorkspace,
-                                        to: WorkspaceID(rawValue: before.activeWorkspace.rawValue == 1
-                                                        ? 4 : before.activeWorkspace.rawValue - 1))
+                                        to: before.activeWorkspace.previous)
             default:
                 transition = Transition(mutationID: mutationID)
             }
@@ -213,7 +209,7 @@ public enum TilesReducer {
     // MARK: - Preparation and layout
 
     private static func prepare(state: TilesSession, snapshot: WindowSnapshot,
-                                layouts: LayoutSnapshot) -> TilesSession {
+                                 layouts: LayoutSnapshot) -> TilesSession {
         var result = state
         result.ensureFourWorkspaces()
 
@@ -245,13 +241,22 @@ public enum TilesReducer {
 
         // Rebase can change a tile's address but never changes token identity.
         // Refresh the denormalized ManagedWindow location after all workspaces
-        // have been rebuilt.
-        for token in result.windows.keys {
-            if let location = locate(result, token: token),
-               let stack = result.workspaces[location.workspace]?.screens[location.screen]?[location.index] {
-                result.windows[token]?.workspace = location.workspace
-                result.windows[token]?.tile = stack.address
+        // have been rebuilt.  One index pass keeps this linear in the number of
+        // stack members instead of rescanning every workspace per window.
+        var ownership: [WindowToken: (workspace: WorkspaceID, tile: TileAddress)] = [:]
+        for id in WorkspaceID.all {
+            guard let workspace = result.workspaces[id] else { continue }
+            for stack in workspace.allStacks {
+                // First occurrence wins, matching `locate`'s scan order.
+                for token in stack.order where ownership[token] == nil {
+                    ownership[token] = (id, stack.address)
+                }
             }
+        }
+        for token in result.windows.keys {
+            guard let owner = ownership[token] else { continue }
+            result.windows[token]?.workspace = owner.workspace
+            result.windows[token]?.tile = owner.tile
         }
         return result
     }
@@ -289,10 +294,10 @@ public enum TilesReducer {
                         }
                         guard var targetStacks = workspace.screens[destinationScreen],
                               let targetIndex = targetStacks.indices.min(by: { lhs, rhs in
-                                  distanceSquared(targetStacks[lhs].address.normalizedCenter,
-                                                  source.address.normalizedCenter)
-                                    < distanceSquared(targetStacks[rhs].address.normalizedCenter,
-                                                      source.address.normalizedCenter)
+                                  TileGeometry.distanceSquared(targetStacks[lhs].address.normalizedCenter,
+                                                               source.address.normalizedCenter)
+                                    < TileGeometry.distanceSquared(targetStacks[rhs].address.normalizedCenter,
+                                                                   source.address.normalizedCenter)
                               }) else { continue }
                         let selectSource = source.selected == token &&
                             source.selectionEpoch >= targetStacks[targetIndex].selectionEpoch
@@ -323,7 +328,7 @@ public enum TilesReducer {
             guard managed.visibility == .visible,
                   let entry = snapshot.windows[token], entry.isAvailableForPlacement,
                   let frame = layouts.frame(for: managed.tile) else { continue }
-            if !approximatelyEqual(entry.frame, frame) {
+            if !RecoveryModel.compatibleFrame(entry.frame, with: frame, tolerance: 1) {
                 effects.append(.setFrame(token, frame, mutationID))
                 state.windows[token]?.lastAppliedFrame = frame
             }
@@ -434,7 +439,7 @@ public enum TilesReducer {
                managed.workspace == state.activeWorkspace,
                entry.isReachable,
                let frame = layouts.frame(for: managed.tile),
-               !approximatelyEqual(entry.frame, frame) {
+               !RecoveryModel.compatibleFrame(entry.frame, with: frame, tolerance: 1) {
                 effects.append(.setFrame(token, frame, mutationID))
                 state.windows[token]?.lastAppliedFrame = frame
             }
@@ -582,43 +587,35 @@ public enum TilesReducer {
         // Spaces and invalidate the rest of this snapshot. The coordinator
         // commits this ownership change, takes a fresh snapshot, and repeats
         // the same workspace action before any source window is staged.
-        if let target = state.workspaces[destination] {
-            for screen in target.screens.keys.sorted() {
-                for stack in target.screens[screen] ?? [] {
-                    for token in stack.order {
-                        guard state.windows[token]?.visibility == .stagedByTiles,
-                              let entry = snapshot.windows[token],
-                              !entry.isMinimized, !entry.isReachable else { continue }
-                        effects.append(.setMinimized(token, false, mutationID))
-                        state.windows[token]?.visibility = .visible
-                        return
-                    }
-                }
+        for stack in state.workspaces[destination]?.allStacks ?? [] {
+            for token in stack.order {
+                guard state.windows[token]?.visibility == .stagedByTiles,
+                      let entry = snapshot.windows[token],
+                      !entry.isMinimized, !entry.isReachable else { continue }
+                effects.append(.setMinimized(token, false, mutationID))
+                state.windows[token]?.visibility = .visible
+                return
             }
         }
 
         // Destination effects are ordered first, so a successful transition
         // never needs to make the desktop empty.  User-minimized windows are
         // deliberately excluded from restoration.
-        if let target = state.workspaces[destination] {
-            for screen in target.screens.keys.sorted() {
-                for stack in target.screens[screen] ?? [] {
-                    // Every member of a destination stack shares the current
-                    // tile frame.  Only the selected member is raised below.
-                    for token in stack.order {
-                        guard let managed = state.windows[token],
-                              managed.visibility != .minimizedByUser else { continue }
-                        if managed.visibility == .stagedByTiles,
-                           snapshot.windows[token] != nil {
-                            effects.append(.setMinimized(token, false, mutationID))
-                            state.windows[token]?.visibility = .visible
-                        }
-                        if let entry = snapshot.windows[token], entry.isReachable,
-                           let frame = layouts.frame(for: managed.tile) {
-                            effects.append(.setFrame(token, frame, mutationID))
-                            state.windows[token]?.lastAppliedFrame = frame
-                        }
-                    }
+        for stack in state.workspaces[destination]?.allStacks ?? [] {
+            // Every member of a destination stack shares the current tile
+            // frame.  Only the selected member is raised below.
+            for token in stack.order {
+                guard let managed = state.windows[token],
+                      managed.visibility != .minimizedByUser else { continue }
+                if managed.visibility == .stagedByTiles,
+                   snapshot.windows[token] != nil {
+                    effects.append(.setMinimized(token, false, mutationID))
+                    state.windows[token]?.visibility = .visible
+                }
+                if let entry = snapshot.windows[token], entry.isReachable,
+                   let frame = layouts.frame(for: managed.tile) {
+                    effects.append(.setFrame(token, frame, mutationID))
+                    state.windows[token]?.lastAppliedFrame = frame
                 }
             }
         }
@@ -626,26 +623,20 @@ public enum TilesReducer {
         // Raise each selected stack member, then focus only the most recently
         // focused member in the destination workspace.
         var focusCandidate: (token: WindowToken, epoch: UInt64, order: Int)?
-        if let target = state.workspaces[destination] {
-            var visualOrder = 0
-            for screen in target.screens.keys.sorted() {
-                for stack in target.screens[screen] ?? [] {
-                    if let selected = stack.selected,
-                       let managed = state.windows[selected],
-                       managed.visibility != .minimizedByUser,
-                       snapshot.windows[selected]?.isReachable ?? false {
-                        // Avoid a duplicate raise if the frame loop already
-                        // raised this selected member.
-                        if !effects.contains(where: { $0 == .raise(selected, mutationID) }) {
-                            effects.append(.raise(selected, mutationID))
-                        }
-                        let candidate = (token: selected, epoch: managed.focusEpoch, order: visualOrder)
-                        if focusCandidate == nil || candidate.epoch > focusCandidate!.epoch ||
-                            (candidate.epoch == focusCandidate!.epoch && candidate.order > focusCandidate!.order) {
-                            focusCandidate = candidate
-                        }
-                    }
-                    visualOrder += 1
+        for (visualOrder, stack) in (state.workspaces[destination]?.allStacks ?? []).enumerated() {
+            if let selected = stack.selected,
+               let managed = state.windows[selected],
+               managed.visibility != .minimizedByUser,
+               snapshot.windows[selected]?.isReachable ?? false {
+                // Avoid a duplicate raise if the frame loop already raised
+                // this selected member.
+                if !effects.contains(where: { $0 == .raise(selected, mutationID) }) {
+                    effects.append(.raise(selected, mutationID))
+                }
+                let candidate = (token: selected, epoch: managed.focusEpoch, order: visualOrder)
+                if focusCandidate == nil || candidate.epoch > focusCandidate!.epoch ||
+                    (candidate.epoch == focusCandidate!.epoch && candidate.order > focusCandidate!.order) {
+                    focusCandidate = candidate
                 }
             }
         }
@@ -661,17 +652,13 @@ public enum TilesReducer {
         }
 
         // Source staging happens after destination desminimization/frame work.
-        if let sourceWorkspace = state.workspaces[source] {
-            for screen in sourceWorkspace.screens.keys.sorted() {
-                for stack in sourceWorkspace.screens[screen] ?? [] {
-                    for token in stack.order {
-                        guard let managed = state.windows[token],
-                              managed.visibility == .visible else { continue }
-                        if let entry = snapshot.windows[token], entry.isAvailableForPlacement {
-                            effects.append(.setMinimized(token, true, mutationID))
-                            state.windows[token]?.visibility = .stagedByTiles
-                        }
-                    }
+        for stack in state.workspaces[source]?.allStacks ?? [] {
+            for token in stack.order {
+                guard let managed = state.windows[token],
+                      managed.visibility == .visible else { continue }
+                if let entry = snapshot.windows[token], entry.isAvailableForPlacement {
+                    effects.append(.setMinimized(token, true, mutationID))
+                    state.windows[token]?.visibility = .stagedByTiles
                 }
             }
         }
@@ -682,7 +669,6 @@ public enum TilesReducer {
         _ state: inout TilesSession,
         to destination: WorkspaceID,
         snapshot: WindowSnapshot,
-        layouts: LayoutSnapshot,
         mutationID: MutationID,
         effects: inout [WindowEffect]
     ) {
@@ -705,7 +691,6 @@ public enum TilesReducer {
 
         _ = sourceStacks[location.index].remove(token)
         let targetAddress = targetStacks[targetIndex].address
-        let targetActive = destination == state.activeWorkspace
         _ = targetStacks[targetIndex].append(token, selecting: true,
                                              epoch: takeFocusEpoch(&state))
         sourceWorkspace.screens[location.screen] = sourceStacks
@@ -713,19 +698,14 @@ public enum TilesReducer {
         state.workspaces[location.workspace] = sourceWorkspace
         state.workspaces[destination] = targetWorkspace
 
-        let visibility: WindowVisibility = targetActive ? .visible : .stagedByTiles
+        // The guard above rejects `destination == state.activeWorkspace`, so
+        // the destination workspace is always inactive here and the window is
+        // always staged rather than shown.
         state.windows[token]?.workspace = destination
         state.windows[token]?.tile = targetAddress
-        state.windows[token]?.visibility = visibility
+        state.windows[token]?.visibility = .stagedByTiles
 
-        if targetActive, let entry = snapshot.windows[token], entry.isReachable {
-            let frame = layouts.frame(for: targetAddress) ?? entry.frame
-            effects.append(.setFrame(token, frame, mutationID))
-            effects.append(.raise(token, mutationID))
-            effects.append(.focus(token, mutationID))
-            state.windows[token]?.lastAppliedFrame = frame
-        } else if !targetActive,
-                  snapshot.windows[token]?.isReachable ?? false {
+        if snapshot.windows[token]?.isReachable ?? false {
             effects.append(.setMinimized(token, true, mutationID))
         }
     }
@@ -871,11 +851,8 @@ public enum TilesReducer {
     private static func locate(_ state: TilesSession, token: WindowToken)
         -> (workspace: WorkspaceID, screen: String, index: Int)? {
         for id in WorkspaceID.all {
-            guard let workspace = state.workspaces[id] else { continue }
-            for screen in workspace.screens.keys.sorted() {
-                if let index = workspace.screens[screen]?.firstIndex(where: { $0.contains(token) }) {
-                    return (id, screen, index)
-                }
+            if let location = state.workspaces[id]?.location(of: token) {
+                return (id, location.screenKey, location.index)
             }
         }
         return nil
@@ -907,20 +884,6 @@ public enum TilesReducer {
         let result = state.nextFocusEpoch
         state.nextFocusEpoch = state.nextFocusEpoch == UInt64.max ? 0 : state.nextFocusEpoch + 1
         return result
-    }
-
-    private static func approximatelyEqual(_ lhs: CGRect, _ rhs: CGRect,
-                                           tolerance: CGFloat = 1) -> Bool {
-        abs(lhs.minX - rhs.minX) <= tolerance &&
-            abs(lhs.minY - rhs.minY) <= tolerance &&
-            abs(lhs.width - rhs.width) <= tolerance &&
-            abs(lhs.height - rhs.height) <= tolerance
-    }
-
-    private static func distanceSquared(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
-        let dx = lhs.x - rhs.x
-        let dy = lhs.y - rhs.y
-        return dx * dx + dy * dy
     }
 
     private static func compensationEffects(for effects: [WindowEffect],

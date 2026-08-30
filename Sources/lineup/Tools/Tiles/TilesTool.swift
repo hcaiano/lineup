@@ -105,7 +105,9 @@ final class TilesTool: Tool {
     private lazy var settingsModel = TilesSettingsModel(tool: self)
     private var log: Logger { services?.log ?? Logger(subsystem: Product.logSubsystem, category: "tiles") }
 
-    private enum Action: String, CaseIterable {
+    /// Internal, not private: the Settings pane renders its shortcut rows from
+    /// these cases so a renamed action can never drift from its row.
+    enum Action: String, CaseIterable {
         case nextWorkspace
         case nextWindow
         case moveWindowToNextWorkspace
@@ -118,6 +120,27 @@ final class TilesTool: Tool {
         case moveWindowUp
         case moveWindowDown
         case toggleSplitOrientation
+
+        /// The Settings pane heading each action belongs to.
+        enum Group {
+            case workspaceAndStacks
+            case focus
+            case move
+            case layout
+        }
+
+        var group: Group {
+            switch self {
+            case .nextWorkspace, .nextWindow, .moveWindowToNextWorkspace:
+                return .workspaceAndStacks
+            case .focusTileLeft, .focusTileRight, .focusTileUp, .focusTileDown:
+                return .focus
+            case .moveWindowLeft, .moveWindowRight, .moveWindowUp, .moveWindowDown:
+                return .move
+            case .toggleSplitOrientation:
+                return .layout
+            }
+        }
 
         /// Only cyclic actions get an implicit Shift reverse.  Keeping this
         /// metadata on the action prevents directional shortcuts from
@@ -156,21 +179,29 @@ final class TilesTool: Tool {
             }
         }
 
-        var binding: (TilesSettings) -> ShortcutBinding? {
+        /// The one place an action is tied to its stored field. Reading,
+        /// clearing and assigning a binding all go through this key path, so
+        /// the twelve named fields on disk stay unchanged while the shell
+        /// keeps a single mapping.
+        var keyPath: WritableKeyPath<TilesSettings, ShortcutBinding?> {
             switch self {
-            case .nextWorkspace: return { $0.nextWorkspace }
-            case .nextWindow: return { $0.nextWindow }
-            case .moveWindowToNextWorkspace: return { $0.moveWindowToNextWorkspace }
-            case .focusTileLeft: return { $0.focusTileLeft }
-            case .focusTileRight: return { $0.focusTileRight }
-            case .focusTileUp: return { $0.focusTileUp }
-            case .focusTileDown: return { $0.focusTileDown }
-            case .moveWindowLeft: return { $0.moveWindowLeft }
-            case .moveWindowRight: return { $0.moveWindowRight }
-            case .moveWindowUp: return { $0.moveWindowUp }
-            case .moveWindowDown: return { $0.moveWindowDown }
-            case .toggleSplitOrientation: return { $0.toggleSplitOrientation }
+            case .nextWorkspace: return \.nextWorkspace
+            case .nextWindow: return \.nextWindow
+            case .moveWindowToNextWorkspace: return \.moveWindowToNextWorkspace
+            case .focusTileLeft: return \.focusTileLeft
+            case .focusTileRight: return \.focusTileRight
+            case .focusTileUp: return \.focusTileUp
+            case .focusTileDown: return \.focusTileDown
+            case .moveWindowLeft: return \.moveWindowLeft
+            case .moveWindowRight: return \.moveWindowRight
+            case .moveWindowUp: return \.moveWindowUp
+            case .moveWindowDown: return \.moveWindowDown
+            case .toggleSplitOrientation: return \.toggleSplitOrientation
             }
+        }
+
+        func binding(_ settings: TilesSettings) -> ShortcutBinding? {
+            settings[keyPath: keyPath]
         }
     }
 
@@ -632,8 +663,9 @@ final class TilesTool: Tool {
             isRestoringWindows = false
             TilesHUD.shared.showFailure(message)
         }
+        // Presentation follows a committed coordinator state change, which has
+        // already refreshed the menu. Only the pane needs this pass.
         settingsModel.refresh()
-        services?.refreshMenu()
         services?.refreshSettings()
     }
 
@@ -667,15 +699,16 @@ final class TilesTool: Tool {
         case .toggleSplitOrientation:
             coordinator.perform(.toggleFocusedSplitOrientation)
         }
+        // The coordinator's onStateChange rebuilds the menu once the action has
+        // committed. Rebuilding it here as well would query every tool and the
+        // login-item daemon again on every keypress.
         settingsModel.refresh()
-        services?.refreshMenu()
     }
 
     func selectWorkspace(_ workspace: Int) {
-        guard runtimeReady, (1...4).contains(workspace) else { return }
+        guard runtimeReady, WorkspaceID.from(workspace) != nil else { return }
         coordinator.perform(.switchWorkspace(workspace))
         settingsModel.refresh()
-        services?.refreshMenu()
     }
 
     func cycleFocusedTile() {
@@ -701,7 +734,7 @@ final class TilesTool: Tool {
     }
 
     func moveFocusedWindowToWorkspace(_ workspace: Int) {
-        guard runtimeReady, (1...4).contains(workspace) else { return }
+        guard runtimeReady, WorkspaceID.from(workspace) != nil else { return }
         coordinator.perform(.moveFocusedWindow(toWorkspace: workspace))
         settingsModel.refresh()
     }
@@ -887,21 +920,28 @@ final class TilesTool: Tool {
         return action.binding(settings)
     }
 
-    func reverseAvailable(for action: String) -> Bool {
-        guard let action = Action(rawValue: action), action.hasGeneratedReverse,
-              let binding = action.binding(settings),
-              binding.modifiers & DragSnapModifierMask.shift == 0 else { return false }
-        let reverse = HotkeyCombo(keyCode: binding.keyCode,
-                                  modifiers: UInt32(truncatingIfNeeded: binding.modifiers)
-                                    | UInt32(shiftKey))
+    /// True when at least one cyclic action still owns its generated Shift
+    /// reverse. Answered from a single `boundCombos()` snapshot: that query
+    /// reloads every tool's persisted section, so the pane must not repeat it
+    /// per row while drawing.
+    func anyReverseShortcutAvailable() -> Bool {
+        let persisted = services?.boundCombos() ?? []
         let explicit = Set(bindings(in: settings).map {
             HotkeyCombo(keyCode: $0.keyCode,
                         modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
         })
-        guard !explicit.contains(reverse) else { return false }
-        return services?.boundCombos().conflictOwner(keyCode: reverse.keyCode,
-                                                     modifiers: reverse.modifiers,
-                                                     excluding: .tiles) == nil
+        return Action.allCases.contains { action in
+            guard action.hasGeneratedReverse,
+                  let binding = action.binding(settings),
+                  binding.modifiers & DragSnapModifierMask.shift == 0 else { return false }
+            let reverse = HotkeyCombo(keyCode: binding.keyCode,
+                                      modifiers: UInt32(truncatingIfNeeded: binding.modifiers)
+                                        | UInt32(shiftKey))
+            guard !explicit.contains(reverse) else { return false }
+            return persisted.conflictOwner(keyCode: reverse.keyCode,
+                                           modifiers: reverse.modifiers,
+                                           excluding: .tiles) == nil
+        }
     }
 
     func applyCapture(_ capture: ShortcutRecorder.Capture, for actionID: String) {
@@ -909,20 +949,7 @@ final class TilesTool: Tool {
         switch capture {
         case .clear:
             var updated = settings
-            switch action {
-            case .nextWorkspace: updated.nextWorkspace = nil
-            case .nextWindow: updated.nextWindow = nil
-            case .moveWindowToNextWorkspace: updated.moveWindowToNextWorkspace = nil
-            case .focusTileLeft: updated.focusTileLeft = nil
-            case .focusTileRight: updated.focusTileRight = nil
-            case .focusTileUp: updated.focusTileUp = nil
-            case .focusTileDown: updated.focusTileDown = nil
-            case .moveWindowLeft: updated.moveWindowLeft = nil
-            case .moveWindowRight: updated.moveWindowRight = nil
-            case .moveWindowUp: updated.moveWindowUp = nil
-            case .moveWindowDown: updated.moveWindowDown = nil
-            case .toggleSplitOrientation: updated.toggleSplitOrientation = nil
-            }
+            updated[keyPath: action.keyPath] = nil
             saveFromPane(updated)
 
         case .modifiersOnly:
@@ -948,20 +975,7 @@ final class TilesTool: Tool {
             var updated = settings
             let binding = ShortcutBinding(action: action.rawValue, keyCode: keyCode,
                                            modifiers: Int(truncatingIfNeeded: modifiers))
-            switch action {
-            case .nextWorkspace: updated.nextWorkspace = binding
-            case .nextWindow: updated.nextWindow = binding
-            case .moveWindowToNextWorkspace: updated.moveWindowToNextWorkspace = binding
-            case .focusTileLeft: updated.focusTileLeft = binding
-            case .focusTileRight: updated.focusTileRight = binding
-            case .focusTileUp: updated.focusTileUp = binding
-            case .focusTileDown: updated.focusTileDown = binding
-            case .moveWindowLeft: updated.moveWindowLeft = binding
-            case .moveWindowRight: updated.moveWindowRight = binding
-            case .moveWindowUp: updated.moveWindowUp = binding
-            case .moveWindowDown: updated.moveWindowDown = binding
-            case .toggleSplitOrientation: updated.toggleSplitOrientation = binding
-            }
+            updated[keyPath: action.keyPath] = binding
             saveFromPane(updated)
         }
     }

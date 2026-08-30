@@ -75,7 +75,9 @@ final class SnapMemory {
         entries.removeAll()
     }
 
-    private static func approx(_ a: CGRect, _ b: CGRect, tol: CGFloat = 4) -> Bool {
+    /// `fileprivate`, not `private`: `WindowMover.confirmedPlacement` in this file applies the
+    /// same "did it land where we asked" tolerance and must not restate it.
+    fileprivate static func approx(_ a: CGRect, _ b: CGRect, tol: CGFloat = 4) -> Bool {
         abs(a.minX - b.minX) <= tol && abs(a.minY - b.minY) <= tol &&
         abs(a.width - b.width) <= tol && abs(a.height - b.height) <= tol
     }
@@ -290,10 +292,7 @@ enum WindowMover {
     private static func confirmedPlacement(of window: AXUIElement,
                                            expected: CGRect) -> ConfirmedWindowPlacement? {
         guard let actual = currentCocoaFrame(of: window),
-              abs(actual.minX - expected.minX) <= 4,
-              abs(actual.minY - expected.minY) <= 4,
-              abs(actual.width - expected.width) <= 4,
-              abs(actual.height - expected.height) <= 4 else { return nil }
+              SnapMemory.approx(actual, expected) else { return nil }
         return ConfirmedWindowPlacement(window: window, frame: actual)
     }
 

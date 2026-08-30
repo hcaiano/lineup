@@ -51,6 +51,12 @@ final class TilesSettingsModel: ObservableObject {
         isRestoringWindows = tool.isRestoringWindows
     }
 
+    var shortcutCaption: String? {
+        tool?.anyReverseShortcutAvailable() == true
+            ? "For workspace and stack shortcuts without Shift, hold Shift for previous."
+            : nil
+    }
+
     var runtimeNeedsAccessibility: Bool {
         runtimeBlockedMessage?.localizedCaseInsensitiveContains("Accessibility") == true
     }
@@ -102,45 +108,9 @@ final class TilesSettingsModel: ObservableObject {
         return ShortcutKit.display(keyCode: binding.keyCode, modifiers: binding.modifiers)
     }
 
-    func reverseAvailable(for action: String) -> Bool {
-        tool?.reverseAvailable(for: action) ?? false
-    }
-
-    var shortcutCaption: String? {
-        let actions = TilesShortcutRow.all.map(\.id)
-        return actions.contains(where: { reverseAvailable(for: $0) })
-            ? "For workspace and stack shortcuts without Shift, hold Shift for previous."
-            : nil
-    }
-
     func showAlert(title: String, message: String) {
         alert = AlertItem(title: title, message: message)
     }
-}
-
-private struct TilesShortcutRow: Identifiable {
-    let id: String
-    let title: String
-
-    static let all: [TilesShortcutRow] = [
-        TilesShortcutRow(id: "nextWorkspace", title: "Next Workspace"),
-        TilesShortcutRow(id: "nextWindow", title: "Next Window in Tile"),
-        TilesShortcutRow(id: "moveWindowToNextWorkspace", title: "Move Window to Next Workspace"),
-        TilesShortcutRow(id: "focusTileLeft", title: "Focus Tile Left"),
-        TilesShortcutRow(id: "focusTileRight", title: "Focus Tile Right"),
-        TilesShortcutRow(id: "focusTileUp", title: "Focus Tile Up"),
-        TilesShortcutRow(id: "focusTileDown", title: "Focus Tile Down"),
-        TilesShortcutRow(id: "moveWindowLeft", title: "Move Window Left"),
-        TilesShortcutRow(id: "moveWindowRight", title: "Move Window Right"),
-        TilesShortcutRow(id: "moveWindowUp", title: "Move Window Up"),
-        TilesShortcutRow(id: "moveWindowDown", title: "Move Window Down"),
-        TilesShortcutRow(id: "toggleSplitOrientation", title: "Switch Split Direction"),
-    ]
-
-    static var workspaceAndStack: [TilesShortcutRow] { Array(all.prefix(3)) }
-    static var focus: [TilesShortcutRow] { Array(all.dropFirst(3).prefix(4)) }
-    static var move: [TilesShortcutRow] { Array(all.dropFirst(7).prefix(4)) }
-    static var layout: [TilesShortcutRow] { Array(all.dropFirst(11)) }
 }
 
 /// Settings > Tiles. The shared `ToolPane` draws the title, summary, icon and global switch.
@@ -248,10 +218,10 @@ private struct TilesSettingsPaneBody: View {
                     }
 
                     SettingsSectionView("Shortcuts", caption: model.shortcutCaption) {
-                        shortcutGroup("Workspace and stacks", rows: TilesShortcutRow.workspaceAndStack)
-                        shortcutGroup("Focus tile", rows: TilesShortcutRow.focus)
-                        shortcutGroup("Move window", rows: TilesShortcutRow.move)
-                        shortcutGroup("Layout", rows: TilesShortcutRow.layout)
+                        shortcutGroup("Workspace and stacks", .workspaceAndStacks)
+                        shortcutGroup("Focus tile", .focus)
+                        shortcutGroup("Move window", .move)
+                        shortcutGroup("Layout", .layout)
                     }
                 }
                 .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
@@ -283,23 +253,23 @@ private struct TilesSettingsPaneBody: View {
     }
 
     @ViewBuilder
-    private func shortcutRow(_ row: TilesShortcutRow) -> some View {
+    private func shortcutRow(_ row: TilesTool.Action) -> some View {
         HStack(spacing: 12) {
             Text(row.title)
             Spacer(minLength: 18)
             RecorderButton(
-                text: model.shortcutText(for: row.id),
+                text: model.shortcutText(for: row.rawValue),
                 emptyText: "Set shortcut",
-                isRecording: recorder.isRecording(row.id),
+                isRecording: recorder.isRecording(row.rawValue),
                 enabled: model.canEdit,
                 accessibilityLabel: "Shortcut for \(row.title)",
                 rejectionCount: recorder.rejectionCount,
-                action: { record(row.id) })
+                action: { record(row.rawValue) })
             CircleClearButton(
                 help: "Clear shortcut",
                 accessibilityLabel: "Clear shortcut for \(row.title)",
-                disabled: !model.canEdit || model.shortcutText(for: row.id).isEmpty,
-                action: { clear(row.id) })
+                disabled: !model.canEdit || model.shortcutText(for: row.rawValue).isEmpty,
+                action: { clear(row.rawValue) })
         }
         .frame(minHeight: SettingsMetrics.shortcutRowHeight)
         .padding(.vertical, 3)
@@ -307,13 +277,13 @@ private struct TilesSettingsPaneBody: View {
     }
 
     @ViewBuilder
-    private func shortcutGroup(_ title: String, rows: [TilesShortcutRow]) -> some View {
+    private func shortcutGroup(_ title: String, _ group: TilesTool.Action.Group) -> some View {
         Text(title)
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
-        ForEach(rows) { row in
+        ForEach(TilesTool.Action.allCases.filter { $0.group == group }, id: \.self) { row in
             shortcutRow(row)
         }
     }

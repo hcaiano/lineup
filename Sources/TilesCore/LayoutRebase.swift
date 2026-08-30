@@ -125,23 +125,6 @@ public enum LayoutRebase {
         return result
     }
 
-    /// Rebase all display stacks in one workspace.  Screen keys are preserved
-    /// and each display's leaves remain in its own visual order.
-    public static func rebase(
-        screens: [String: [TileStack]],
-        from old: LayoutSnapshot,
-        to new: LayoutSnapshot
-    ) -> [String: [TileStack]] {
-        var output: [String: [TileStack]] = [:]
-        let keys = Set(screens.keys).union(new.screens.keys).sorted()
-        for key in keys {
-            output[key] = rebase(stacks: screens[key] ?? [],
-                                 from: old.screens[key] ?? [],
-                                 to: new.screens[key] ?? [])
-        }
-        return output
-    }
-
     private static func destinationLeaf(
         for stack: TileStack,
         oldLeaves: [NormalizedLeaf],
@@ -172,9 +155,7 @@ public enum LayoutRebase {
 
         if let oldRect = oldLeaf?.rect, !oldRect.isNull, oldRect.width > 0, oldRect.height > 0 {
             let intersections = candidates.map { offset, leaf -> (Int, NormalizedLeaf, CGFloat) in
-                let intersection = oldRect.intersection(leaf.rect)
-                let area = intersection.isNull ? 0 : intersection.width * intersection.height
-                return (offset, leaf, area)
+                (offset, leaf, TileGeometry.intersectionArea(oldRect, leaf.rect))
             }
             if let best = intersections.max(by: { lhs, rhs in
                 if lhs.2 != rhs.2 { return lhs.2 < rhs.2 }
@@ -187,8 +168,8 @@ public enum LayoutRebase {
         // If a normalized snapshot only has centers, use nearest center as a
         // deterministic and lossless fallback.
         return candidates.min { lhs, rhs in
-            let ld = distanceSquared(lhs.element.center, center)
-            let rd = distanceSquared(rhs.element.center, center)
+            let ld = TileGeometry.distanceSquared(lhs.element.center, center)
+            let rd = TileGeometry.distanceSquared(rhs.element.center, center)
             if ld != rd { return ld < rd }
             return lhs.offset < rhs.offset
         }?.element
@@ -198,11 +179,5 @@ public enum LayoutRebase {
         guard !rect.isNull else { return false }
         return point.x >= rect.minX && point.x <= rect.maxX &&
             point.y >= rect.minY && point.y <= rect.maxY
-    }
-
-    private static func distanceSquared(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
-        let dx = lhs.x - rhs.x
-        let dy = lhs.y - rhs.y
-        return dx * dx + dy * dy
     }
 }

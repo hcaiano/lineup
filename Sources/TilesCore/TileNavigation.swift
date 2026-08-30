@@ -52,7 +52,8 @@ public enum TileNavigation {
                                                                     direction: direction),
                           perpendicularCenterDistance: perpendicularCenterDistance(
                             from: sourceFrame, to: frame, direction: direction),
-                          totalDistance: distanceSquared(sourceFrame.midPoint, frame.midPoint))
+                          totalDistance: TileGeometry.distanceSquared(sourceFrame.midPoint,
+                                                                       frame.midPoint))
         }
 
         return ranked.sorted { lhs, rhs in
@@ -82,14 +83,6 @@ public enum TileNavigation {
         candidates(from: source, direction: direction, in: layouts).first
     }
 
-    /// Readable alias for callers that model this operation as neighbour
-    /// lookup rather than directional focus.
-    public static func neighbor(of source: TileAddress,
-                                direction: TileDirection,
-                                in layouts: LayoutSnapshot) -> TileAddress? {
-        nearest(from: source, direction: direction, in: layouts)
-    }
-
     private static func isInHalfPlane(frame: CGRect,
                                       relativeTo source: CGRect,
                                       direction: TileDirection) -> Bool {
@@ -106,11 +99,11 @@ public enum TileNavigation {
                                                 direction: TileDirection) -> Bool {
         switch direction {
         case .left, .right:
-            return overlapLength(source.minY, source.maxY,
-                                 candidate.minY, candidate.maxY) > 0
+            return TileGeometry.overlapLength(source.minY, source.maxY,
+                                              candidate.minY, candidate.maxY) > 0
         case .up, .down:
-            return overlapLength(source.minX, source.maxX,
-                                 candidate.minX, candidate.maxX) > 0
+            return TileGeometry.overlapLength(source.minX, source.maxX,
+                                              candidate.minX, candidate.maxX) > 0
         }
     }
 
@@ -138,17 +131,6 @@ public enum TileNavigation {
         case .up, .down:
             return abs(candidate.midX - source.midX)
         }
-    }
-
-    private static func overlapLength(_ lhsMin: CGFloat, _ lhsMax: CGFloat,
-                                     _ rhsMin: CGFloat, _ rhsMax: CGFloat) -> CGFloat {
-        max(0, min(lhsMax, rhsMax) - max(lhsMin, rhsMin))
-    }
-
-    private static func distanceSquared(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
-        let dx = lhs.x - rhs.x
-        let dy = lhs.y - rhs.y
-        return dx * dx + dy * dy
     }
 }
 

@@ -18,6 +18,9 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     private var layouts = LayoutSnapshot()
     nonisolated(unsafe) private var session = TilesSession.empty
     nonisolated(unsafe) private var journal = RecoveryJournal()
+    /// What the journal file already holds. Every write validates, encodes,
+    /// fsyncs and renames, so an identical rewrite is pure cost.
+    nonisolated(unsafe) private var lastPersistedJournal: RecoveryJournal?
     nonisolated(unsafe) private var recordKeys: [WindowToken: String] = [:]
     /// A freeform Zones action detaches a window for the rest of this Tiles
     /// session. Explicit Zone placement or a close clears this runtime-only
@@ -65,16 +68,16 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         guard !acceptingEvents else { return }
         try settings.validate()
         self.settings = settings
-        try journalStore.preflight()
+        let journal = try journalStore.preflight()
         let screens = LiveScreen.current()
         var layouts = try layoutSource.snapshot(for: screens)
         layouts.gapPoints = effectiveGapPoints(for: settings)
         guard !layouts.screenKeys.isEmpty else { throw TilesCoordinatorError.noUsableDisplays }
-        let journal = try journalStore.load()
 
         self.screens = screens
         self.layouts = layouts
         self.journal = journal
+        lastPersistedJournal = journal
         windowSystem.updateScreens(screens)
         try windowSystem.start { [weak self] event in
             DispatchQueue.main.async {
@@ -126,11 +129,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                 remaining = remaining.removing(identityKey: key)
             }
             journal = remaining
-            if remaining.records.isEmpty {
-                try? journalStore.remove()
-            } else {
-                try? journalStore.write(remaining)
-            }
+            try? persistJournal(remaining)
             session = .empty
             recordKeys.removeAll()
             detachedTokens.removeAll()
@@ -168,11 +167,9 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             guard let id = WorkspaceID.from(raw) else { return }
             enqueue(.moveFocusedWindow(to: id))
         case .moveFocusedWindowToNextWorkspace:
-            let destination = activeWorkspace == 4 ? 1 : activeWorkspace + 1
-            enqueue(.moveFocusedWindow(to: WorkspaceID(rawValue: destination)))
+            enqueueRelativeWorkspaceMove(forward: true)
         case .moveFocusedWindowToPreviousWorkspace:
-            let destination = activeWorkspace == 1 ? 4 : activeWorkspace - 1
-            enqueue(.moveFocusedWindow(to: WorkspaceID(rawValue: destination)))
+            enqueueRelativeWorkspaceMove(forward: false)
         case .focusTile(let direction):
             enqueue(.focusTile(direction))
         case .moveFocusedWindowToTile(let direction):
@@ -281,9 +278,11 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     }
 
     nonisolated private func processActivation(pid: pid_t, layouts: LayoutSnapshot) {
-        let snapshot = windowSystem.snapshot(.pid(pid))
+        // One discovery per activation. The focused token is the same in every
+        // scope, so a scoped snapshot would only add a second full sweep.
+        let snapshot = windowSystem.snapshot(.all)
         if let focused = snapshot.focused, session.windows[focused] != nil {
-            process(.externalActivation(focused), snapshot: windowSystem.snapshot(.all), layouts: layouts)
+            process(.externalActivation(focused), snapshot: snapshot, layouts: layouts)
         } else {
             // Activation can mean a native Space change. Refresh reachability only; do not
             // adopt and move a newly visible window because activation alone is not placement intent.
@@ -292,32 +291,28 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     }
 
     private func layoutChanged() {
-        guard acceptingEvents else { return }
-        do {
-            var updated = try layoutSource.snapshot(for: screens)
-            updated.gapPoints = effectiveGapPoints(for: settings)
-            layouts = updated
-            runtimeQueue.async { [weak self] in self?.runtimePaused = false }
-            enqueue(.layoutChanged)
-        } catch {
-            // Keep the last valid snapshot. No AX mutation runs from an invalid Zones section.
-            runtimeQueue.async { [weak self] in self?.runtimePaused = true }
-        }
+        refreshLayout(screens: screens, updateWindowSystem: false)
     }
 
     private func topologySettled() {
+        refreshLayout(screens: LiveScreen.current(), updateWindowSystem: true)
+    }
+
+    /// A Zones edit and a settled display change need the same work; only the
+    /// screen list and the window system update differ. A failure keeps the
+    /// last valid snapshot, so no AX mutation runs from an invalid Zones
+    /// section or an unresolved topology.
+    private func refreshLayout(screens updatedScreens: [LiveScreen], updateWindowSystem: Bool) {
         guard acceptingEvents else { return }
-        let updatedScreens = LiveScreen.current()
         do {
             var updatedLayouts = try layoutSource.snapshot(for: updatedScreens)
             updatedLayouts.gapPoints = effectiveGapPoints(for: settings)
             screens = updatedScreens
             layouts = updatedLayouts
             runtimeQueue.async { [weak self] in self?.runtimePaused = false }
-            windowSystem.updateScreens(updatedScreens)
+            if updateWindowSystem { windowSystem.updateScreens(updatedScreens) }
             enqueue(.layoutChanged)
         } catch {
-            // Keep the previous topology until Zones is valid again.
             runtimeQueue.async { [weak self] in self?.runtimePaused = true }
         }
     }
@@ -339,8 +334,12 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             // only after the placement plan commits.
             runtimeQueue.async { [weak self] in
                 guard let self else { return }
-                self.process(.adopt(token), layouts: layouts, includeDetached: true)
-                self.process(.place(token, at: address), layouts: layouts,
+                // One discovery serves both steps; adoption changes the model,
+                // not the AX state the snapshot describes.
+                let snapshot = self.windowSystem.snapshot(.all)
+                self.process(.adopt(token), snapshot: snapshot, layouts: layouts,
+                             includeDetached: true)
+                self.process(.place(token, at: address), snapshot: snapshot, layouts: layouts,
                              includeDetached: true)
             }
         case .freeform:
@@ -351,6 +350,19 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     private func enqueue(_ event: TilesEvent) {
         let layouts = self.layouts
         runtimeQueue.async { [weak self] in self?.process(event, layouts: layouts) }
+    }
+
+    /// Resolve a relative destination on the serial runtime queue. The
+    /// main-actor workspace value is only a presentation mirror and can lag a
+    /// switch that is already queued immediately before this action.
+    private func enqueueRelativeWorkspaceMove(forward: Bool) {
+        let layouts = self.layouts
+        runtimeQueue.async { [weak self] in
+            guard let self else { return }
+            let source = self.session.activeWorkspace
+            let destination = forward ? source.next : source.previous
+            self.process(.moveFocusedWindow(to: destination), layouts: layouts)
+        }
     }
 
     private func coalesce(key: String, delay: DispatchTimeInterval, event: TilesEvent) {
@@ -392,12 +404,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         }
     }
 
-    nonisolated private func process(_ event: TilesEvent, layouts: LayoutSnapshot) {
-        process(event, snapshot: windowSystem.snapshot(.all), layouts: layouts)
-    }
-
     nonisolated private func process(_ event: TilesEvent, layouts: LayoutSnapshot,
-                                     includeDetached: Bool) {
+                                     includeDetached: Bool = false) {
         process(event, snapshot: windowSystem.snapshot(.all), layouts: layouts,
                 includeDetached: includeDetached)
     }
@@ -542,28 +550,54 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         scheduleHealingPasses(layouts: layouts)
     }
 
+    /// Resolve the whole record set once. `removing` plus `adding` per managed
+    /// window copies the journal twice per window and rebuilds `identityKey`
+    /// for every record it walks, which is quadratic in the number of managed
+    /// windows. The stored shape is unchanged: records stay an array.
     nonisolated private func synchronizeJournalWithSession() {
-        var updated = journal
         var updatedRecordKeys = recordKeys
         let liveTokens = Set(session.windows.keys)
+        var removedKeys: Set<String> = []
         for (token, key) in recordKeys where !liveTokens.contains(token) {
-            updated = updated.removing(identityKey: key)
+            removedKeys.insert(key)
             updatedRecordKeys[token] = nil
         }
+        var replacements: [String: RecoveryRecord] = [:]
         for managed in session.windows.values {
-            if let record = windowSystem.recoveryRecord(
+            guard let record = windowSystem.recoveryRecord(
                 for: managed.token, managed: managed,
-                stageIntent: managed.visibility == .stagedByTiles) {
-                // Titles and exact-peer ordinals can change while a window is
-                // alive. Replace the previous identity instead of leaving an
-                // unreachable stale record in the journal.
-                if let oldKey = updatedRecordKeys[managed.token], oldKey != record.identityKey {
-                    updated = updated.removing(identityKey: oldKey)
-                }
-                updated = updated.adding(record)
-                updatedRecordKeys[managed.token] = record.identityKey
+                stageIntent: managed.visibility == .stagedByTiles) else { continue }
+            // Titles and exact-peer ordinals can change while a window is
+            // alive. Replace the previous identity instead of leaving an
+            // unreachable stale record in the journal.
+            if let previousKey = updatedRecordKeys[managed.token],
+               previousKey != record.identityKey {
+                removedKeys.insert(previousKey)
+            }
+            replacements[record.identityKey] = record
+            updatedRecordKeys[managed.token] = record.identityKey
+        }
+
+        var records: [RecoveryRecord] = []
+        records.reserveCapacity(journal.records.count + replacements.count)
+        var written: Set<String> = []
+        for record in journal.records {
+            let key = record.identityKey
+            if let replacement = replacements[key] {
+                records.append(replacement)
+                written.insert(key)
+            } else if !removedKeys.contains(key) {
+                records.append(record)
+                written.insert(key)
             }
         }
+        // Sorted so an unchanged session always produces the same bytes and the
+        // persist step can skip an identical write.
+        for key in replacements.keys.sorted() where !written.contains(key) {
+            if let record = replacements[key] { records.append(record) }
+        }
+
+        let updated = RecoveryJournal(schemaVersion: journal.schemaVersion, records: records)
         journal = updated
         recordKeys = updatedRecordKeys
         try? persistJournal(updated)
@@ -575,17 +609,19 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         case .switchWorkspace(let destination):
             return destination
         case .nextWorkspace:
-            return WorkspaceID(rawValue: source.rawValue == 4 ? 1 : source.rawValue + 1)
+            return source.next
         case .previousWorkspace:
-            return WorkspaceID(rawValue: source.rawValue == 1 ? 4 : source.rawValue - 1)
+            return source.previous
         default:
             return nil
         }
     }
 
     nonisolated private func persistJournal(_ journal: RecoveryJournal) throws {
+        guard journal != lastPersistedJournal else { return }
         if journal.records.isEmpty { try journalStore.remove() }
         else { try journalStore.write(journal) }
+        lastPersistedJournal = journal
     }
 
     nonisolated private func scheduleHealingPasses(layouts: LayoutSnapshot) {
@@ -696,12 +732,6 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                 }
             }
         }
-    }
-}
-
-private extension Array {
-    subscript(safe index: Index) -> Element? {
-        indices.contains(index) ? self[index] : nil
     }
 }
 

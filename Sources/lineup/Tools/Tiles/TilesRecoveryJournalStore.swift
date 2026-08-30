@@ -1,3 +1,4 @@
+import AppCore
 import Darwin
 import Foundation
 import TilesCore
@@ -20,24 +21,27 @@ final class TilesRecoveryJournalStore {
     let url: URL
     private let fileManager: FileManager
 
-    init(url: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".config/lineup/tiles-recovery.json"),
+    init(url: URL = Product.configDirectory.appendingPathComponent("tiles-recovery.json"),
          fileManager: FileManager = .default) {
         self.url = url
         self.fileManager = fileManager
     }
 
-    func preflight() throws {
+    /// Returns the decoded journal. The caller needs it right after preflight,
+    /// and reading plus decoding the same file twice would block the main
+    /// thread at launch for no gain.
+    @discardableResult
+    func preflight() throws -> RecoveryJournal {
         try fileManager.createDirectory(at: url.deletingLastPathComponent(),
                                         withIntermediateDirectories: true,
                                         attributes: [.posixPermissions: 0o700])
-        guard fileManager.fileExists(atPath: url.path) else { return }
+        guard fileManager.fileExists(atPath: url.path) else { return RecoveryJournal() }
         let attributes = try fileManager.attributesOfItem(atPath: url.path)
         let mode = (attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0
         guard mode & 0o077 == 0 else {
             throw TilesRecoveryJournalStoreError.unsafePermissions(mode)
         }
-        _ = try load()
+        return try load()
     }
 
     func load() throws -> RecoveryJournal {
