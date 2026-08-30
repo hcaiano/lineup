@@ -1225,18 +1225,18 @@ final class TilesTool: Tool {
                         modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
         })
         guard !explicit.contains(move) else {
-            return "Shortcut already assigned in Tiles"
+            return "Used by Tiles"
         }
         if let owner = boundCombos.conflictOwner(keyCode: move.keyCode,
                                                  modifiers: move.modifiers,
                                                  excluding: .tiles) {
-            return "Shortcut used by \(displayName(for: owner))"
+            return "Used by \(displayName(for: owner))"
         }
         if failedHotkeys.contains(where: {
             $0.action == action && $0.generatedWorkspaceMove
                 && $0.keyCode == move.keyCode && $0.modifiers == move.modifiers
         }) {
-            return "macOS rejected this shortcut"
+            return "Rejected by macOS"
         }
         return nil
     }
