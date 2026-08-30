@@ -120,7 +120,9 @@ actionable warning. A settings-save failure leaves the tool disabled.
 5. It selects the first empty tile. If none is empty, it uses the focused tile on that display.
    If no managed tile is focused, it uses the shortest stack.
 6. A journal intent is written before the frame changes.
-7. The executor applies and verifies the tile frame, then raises the new window.
+7. The executor applies and verifies the tile frame. It raises the window when that window is
+   already AX-focused or when it fills an empty tile. A background overflow window joins behind the
+   selected stack member without raising or taking focus, so it cannot cover the window in use.
 8. The reducer commits the assignment only after the required effects succeed.
 
 Duplicate create events and a later full reconciliation must not create duplicate assignments.

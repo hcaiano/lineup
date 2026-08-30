@@ -372,11 +372,11 @@ func runTilesTests() throws {
                                             snapshot: createdSnapshot, layouts: layouts)
         check(createdPlan.nextState.workspaces[.workspace1]?.screens["main"]?.first?.order ==
               [first, second, created] &&
-              createdPlan.nextState.workspaces[.workspace1]?.screens["main"]?.first?.selected == created,
-              "reducer: a new overflow window becomes the selected stack member")
-        check(createdPlan.effects.contains { if case .raise(created, _) = $0 { return true }; return false } &&
+              createdPlan.nextState.workspaces[.workspace1]?.screens["main"]?.first?.selected == first,
+              "reducer: a background overflow window joins behind the selected stack member")
+        check(!createdPlan.effects.contains { if case .raise(created, _) = $0 { return true }; return false } &&
               !createdPlan.effects.contains { if case .focus(created, _) = $0 { return true }; return false },
-              "reducer: a background new overflow window is raised but not focused")
+              "reducer: a background overflow window neither covers nor focuses the active window")
 
         let focusedCreatedSnapshot = WindowSnapshot([
             entry(first, x: 10), entry(second, x: 20), entry(created, x: 30)
@@ -386,6 +386,30 @@ func runTilesTests() throws {
         check(focusedCreatedPlan.effects.contains { if case .raise(created, _) = $0 { return true }; return false } &&
               focusedCreatedPlan.effects.contains { if case .focus(created, _) = $0 { return true }; return false },
               "reducer: a focused new overflow window is raised and focused")
+
+        let roomyLayouts = layout(count: 2)
+        let singleSnapshot = WindowSnapshot([entry(first, x: 10)], focused: first)
+        let singlePlan = TilesReducer.plan(state: .empty, event: .adoptVisible,
+                                           snapshot: singleSnapshot, layouts: roomyLayouts)
+        let single = TilesReducer.commit(state: .empty, plan: singlePlan,
+                                         results: successful(singlePlan))
+        let emptyTileWindow = token(23)
+        let emptyTileSnapshot = WindowSnapshot([
+            entry(first, x: 10), entry(emptyTileWindow, x: 30)
+        ], focused: first)
+        let emptyTilePlan = TilesReducer.plan(state: single,
+                                              event: .windowCreated(emptyTileWindow),
+                                              snapshot: emptyTileSnapshot, layouts: roomyLayouts)
+        check(emptyTilePlan.nextState.workspaces[.workspace1]?.screens["main"]?[1].selected ==
+              emptyTileWindow &&
+              emptyTilePlan.effects.contains {
+                  if case .raise(emptyTileWindow, _) = $0 { return true }
+                  return false
+              } &&
+              !emptyTilePlan.effects.contains {
+                  if case .focus(emptyTileWindow, _) = $0 { return true }
+                  return false
+              }, "reducer: a background window fills and raises in an empty tile without taking focus")
 
         let bestEffortCommitted = TilesReducer.commit(
             state: .empty, plan: adopt,

@@ -25,8 +25,7 @@ public enum TilesReducer {
             reconcileExisting(&working, snapshot: snapshot, layouts: layouts,
                               mutationID: mutationID, effects: &effects)
             adoptVisible(&working, tokens: nil, snapshot: snapshot, layouts: layouts,
-                         mutationID: mutationID, effects: &effects,
-                         selectNewlyAdopted: true)
+                         mutationID: mutationID, effects: &effects)
 
         case .adoptVisible:
             adoptVisible(&working, tokens: nil, snapshot: snapshot, layouts: layouts,
@@ -34,8 +33,7 @@ public enum TilesReducer {
 
         case let .adopt(token), let .windowCreated(token):
             adoptVisible(&working, tokens: [token], snapshot: snapshot, layouts: layouts,
-                         mutationID: mutationID, effects: &effects,
-                         selectNewlyAdopted: true)
+                         mutationID: mutationID, effects: &effects)
 
         case let .windowClosed(token):
             removeToken(&working, token: token)
@@ -345,8 +343,7 @@ public enum TilesReducer {
         snapshot: WindowSnapshot,
         layouts: LayoutSnapshot,
         mutationID: MutationID,
-        effects: inout [WindowEffect],
-        selectNewlyAdopted: Bool = false
+        effects: inout [WindowEffect]
     ) {
         let entries = snapshot.eligible
             .filter { tokens?.contains($0.token) ?? true }
@@ -375,11 +372,10 @@ public enum TilesReducer {
 
             let destination = stacks[destinationIndex].address
             let epoch = takeFocusEpoch(&state)
-            let selectsNewWindow = selectNewlyAdopted || snapshot.focused == entry.token
             let focusesNewWindow = snapshot.focused == entry.token
             _ = stacks[destinationIndex].append(
                 entry.token,
-                selecting: selectsNewWindow,
+                selecting: focusesNewWindow,
                 epoch: epoch)
             workspace.screens[entry.screenKey] = stacks
             state.workspaces[state.activeWorkspace] = workspace
