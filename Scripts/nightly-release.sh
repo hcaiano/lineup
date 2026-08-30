@@ -14,7 +14,7 @@
 # The default output is a shell-friendly plan. Pass the printed values explicitly:
 #   LINEUP_BUILD_CHANNEL=nightly \
 #   LINEUP_VERSION=<next_patch> LINEUP_BUILD_VERSION=<bundle-version> \
-#   ./Scripts/build-app.sh dist-nightly
+#   ./Scripts/build-app.sh dist/nightly
 #
 # After a trusted, notarized DMG is attached to the exact public prerelease tag, use the printed
 # asset URL with `Scripts/sparkle-appcast.sh --nightly`. The enclosure is tag-addressed; it never

@@ -705,6 +705,7 @@ private func runReleaseToolingTests() throws {
     let publisher = try String(contentsOfFile: "Scripts/publish-appcast.sh", encoding: .utf8)
     let appcast = try String(contentsOfFile: "Scripts/sparkle-appcast.sh", encoding: .utf8)
     let nightly = try String(contentsOfFile: "Scripts/nightly-release.sh", encoding: .utf8)
+    let building = try String(contentsOfFile: "BUILDING.md", encoding: .utf8)
     check(appcast.contains("--nightly") && appcast.contains("<sparkle:channel>nightly</sparkle:channel>"),
           "the appcast helper emits the Nightly Sparkle channel")
     check(appcast.contains("REMOTE_URL") && appcast.contains("github\\.com")
@@ -713,8 +714,25 @@ private func runReleaseToolingTests() throws {
             && appcast.contains("cmp -s")
             && appcast.contains("hdiutil attach")
             && appcast.contains("CFBundleVersion")
-            && appcast.contains("CFBundleShortVersionString"),
+            && appcast.contains("CFBundleShortVersionString")
+            && appcast.contains("LineupBuildChannel"),
           "the appcast helper proves remote bytes and embedded metadata while keeping Stable staging")
+    check(appcast.contains("nightly-release.sh --verify")
+            && appcast.contains("NIGHTLY_REPOSITORY")
+            && appcast.contains("NIGHTLY_TAG")
+            && appcast.contains("NIGHTLY_VERIFY_OUTPUT")
+            && appcast.contains("immutable=true"),
+          "the Nightly appcast helper performs the exact public release audit before writing")
+    check(appcast.contains("NIGHTLY_SOURCE_STABLE_BUILD")
+            && appcast.contains("EXPECTED_NIGHTLY_BUILD")
+            && appcast.contains("ET.parse(path)")
+            && appcast.contains("candidate_key <= existing_key")
+            && appcast.contains("candidate_short_version")
+            && appcast.contains("candidate_url")
+            && appcast.contains("candidate_key == existing_key")
+            && appcast.contains("DMG_CHANNEL")
+            && appcast.contains("!= \"nightly\""),
+          "the Nightly appcast helper derives its build, enforces ordering, and permits exact reruns")
     check(nightly.contains("gh api") && nightly.contains("--paginate --slurp")
             && nightly.contains("prerelease")
             && nightly.contains("releases/tags/${TAG}")
@@ -728,7 +746,10 @@ private func runReleaseToolingTests() throws {
     check(nightly.contains("does not match source Info.plist")
             && nightly.contains("offset <= 9998") && nightly.contains("a{sequence:03d}")
             && nightly.contains("is not newer than public Nightly")
-            && !nightly.contains("LINEUP_STABLE_BUILD"),
+            && !nightly.contains("LINEUP_STABLE_BUILD")
+            && nightly.contains("build-app.sh dist/nightly")
+            && building.contains("build-app.sh dist/nightly")
+            && !building.contains("dist-nightly"),
           "the Nightly helper fails on stale metadata, uses bounded components, and enforces monotonic plans")
     check(!nightly.contains("gh release create") && !nightly.contains("gh release upload")
             && !nightly.contains("git push") && nightly.contains("git status --porcelain")

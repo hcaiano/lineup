@@ -44,8 +44,8 @@ the prerelease value in the numeric-with-development-suffix `CFBundleVersion`:
 ```sh
 LINEUP_BUILD_CHANNEL=nightly \
 LINEUP_VERSION=2.0.2 \
-LINEUP_BUILD_VERSION=19.00.01a001 \
-UNIVERSAL=0 ./Scripts/build-app.sh dist-nightly
+LINEUP_BUILD_VERSION=19.02.42a001 \
+UNIVERSAL=0 ./Scripts/build-app.sh dist/nightly
 ```
 
 `LINEUP_BUILD_CHANNEL=nightly` without both overrides fails closed. Run
@@ -54,7 +54,8 @@ The Nightly marker is written only to the assembled bundle; the checked-in plist
 
 The helper is read-only. It reads the public repository with `gh api`, never creates or uploads a
 release, and never uses the moving `latest` alias. After the exact public prerelease exists and its
-asset is attached by the maintainer, verify it before updating the feed:
+asset is attached by the maintainer, the Nightly appcast command runs this verification itself
+before it can update the feed. Run `--verify` separately when an audit-only check is useful:
 
 `--verify` requires GitHub to report `immutable=true` for the exact release and peels its Git tag
 ref to the local source commit. The repository currently has immutable releases disabled, so
@@ -67,9 +68,9 @@ tests and must not be used for a release plan.
 ```sh
 ./Scripts/nightly-release.sh --verify v2.0.2-nightly.20260830.1
 ./Scripts/sparkle-appcast.sh --nightly \
-  dist-nightly/Lineup-2.0.2.dmg \
+  dist/nightly/Lineup-2.0.2.dmg \
   https://github.com/hcaiano/lineup/releases/download/v2.0.2-nightly.20260830.1/Lineup-2.0.2-nightly.20260830.1.dmg \
-  2.0.2-nightly.20260830.1 19.00.01a001
+  2.0.2-nightly.20260830.1 19.02.42a001
 ```
 
 `CFBundleVersion` is deliberately based on the current Stable build. With Stable build `19`, the
