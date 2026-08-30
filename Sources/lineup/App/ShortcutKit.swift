@@ -58,7 +58,9 @@ enum ShortcutKit {
     /// current Hyperkey mode; with Include Shift off, a physical Shift is still required by
     /// the established full-Hyper (`6912`) defaults, so the compact preset uses the no-Shift
     /// mask (`6400`) for the same physical Caps+arrow gesture.
-    static var defaults: Shortcuts { zonesDefaults(includeShift: false) }
+    /// The historical stored-section fallback. A legacy `LineupConfig` can contain a real
+    /// section with `shortcuts == nil`; keep its established full-Hyper quick actions unchanged.
+    static var defaults: Shortcuts { zonesDefaults(includeShift: true) }
 
     static func zonesDefaults(includeShift: Bool) -> Shortcuts {
         let mask = includeShift ? hyperInt : Int(hyperWithoutShift)

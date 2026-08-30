@@ -1318,6 +1318,12 @@ private func runZonesToolTests() throws {
     check(tool.contains("screenObserver = NotificationCenter.default.addObserver"),
           "start() is the only place the screen observer is installed")
 
+    // ---- Fresh versus stored legacy shortcut defaults ----
+    check(tool.contains("if let stored = config.shortcuts { return stored }")
+            && tool.contains("return usingDefaults\n            ? ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())")
+            && tool.contains(": ShortcutKit.defaults"),
+          "a missing section uses adaptive defaults while stored shortcuts=nil keeps full Hyper")
+
     // ---- Persistence: write FIRST, assign only on success, and always behind canWrite ----
     for persist in ["applyLayouts", "applyShortcuts", "persistDragSnapEnabled", "applyDragSnapTrigger"] {
         guard let body = zonesFuncBody("\(persist)(", in: tool) else {
@@ -1330,6 +1336,14 @@ private func runZonesToolTests() throws {
         check(save != nil && assign != nil && save!.lowerBound < assign!.lowerBound,
               "\(persist) writes through the config scope BEFORE assigning live state")
     }
+    for persist in ["applyLayouts", "persistDragSnapEnabled", "applyDragSnapTrigger"] {
+        if let body = zonesFuncBody("\(persist)(", in: tool) {
+            check(body.contains("materializeFreshShortcutsIfNeeded(in: &updated)"),
+                  "\(persist) materializes fresh adaptive shortcuts before its first non-shortcut write")
+        }
+    }
+    check(tool.contains("fresh.shortcuts = ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())"),
+          "Zones reset persists the current adaptive shortcut preset")
     check(!tool.contains("config.write(to:"),
           "the tool never writes zones.json itself — the store owns the file")
 

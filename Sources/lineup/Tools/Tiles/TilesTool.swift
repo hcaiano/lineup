@@ -1145,7 +1145,7 @@ final class TilesTool: Tool {
             let reverse = HotkeyCombo(keyCode: binding.keyCode,
                                       modifiers: UInt32(truncatingIfNeeded: binding.modifiers)
                                         | UInt32(shiftKey))
-            guard !explicit.contains(reverse) else { return false }
+            guard !explicit.contains(reverse), !isFailedHotkey(reverse) else { return false }
             return persisted.conflictOwner(keyCode: reverse.keyCode,
                                            modifiers: reverse.modifiers,
                                            excluding: .tiles) == nil
@@ -1165,7 +1165,7 @@ final class TilesTool: Tool {
             let move = HotkeyCombo(keyCode: binding.keyCode,
                                    modifiers: UInt32(truncatingIfNeeded: binding.modifiers)
                                      | UInt32(shiftKey))
-            guard !explicit.contains(move) else { return false }
+            guard !explicit.contains(move), !isFailedHotkey(move) else { return false }
             return persisted.conflictOwner(keyCode: move.keyCode,
                                            modifiers: move.modifiers,
                                            excluding: .tiles) == nil
@@ -1183,10 +1183,16 @@ final class TilesTool: Tool {
             HotkeyCombo(keyCode: $0.keyCode,
                         modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
         })
-        guard !explicit.contains(reverse) else { return false }
+        guard !explicit.contains(reverse), !isFailedHotkey(reverse) else { return false }
         return (services?.boundCombos() ?? []).conflictOwner(
             keyCode: reverse.keyCode, modifiers: reverse.modifiers,
             excluding: .tiles) == nil
+    }
+
+    private func isFailedHotkey(_ combo: HotkeyCombo) -> Bool {
+        failedHotkeys.contains {
+            $0.keyCode == combo.keyCode && $0.modifiers == combo.modifiers
+        }
     }
 
     func applyCapture(_ capture: ShortcutRecorder.Capture, for actionID: String) {

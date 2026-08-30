@@ -547,6 +547,10 @@ mode they therefore require a physical Shift with Caps+arrow. A live Include Shi
 rewrite or re-register an existing Zones section; the current mode is used when fresh defaults are
 first registered or saved.
 
+Only a genuinely absent Zones section uses these adaptive defaults. A stored legacy
+`LineupConfig` whose `shortcuts` field is nil keeps the historical `ShortcutKit.defaults` full-Hyper
+(`6912`) quick actions until the user explicitly changes or resets it.
+
 The pane reuses `SettingsSectionView`, `SettingsRow`, `SettingsCaption`, `ShortcutRecorder`, and
 `BlockedBanner`. It remains editable while the tool is off. It uses native controls, blue as the
 only accent, explicit accessibility labels, and no nested `TabView`.

@@ -2526,7 +2526,9 @@ private func runTilesShellContractTests() throws {
     let zonesTool = source("Sources/lineup/Tools/Zones/ZonesTool.swift")
     check(zonesTool.contains("private let hyperkeyIncludesShift: () -> Bool")
             && zonesTool.contains("hyperkeyIncludesShift: @escaping () -> Bool = { false }")
-            && zonesTool.contains("config.shortcuts ?? ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())"),
+            && zonesTool.contains("if let stored = config.shortcuts { return stored }")
+            && zonesTool.contains("ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())")
+            && zonesTool.contains(": ShortcutKit.defaults"),
           "Zones uses adaptive fresh defaults without rewriting stored shortcuts")
     let tilesCoordinator = source("Sources/lineup/Tools/Tiles/TilesCoordinator.swift")
     check(!tilesCoordinator.contains("LayoutEdit.") && !tilesCoordinator.contains("config.save"),
@@ -2607,6 +2609,10 @@ private func runTilesShellContractTests() throws {
             && tool.contains("\\(generatedKind)")
             && tool.contains("\\(owner.title)"),
           "Tiles keeps the fresh no-Shift fallback and protects generated Shift shortcuts in the recorder")
+    check(tool.contains("private func isFailedHotkey(_ combo: HotkeyCombo) -> Bool")
+            && tool.contains("!explicit.contains(move), !isFailedHotkey(move)")
+            && tool.contains("!explicit.contains(reverse), !isFailedHotkey(reverse)"),
+          "Tiles captions hide generated shortcuts that failed registration or restoration")
     check(tool.contains("func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure])"),
           "Tiles receives shortcut restore failures for retry")
 

@@ -134,7 +134,10 @@ final class ZonesTool: Tool {
 
     /// The effective shortcut set (user config, or the built-in defaults).
     private var shortcuts: Shortcuts {
-        config.shortcuts ?? ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())
+        if let stored = config.shortcuts { return stored }
+        return usingDefaults
+            ? ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())
+            : ShortcutKit.defaults
     }
 
     /// The effective drag-snap bind, with nil/unknown config values falling back to Shift.
@@ -209,7 +212,8 @@ final class ZonesTool: Tool {
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 try encoder.encode(rejected).write(to: url, options: .atomic) // throws -> abort
             }
-            let fresh = LineupConfig()
+            var fresh = LineupConfig()
+            fresh.shortcuts = ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())
             try services.config.save(fresh)
             config = fresh
             usingDefaults = false
@@ -250,6 +254,7 @@ final class ZonesTool: Tool {
         guard canWrite, let services else { return false }
         guard !changes.isEmpty else { return true }
         var updated = config
+        materializeFreshShortcutsIfNeeded(in: &updated)
         let now = ISO8601DateFormatter().string(from: Date())
         for change in changes {
             updated = updated.setting(layout: change.layout, for: change.screen, now: now)
@@ -292,6 +297,7 @@ final class ZonesTool: Tool {
     private func persistDragSnapEnabled(_ enabled: Bool) {
         guard canWrite, let services else { return }
         var updated = config
+        materializeFreshShortcutsIfNeeded(in: &updated)
         updated.dragSnapEnabled = enabled
         do {
             try services.config.save(updated)
@@ -305,6 +311,7 @@ final class ZonesTool: Tool {
     private func applyDragSnapTrigger(_ trigger: DragSnapTrigger) {
         guard canWrite, let services else { return }
         var updated = config
+        materializeFreshShortcutsIfNeeded(in: &updated)
         updated.dragSnapKeyCode = trigger.keyCode
         updated.dragSnapModifiers = trigger.modifiers
         do {
@@ -327,6 +334,15 @@ final class ZonesTool: Tool {
         }
         persistDragSnapEnabled(enabled)
         services?.refreshMenu()
+    }
+
+    /// A missing Zones section may run on an adaptive in-memory preset. Materialize that preset
+    /// before any first write, so a later reload does not reinterpret the saved nil as legacy
+    /// full-Hyper defaults. A real stored section with `shortcuts == nil` is deliberately left
+    /// alone: it is the legacy shape and must not be migrated implicitly.
+    private func materializeFreshShortcutsIfNeeded(in config: inout LineupConfig) {
+        guard usingDefaults, config.shortcuts == nil else { return }
+        config.shortcuts = ShortcutKit.zonesDefaults(includeShift: hyperkeyIncludesShift())
     }
 
     private func toggleDragSnap() {
