@@ -80,6 +80,10 @@ final class TilesTool: Tool {
 
     private(set) var isRunning = false
     private(set) var settings = TilesSettings()
+    /// `nil` from the config scope means the tool has never stored its own settings. An enabled
+    /// flag-only section still counts as first use; a decoded section, including all-null rows,
+    /// is explicit user state and must not be replaced by defaults.
+    private var hasStoredSettings = false
 
     /// A section that exists but cannot be decoded must remain untouched. The pane then offers a
     /// reset, and start acquires no runtime resources until the user repairs the section.
@@ -87,6 +91,9 @@ final class TilesTool: Tool {
 
     private var services: ToolServices?
     private let coordinator: TilesCoordinatorProtocol
+    /// AppShell supplies this read-only view of Hyperkey's persisted mode. Tiles only consults it
+    /// while creating a first-use/reset preset; changing Hyperkey later never rewrites custom rows.
+    private let hyperkeyIncludesShift: () -> Bool
     private var coordinatorStarted = false
     private(set) var runtimeReady = false
     private(set) var runtimeBlockedMessage: String?
@@ -218,8 +225,10 @@ final class TilesTool: Tool {
         var generatedReverse: Bool
     }
 
-    init(coordinator: TilesCoordinatorProtocol) {
+    init(coordinator: TilesCoordinatorProtocol,
+         hyperkeyIncludesShift: @escaping () -> Bool = { true }) {
         self.coordinator = coordinator
+        self.hyperkeyIncludesShift = hyperkeyIncludesShift
     }
 
     // MARK: Lifecycle
@@ -312,6 +321,15 @@ final class TilesTool: Tool {
             services.refreshMenu()
             return
         }
+        // A missing Tiles settings section is the only first-use path. Materialize the adaptive
+        // preset before acquiring runtime resources, so a failed save cannot leave hotkeys active
+        // with settings that will disappear on the next launch.
+        guard materializeDefaultsIfNeeded() else {
+            runtimeBlockedMessage = "Tiles cannot start because its default shortcuts could not be saved."
+            settingsModel.refresh()
+            services.refreshMenu()
+            return
+        }
         // A config rejection is repaired explicitly from the pane and owns no retry observer.
         // Accessibility is different: the user can grant it in System Settings while Tiles
         // stays enabled, so keep one app-activation retry observer for that preflight only.
@@ -360,14 +378,37 @@ final class TilesTool: Tool {
     private func loadSettings() {
         guard let services else { return }
         do {
-            let loaded = try services.config.load(TilesSettings.self) ?? TilesSettings()
+            let stored = try services.config.load(TilesSettings.self)
+            let loaded = stored ?? ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())
             try validate(loaded)
             settings = loaded
+            hasStoredSettings = stored != nil
             sectionLoadError = nil
         } catch {
             settings = TilesSettings()
+            hasStoredSettings = false
             sectionLoadError = "\(error)"
             log.error("Tiles settings could not be decoded (left untouched): \(error, privacy: .public)")
+        }
+    }
+
+    /// Persist the adaptive first-use preset once, immediately before runtime startup. The
+    /// missing-section check is kept in memory so a disabled Tiles tool never reserves these
+    /// combinations in `persistedCombos()`.
+    private func materializeDefaultsIfNeeded() -> Bool {
+        guard !hasStoredSettings else { return true }
+        guard let services, services.config.canWrite, sectionLoadError == nil else { return false }
+
+        let defaults = ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())
+        do {
+            try validate(defaults)
+            try services.config.save(defaults)
+            settings = defaults
+            hasStoredSettings = true
+            return true
+        } catch {
+            log.error("Tiles default shortcuts could not be saved: \(error, privacy: .public)")
+            return false
         }
     }
 
@@ -417,11 +458,17 @@ final class TilesTool: Tool {
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 try encoder.encode(rejected).write(to: url, options: .atomic)
             }
-            let fresh = TilesSettings()
+            let fresh = ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())
+            let spacingChanged = settings.tileSpacingEnabled != fresh.tileSpacingEnabled
+            try validate(fresh)
             try services.config.save(fresh)
             settings = fresh
+            hasStoredSettings = true
             sectionLoadError = nil
-            if isRunning {
+            if runtimeReady {
+                if spacingChanged { coordinator.update(settings: fresh) }
+                registerHotkeys()
+            } else if isRunning {
                 runtimeBlockedMessage = nil
                 attemptRuntimeStart()
             }
@@ -440,6 +487,7 @@ final class TilesTool: Tool {
         let spacingChanged = settings.tileSpacingEnabled != newSettings.tileSpacingEnabled
         try services.config.save(newSettings)
         settings = newSettings
+        hasStoredSettings = true
         if runtimeReady {
             if spacingChanged { coordinator.update(settings: newSettings) }
             registerHotkeys()
@@ -450,6 +498,7 @@ final class TilesTool: Tool {
 
     func setTileSpacingEnabled(_ enabled: Bool) {
         guard canEdit, settings.tileSpacingEnabled != enabled else { return }
+        refreshRecommendedDefaultsIfNeeded()
         var updated = settings
         updated.tileSpacingEnabled = enabled
         saveFromPane(updated)
@@ -539,6 +588,9 @@ final class TilesTool: Tool {
 
     /// The conflict source includes disabled siblings and generated reverse combinations.
     func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)] {
+        // The in-memory adaptive preset is for the disabled pane only. Until the first activation
+        // or an explicit edit persists it, it must not reserve combinations from Zones/Cycler.
+        guard hasStoredSettings else { return [] }
         let includeSiblingConflicts = !isComputingPersistedCombos
         guard includeSiblingConflicts else {
             return ownPersistedCombos(from: settings, siblingCombos: [])
@@ -923,6 +975,17 @@ final class TilesTool: Tool {
         return action.binding(settings)
     }
 
+    /// Refresh the in-memory recommendation before the first explicit edit. No config write occurs
+    /// here, so the disabled tool still reserves no combinations until the user saves or activates
+    /// it. Once any edit is stored, the guard preserves every user-owned row unchanged.
+    func refreshRecommendedDefaultsIfNeeded() {
+        guard !hasStoredSettings, sectionLoadError == nil else { return }
+        let spacing = settings.tileSpacingEnabled
+        var refreshed = ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())
+        refreshed.tileSpacingEnabled = spacing
+        settings = refreshed
+    }
+
     /// True when at least one cyclic action still owns its generated Shift
     /// reverse. Answered from a single `boundCombos()` snapshot: that query
     /// reloads every tool's persisted section, so the pane must not repeat it
@@ -949,6 +1012,7 @@ final class TilesTool: Tool {
 
     func applyCapture(_ capture: ShortcutRecorder.Capture, for actionID: String) {
         guard canEdit, let action = Action(rawValue: actionID) else { return }
+        refreshRecommendedDefaultsIfNeeded()
         switch capture {
         case .clear:
             var updated = settings

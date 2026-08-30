@@ -517,10 +517,16 @@ The content has three compact sections:
    layout. The groups include the three workspace/stack actions, four focus directions, four move
    directions, and Switch Split Direction.
 
-All recorders start unassigned. The menu and workspace buttons make the feature usable without
-shortcuts. Only the three cyclic workspace/stack actions can generate a Shift reverse. Directional
-actions have explicit recorders because Hyper already contains Shift. The UI shows the previous
-hint only when a generated reverse is available.
+Before first activation, Tiles has no settings section and shows its adaptive recommendation only
+in memory, so a disabled never-activated tool reserves no shortcut combinations. On first
+activation, Tiles writes an adaptive preset from the current Hyperkey mode. With
+`includeShift=false`, focus left/down/up/right uses mask `6400` plus H/J/K/semicolon, movement uses
+full Hyper mask `6912` plus the same keys, and next window/workspace/move-to-next-workspace/split
+uses mask `6400` plus Tab/grave/Space/Return. With `includeShift=true`, focus uses full Hyper plus
+H/J/K/semicolon, movement uses full Hyper plus U/I/O/P, and the cyclic and split actions use full
+Hyper plus Tab/grave/Space/Return. Existing settings, including explicit null bindings, are never normalized;
+reset creates the current adaptive preset. Only the three cyclic workspace/stack actions can
+generate a Shift reverse, and the UI shows the previous hint only when one is available.
 
 The pane reuses `SettingsSectionView`, `SettingsRow`, `SettingsCaption`, `ShortcutRecorder`, and
 `BlockedBanner`. It remains editable while the tool is off. It uses native controls, blue as the
@@ -885,7 +891,7 @@ Fable must challenge these exact choices before agreement:
 2. Are four global workspaces better than independent workspaces per display for this product?
 3. Is minimizing only inactive workspaces, while overlapping active stack members, the best public
    API behavior?
-4. Should all three shortcuts remain unassigned, or does explicit enable justify a minimal default?
+4. Should first activation materialize the adaptive shortcut preset, or leave every row unassigned?
 5. Is the recovery journal proportional to the risk, and is conservative title-digest matching
    sufficient?
 6. Is automatic session detachment the right way to preserve freeform Zones actions?
@@ -922,9 +928,13 @@ set that fits its Zones-owned layout model:
 4. Use one fixed 8 pt internal spacing switch. Off reproduces the exact Zones frames. Screen edges
    keep no outer gap.
 
-The actions are available from the Tiles menu and from optional explicit shortcut rows. They have
-no defaults because existing Zones actions own Hyper plus the arrow keys. Shift reverse remains
-limited to the three cyclic actions; a Hyper shortcut already contains Shift.
+The actions are available from the Tiles menu and shortcut rows. On first activation, the rows use
+an adaptive preset that avoids Zones' Hyper plus arrow keys: the no-Shift Hyperkey mode uses
+Control-Option-Command (`6400`) for focus and cyclic actions, full Hyper (`6912`) for movement,
+and H/J/K/semicolon for the directional map; the full-Shift mode uses full Hyper for every row,
+with U/I/O/P for movement. Stored rows are preserved when Hyperkey mode changes, and reset uses
+the mode active at reset time. Shift reverse remains limited to the three cyclic actions and is
+generated only for bindings that do not already include Shift.
 
 Swap, divider nudging, direct numbered workspace shortcut rows, cross-display navigation, and
 custom gap values remain deferred. Swap had weak binding evidence in the inspected sample.

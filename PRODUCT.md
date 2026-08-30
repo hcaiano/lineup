@@ -52,9 +52,11 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 - Each Zones leaf is one tile. Each tile can hold an ordered stack of windows.
 - Four fixed workspaces switch as one context across all connected displays.
 - Tiles uses only public Accessibility operations, never native Space control or off-screen hiding.
-- Settings exposes the shared global switch, one fixed 8 pt tile-spacing switch, and optional
+- Settings exposes the shared global switch, one fixed 8 pt tile-spacing switch, and editable
   shortcuts for workspaces, stacks, spatial focus, spatial movement, and split direction. There
   are no spacing values or layout policies to tune.
+- On first activation or shortcut edit, Tiles materializes an adaptive preset from Hyperkey mode;
+  stored shortcuts are never rewritten.
 - A Zones freeform quick action temporarily floats a managed window. Dropping it into a zone
   adopts it again.
 - The full agreed behavior and safety gates are in `docs/tiles-implementation-plan.md`.

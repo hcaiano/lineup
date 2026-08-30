@@ -1,6 +1,7 @@
 import AppKit
 import AppCore
 import ApplicationServices
+import HyperkeyCore
 import os
 import Sparkle
 import ZonesCore
@@ -110,7 +111,10 @@ final class AppShell: NSObject, NSApplicationDelegate {
             layoutMutationCenter: layoutMutationCenter))
         registry.register(TilesTool(coordinator: TilesCoordinator(
             store: store, placementCenter: placementCenter,
-            layoutMutationCenter: layoutMutationCenter)))
+            layoutMutationCenter: layoutMutationCenter),
+            hyperkeyIncludesShift: { [weak self] in
+                self?.currentHyperkeyIncludesShift() ?? true
+            }))
         registry.register(CyclerTool())
         registry.register(HyperkeyTool())
         registry.startEnabledTools()
@@ -155,6 +159,12 @@ final class AppShell: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(applicationBecameActive),
             name: NSApplication.didBecomeActiveNotification, object: nil)
+    }
+
+    /// Read-only shell seam for Tiles' first-use/reset shortcut preset. Hyperkey remains the owner
+    /// of its settings; Tiles never receives a sibling config scope or writes this value back.
+    private func currentHyperkeyIncludesShift() -> Bool {
+        (try? store.config.settings(HyperKeySettings.self, for: .hyperkey))?.includeShift ?? true
     }
 
     // MARK: - Legacy import

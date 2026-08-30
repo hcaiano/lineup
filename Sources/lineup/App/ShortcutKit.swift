@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import TilesCore
 import ZonesCore
 
 /// App-side glue for the pure `Shortcuts` model: default bindings (Carbon key constants),
@@ -10,9 +11,13 @@ import ZonesCore
 /// stays `Int`, so the `Int` variants below are the boundary bridges, exactly as the 1.x code
 /// already converted at the call site.
 enum ShortcutKit {
-    /// Hyperkey = ⌃⌥⇧⌘ as a Carbon modifier mask. Canonical form.
+    /// Hyperkey = ⌃⌥⇧⌘ as a Carbon modifier mask (`6912`). Canonical form.
     static let hyper: UInt32 =
         UInt32(controlKey) | UInt32(optionKey) | UInt32(shiftKey) | UInt32(cmdKey)
+    /// The real Hyperkey mask when its optional physical Shift output is disabled (`6400`).
+    /// Keep this separate from `hyper`: the two masks are both valid user choices.
+    static let hyperWithoutShift: UInt32 =
+        UInt32(controlKey) | UInt32(optionKey) | UInt32(cmdKey)
     /// The same mask for the `Int`-typed Zones shortcut model.
     static let hyperInt = Int(hyper)
     static let defaultDragSnapModifiers = DragSnapModifierMask.default
@@ -60,6 +65,37 @@ enum ShortcutKit {
         s = s.setting(action: "rightHalf", keyCode: kVK_ANSI_RightBracket, modifiers: hyperInt)
         s = s.setting(action: "restore", keyCode: kVK_Delete, modifiers: hyperInt) // "delete the snap"
         return s
+    }
+
+    /// The first-use Tiles preset follows the user's Hyperkey mode. It is deliberately created
+    /// here, at the AppKit/Carbon boundary, so the pure Tiles settings model stays independent of
+    /// platform key constants. A caller must only materialize this when Tiles has no stored
+    /// settings; an existing section, including one with explicit null bindings, wins unchanged.
+    static func tilesDefaults(includeShift: Bool) -> TilesSettings {
+        let base = includeShift ? hyper : hyperWithoutShift
+        let focusKeys = [kVK_ANSI_H, kVK_ANSI_J, kVK_ANSI_K, kVK_ANSI_Semicolon]
+        let moveKeys = includeShift
+            ? [kVK_ANSI_U, kVK_ANSI_I, kVK_ANSI_O, kVK_ANSI_P]
+            : focusKeys
+
+        func binding(_ action: String, _ keyCode: Int, _ modifiers: UInt32) -> ShortcutBinding {
+            ShortcutBinding(action: action, keyCode: keyCode,
+                            modifiers: Int(truncatingIfNeeded: modifiers))
+        }
+
+        return TilesSettings(
+            nextWorkspace: binding("nextWorkspace", kVK_ANSI_Grave, base),
+            nextWindow: binding("nextWindow", kVK_Tab, base),
+            moveWindowToNextWorkspace: binding("moveWindowToNextWorkspace", kVK_Space, base),
+            focusTileLeft: binding("focusTileLeft", focusKeys[0], base),
+            focusTileRight: binding("focusTileRight", focusKeys[3], base),
+            focusTileUp: binding("focusTileUp", focusKeys[2], base),
+            focusTileDown: binding("focusTileDown", focusKeys[1], base),
+            moveWindowLeft: binding("moveWindowLeft", moveKeys[0], hyper),
+            moveWindowRight: binding("moveWindowRight", moveKeys[3], hyper),
+            moveWindowUp: binding("moveWindowUp", moveKeys[2], hyper),
+            moveWindowDown: binding("moveWindowDown", moveKeys[1], hyper),
+            toggleSplitOrientation: binding("toggleSplitOrientation", kVK_Return, base))
     }
 
     /// `Int` form, for the Zones shortcut model and the drag-snap masks.

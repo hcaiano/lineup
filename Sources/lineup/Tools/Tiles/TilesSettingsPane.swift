@@ -53,7 +53,7 @@ final class TilesSettingsModel: ObservableObject {
 
     var shortcutCaption: String? {
         tool?.anyReverseShortcutAvailable() == true
-            ? "For workspace and stack shortcuts without Shift, hold Shift for previous."
+            ? "Hold Shift with an available workspace or stack shortcut for previous."
             : nil
     }
 
@@ -62,7 +62,9 @@ final class TilesSettingsModel: ObservableObject {
     }
 
     func prepareForRecording() {
+        tool?.refreshRecommendedDefaultsIfNeeded()
         boundCombos = tool?.boundCombos() ?? []
+        refresh()
     }
 
     func selectWorkspace(_ workspace: Int) {

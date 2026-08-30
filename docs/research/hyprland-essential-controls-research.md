@@ -52,7 +52,9 @@ columns from horizontal rows and already has split/merge/divider editing. See
 [`LayoutEdit.swift`](../../Sources/ZonesCore/LayoutEdit.swift).
 
 The existing default Zones shortcuts use Hyper plus the arrow keys, `[`/`]`, and Delete. The
-Tiles phase must not silently claim those combinations. See
+Tiles phase must not silently claim those combinations. On first activation, Tiles uses an
+adaptive preset: no-Shift Hyperkey mode uses Control-Option-Command (`6400`) for focus/cyclic
+actions and full Hyper (`6912`) for movement; full-Shift mode uses full Hyper throughout. See
 [`ShortcutKit.swift`](../../Sources/lineup/App/ShortcutKit.swift).
 
 ## Evidence matrix
@@ -163,22 +165,23 @@ Keep the new Tiles tab concise, with three sections: `Navigation`, `Window movem
 divider nudge, and one spacing picker. Generate explicit Zone-N destinations from the active
 template rather than presenting an unbounded configuration list.
 
-The existing Hyper+arrow bindings belong to Zones, so Tiles must not claim them by default. A
-reasonable default candidate is Hyper+H/J/K/L for focus and Hyper+Shift+H/J/K/L for move, but
-only if the registry can detect collisions before registration. Otherwise leave directional
-actions unassigned and make the recorder the setup path. Hyper+1…4 is a useful direct-workspace
-candidate, also subject to conflict detection. Every failed registration must be shown as a
-specific conflict; it must not silently replace another tool's binding.
+The existing Hyper+arrow bindings belong to Zones, so Tiles must not claim them. On first
+activation, no-Shift Hyperkey mode maps focus left/down/up/right to 6400+H/J/K/semicolon,
+movement to 6912+H/J/K/semicolon, and the cyclic/split rows to 6400+Tab/grave/Space/Return.
+Full-Shift mode maps focus to 6912+H/J/K/semicolon, movement to 6912+U/I/O/P, and the
+cyclic/split rows to 6912+Tab/grave/Space/Return. Existing rows, including explicit nulls, remain
+untouched when Hyperkey changes. Every failed registration must be shown as a specific conflict;
+it must not silently replace another tool's binding.
 
 Use one shortcut for an action family and generate its reverse with Shift where the existing
 shortcut system supports that convention. Show confirmed feedback only after the runtime commits:
 `Focus: Zone 2`, `Moved to Zone 3`, `Swapped with Zone 2`, `Orientation: horizontal`, or
 `Spacing: none`. Never show a success HUD for an Accessibility timeout or a stale window.
 
-The settings schema needs a migration for the added actions and spacing. A missing new field gets
-the opinionated default; an invalid field is rejected or repaired explicitly. Existing settings
-must remain readable, and disabling Tiles must unregister every new shortcut and stop all runtime
-work exactly like the other tools.
+The settings model must preserve existing rows. A missing Tiles settings section gets the adaptive
+preset only when Tiles is first activated or edited; a missing field in an existing section remains
+unassigned. An invalid field is rejected or repaired explicitly. Disabling Tiles must unregister
+every shortcut and stop all runtime work exactly like the other tools.
 
 ## macOS constraints that change the design
 
