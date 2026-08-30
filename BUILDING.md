@@ -184,5 +184,5 @@ Two rules the feed depends on:
   manifest is the *whole* of `web/` — deploying from a checkout that lacks those files would
   unpublish them and break every older entry in the feed.
 
-The full release sequence is therefore: `build-app.sh` → `make-dmg.sh` → `notarize.sh` (DMG)
-→ `sparkle-appcast.sh` → `wrangler deploy` → commit.
+The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) → `make-dmg.sh` →
+`notarize.sh` (DMG) → `sparkle-appcast.sh` → `wrangler deploy` → commit.

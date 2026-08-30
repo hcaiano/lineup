@@ -10,6 +10,9 @@ on:
       - '.github/workflows/deploy-web.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # One deploy at a time; cancel an in-flight run when a newer commit lands.
 concurrency:
   group: deploy-web
@@ -23,8 +26,10 @@ jobs:
     name: Deploy to Cloudflare
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Deploy with Wrangler
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: web

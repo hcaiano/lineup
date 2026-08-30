@@ -49,4 +49,5 @@ and behavior changes should start in [Discussions](https://github.com/hcaiano/li
 
 ## License
 
-Lineup is available under the [Apache License 2.0](LICENSE).
+Lineup is available under the [Apache License 2.0](LICENSE). Releases before 2.0.0 remain under
+their [MIT License](LICENSE-1.x).

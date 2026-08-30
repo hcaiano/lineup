@@ -33,9 +33,13 @@ The site is the `lineup` Worker on the Caiano Cloudflare account, with the custo
 `lineup.caiano.com` attached (Cloudflare manages the DNS record). The account id is in
 `wrangler.toml`; the custom-domain attachment is a one-time setup and survives deploys.
 
-The `.github/workflows/deploy-web.yml` workflow is gated by the unset `ENABLE_WEB_DEPLOY` repository
-variable. Deploys are currently a maintainer-only manual step from an authenticated Wrangler
-session:
+The `.github/workflows/deploy-web.yml` workflow stays dormant until a maintainer sets both:
+
+- the repository variable `ENABLE_WEB_DEPLOY` to `true`;
+- the Actions secret `CLOUDFLARE_API_TOKEN` to a token limited to Workers Scripts:Edit on the
+  Lineup account.
+
+Current deploys are a maintainer-only manual step from an authenticated Wrangler session:
 
 ```sh
 cd web

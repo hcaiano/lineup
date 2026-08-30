@@ -656,9 +656,23 @@ private func runReleaseToolingTests() throws {
 
     let deploy = try String(contentsOfFile: ".github/workflows/deploy-web.yml", encoding: .utf8)
     let release = try String(contentsOfFile: ".github/workflows/release.yml", encoding: .utf8)
+    let ci = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
     check(deploy.contains("vars.ENABLE_WEB_DEPLOY == 'true'")
             && release.contains("vars.ENABLE_RELEASE_WORKFLOW == 'true'"),
           "dormant release workflows use explicit repository-variable gates")
+    check(ci.contains("runs-on: macos-26") && release.contains("runs-on: macos-26"),
+          "CI and release builds use an SDK that provides macOS 26 symbols")
+    if let appNotarize = release.range(of: "./Scripts/notarize.sh \"dist/Lineup.app\" lineup-notary"),
+       let makeDMG = release.range(of: "./Scripts/make-dmg.sh") {
+        check(appNotarize.lowerBound < makeDMG.lowerBound,
+              "release notarizes and staples the app before packaging the DMG")
+    } else {
+        check(false, "release notarizes and staples the app before packaging the DMG")
+    }
+    check(deploy.contains("permissions:\n  contents: read")
+            && deploy.contains("cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd")
+            && deploy.contains("persist-credentials: false"),
+          "web deploy uses least privilege and a pinned Wrangler action")
 }
 
 private func runShellSourceScanTests() throws {
