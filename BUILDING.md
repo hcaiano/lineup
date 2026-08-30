@@ -1,34 +1,45 @@
 # Building Lineup
 
-Lineup 2.0 is a **private** rewrite (branch `unified-app`); it is not distributed publicly. This
-file is for building it from source. See the [README](README.md) for what the app does.
+This guide covers local builds, packaging, architecture, and maintainer release tooling. See the
+[README](README.md) for the product overview and [CONTRIBUTING.md](CONTRIBUTING.md) for the
+contribution workflow.
 
 ## Requirements
 
 - macOS 13 or later
-- Xcode **Command Line Tools** (`xcode-select --install`). Full Xcode is not required.
+- Swift 5.9 or later
+- Xcode **Command Line Tools** (`xcode-select --install`). Full Xcode is optional.
 
-## Build and run
+## Build and test
 
 ```sh
 cd lineup
+swift build
 swift run lineup-tests              # dependency-free test suite (no Xcode/XCTest needed)
-./Scripts/setup-signing.sh          # one-time: stable signature so the macOS permission sticks
-./Scripts/build-app.sh ~/Applications
-open ~/Applications/Lineup.app
 ```
 
-`build-app.sh` produces a **universal** (arm64 + x86_64) app by default, so it runs on every
-supported Mac. For faster local iteration, `UNIVERSAL=0 ./Scripts/build-app.sh …` builds the
-host arch only. (One-shot `--arch` needs full Xcode; under Command Line Tools each slice is
-built with `--triple` and combined with `lipo`.)
+## Assemble and run the app
 
-A locally built app is ad-hoc signed, whose signature changes every build, so macOS keeps asking
-you to re-grant Accessibility. `setup-signing.sh` creates a reused self-signed identity once, so
-every build shares one stable signature and you grant Accessibility a single time. The same applies
-to releases: build the release DMG on a machine where this has been run, so users authorize once
-and updates keep working. Pass `REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist` to make a
-release build fail loudly rather than ship an ad-hoc signature by accident.
+For a fast local build, assemble only the host architecture:
+
+```sh
+UNIVERSAL=0 ./Scripts/build-app.sh dist
+open dist/Lineup.app
+```
+
+`build-app.sh` produces a **universal** (arm64 + x86_64) app by default when `UNIVERSAL` is not set,
+so release builds run on every supported Mac. A universal build uses separate `--triple` builds and
+combines them with `lipo`; it does not need full Xcode. The assembled app includes the Lineup and
+Sparkle licence notices in `Contents/Resources`.
+
+Without a stable identity, a local app is ad-hoc signed. Its signature changes every build, so
+macOS keeps asking you to re-grant Accessibility. If you plan to launch repeated local builds, run
+`./Scripts/setup-signing.sh` once. It adds a self-signed identity to your login Keychain. Each later
+build then uses one stable signature. This step is optional for compilation and tests.
+
+The same stable-signature rule applies to releases. Pass
+`REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist` to make a release build fail rather than
+ship an ad-hoc signature by accident.
 
 ## Package the installer
 
@@ -76,8 +87,8 @@ Sources/lineup/              AppKit agent (the app shell + the three tools)
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
   main.swift                  Orchestrates the four suites below
   ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / AppSuite.swift
-Scripts/                    build-app, setup-signing, make-dmg, make-icon, make-icns,
-                            notarize, sparkle-keygen, sparkle-appcast
+Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
+                            notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
@@ -97,13 +108,12 @@ until (if ever) 2.0 is reinstalled.
 
 ## Notarized release (Developer ID)
 
-**2.0.0 ships to existing Lineup users as an automatic Sparkle update, not a fresh install.**
-Shipping it requires signing with the exact **same Developer ID identity** used for 1.x releases.
-A different identity changes the app's codesign designated requirement, and macOS then treats it
-as a different app for Accessibility purposes — every existing user would have to re-grant
-Accessibility by hand after the update, with no warning first. Before cutting a 2.0.0 release,
-confirm the signing identity matches 1.x (see `RELEASING.md`'s `BUILD_CERTIFICATE_BASE64` secret
-and the `security find-identity` step in `.github/workflows/release.yml`).
+Lineup 2.x updates existing users through Sparkle. Every release must use the exact same Developer
+ID identity as earlier releases. A different identity changes the app's codesign designated
+requirement, and macOS then treats it as a different app for Accessibility purposes. Existing users
+would have to grant Accessibility again. Before a release, confirm the signing identity matches the
+established one. See `RELEASING.md` and the `security find-identity` step in
+`.github/workflows/release.yml`.
 
 With an Apple Developer account, a **Developer ID Application** certificate in the keychain
 makes `build-app.sh` sign with it automatically (hardened runtime + secure timestamp), which
@@ -134,8 +144,9 @@ so no full Xcode is needed.
 Lineup updates in place with [Sparkle](https://sparkle-project.org). `build-app.sh` embeds
 `Sparkle.framework` and re-signs it inside-out with the same identity as the app; updates are
 authenticated with an **EdDSA** signature so a tampered or man-in-the-middled download is
-rejected. The feed is `web/appcast.xml`, served at `https://lineup.caiano.com/appcast.xml`
-(auto-deployed from `web/`), and pointed to by `SUFeedURL` in `Resources/Info.plist`.
+rejected. The feed is `web/appcast.xml`, served at `https://lineup.caiano.com/appcast.xml`, and
+pointed to by `SUFeedURL` in `Resources/Info.plist`. Website deploys are currently
+maintainer-controlled.
 
 **One-time key setup** (do this once, ever — losing the key means you can't sign future
 updates that existing installs will accept):
@@ -150,8 +161,7 @@ your Keychain, exactly like the notarization credential.
 
 Downloads are **self-hosted** from 2.0.0 on: `sparkle-appcast.sh` stages the DMG into
 `web/downloads/` and points the enclosure at `https://lineup.caiano.com/downloads/<file>`.
-Nothing in the feed touches GitHub, so this repository can be private without breaking
-auto-updates for installed copies.
+Installed copies do not depend on GitHub to fetch updates.
 
 **Per release**, after notarizing *and stapling* the DMG:
 

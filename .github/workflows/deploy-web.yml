@@ -1,9 +1,7 @@
 name: Deploy website
 
-# Auto-deploys the Cloudflare Worker (lineup, serving web/) whenever the site changes on
-# main. The account id lives in web/wrangler.toml; the only repo secret needed is
-# CLOUDFLARE_API_TOKEN (a token with "Workers Scripts:Edit" on the Caiano account). After
-# adding it, push a web/ change or run this workflow from the Actions tab to deploy.
+# Dormant automatic-deploy workflow for the Cloudflare Worker that serves web/. The job runs only
+# when the repository variable ENABLE_WEB_DEPLOY is set to "true".
 on:
   push:
     branches: [main]
@@ -19,11 +17,8 @@ concurrency:
 
 jobs:
   deploy:
-    # Disabled on phase9-docs / unified-app: Lineup 2.0 is a private, in-progress rewrite.
-    # This job would publish web/ (the 1.x public site) to lineup.caiano.com on every push to
-    # main that touches web/. Re-enable by deleting this line once 2.0's public site is ready
-    # (see BUILDING.md and RELEASING.md).
-    if: false
+    # The variable is unset by default, so website publishes stay maintainer-controlled.
+    if: ${{ vars.ENABLE_WEB_DEPLOY == 'true' }}
     runs-on: ubuntu-latest
     name: Deploy to Cloudflare
     steps:

@@ -2,9 +2,10 @@ import Foundation
 
 /// Pure cycle-order math: "press the key, get the app; press again, walk its windows."
 ///
-/// The AppKit layer (Sources/cycler) owns the live AX window list and focus; this type owns the
-/// *decision* of which window index to advance to, so the round-robin behaviour is unit-testable
-/// without a running app. Keep it free of AppKit so it builds under `swift run cycler-tests`.
+/// The AppKit layer (Sources/lineup/Tools/Cycler) owns the live AX window list and focus; this type
+/// owns the *decision* of which window index to advance to, so the round-robin behaviour is
+/// unit-testable without a running app. Keep it free of AppKit so it builds under
+/// `swift run lineup-tests`.
 public enum WindowCycle {
     /// Given how many windows the target app currently has, the index that was focused last time
     /// (or `nil` if we weren't cycling this app yet / it just came to front), and the direction,

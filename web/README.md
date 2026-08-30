@@ -33,16 +33,13 @@ The site is the `lineup` Worker on the Caiano Cloudflare account, with the custo
 `lineup.caiano.com` attached (Cloudflare manages the DNS record). The account id is in
 `wrangler.toml`; the custom-domain attachment is a one-time setup and survives deploys.
 
-**Automatic (default):** `.github/workflows/deploy-web.yml` deploys on every push to `main`
-that touches `web/`. One-time setup: add a repo secret **`CLOUDFLARE_API_TOKEN`** (a token
-with *Workers Scripts:Edit* on the Caiano account) under Settings → Secrets and variables →
-Actions. You can also run it on demand from the **Actions** tab (Run workflow).
-
-**Manual (fallback):**
+The `.github/workflows/deploy-web.yml` workflow is gated by the unset `ENABLE_WEB_DEPLOY` repository
+variable. Deploys are currently a maintainer-only manual step from an authenticated Wrangler
+session:
 
 ```sh
 cd web
-CLOUDFLARE_API_TOKEN=<token with Workers Scripts:Edit on the Caiano account> npx wrangler deploy
+npx wrangler deploy
 ```
 
 Changes go live in seconds.

@@ -3,12 +3,8 @@ import SwiftUI
 
 /// About: brand mark, version, build date, the site, and the same Sparkle check the menu offers.
 ///
-/// Lineup 2.0 is a private build: no source-repository link and no open-source licence line
-/// (1.x's About offered both). The product site stays — it is where the appcast and the download
-/// live, so it is the one link that still means something to a user.
-///
 /// This and `AboutWindowController` must agree: they are two renderings of the same facts, and
-/// a user who opens both should not be told two different stories about the licence.
+/// a user who opens both should not be told two different stories about the product.
 struct AboutPane: View {
     /// Nil outside the assembled bundle (a bare `swift run` has no Info.plist): better to show
     /// nothing than a version line with nothing in it.
