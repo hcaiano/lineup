@@ -12,6 +12,15 @@ public enum Product {
     public static let hotkeySignatureString = "LNUP"
     public static let selfSignedIdentity = "Lineup Self-Signed"
     public static let feedURLString = "https://lineup.caiano.com/appcast.xml"
+    /// The custom bundle marker written by `Scripts/build-app.sh`. It is deliberately separate
+    /// from the public bundle ID and feed so Stable and Nightly remain one app identity.
+    public static let buildChannelInfoPlistKey = BuildChannelMarker.infoPlistKey
+
+    /// The channel compiled into the running app bundle. Missing or malformed metadata defaults
+    /// to Stable so a packaging mistake cannot opt users into prerelease updates.
+    public static var buildChannel: UpdateChannel {
+        BuildChannelMarker.fromInfoPlist(Bundle.main.object(forInfoDictionaryKey: buildChannelInfoPlistKey))
+    }
 
     public static var configDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/lineup")

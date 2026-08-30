@@ -37,6 +37,47 @@ macOS keeps asking you to re-grant Accessibility. If you plan to launch repeated
 `./Scripts/setup-signing.sh` once. It adds a self-signed identity to your login Keychain. Each later
 build then uses one stable signature. This step is optional for compilation and tests.
 
+Stable is the default build and update track. To assemble a Nightly variant, pass explicit
+overrides; the script keeps `CFBundleShortVersionString` in Apple's numeric `X.Y.Z` shape and puts
+the prerelease value in the numeric-with-development-suffix `CFBundleVersion`:
+
+```sh
+LINEUP_BUILD_CHANNEL=nightly \
+LINEUP_VERSION=2.0.2 \
+LINEUP_BUILD_VERSION=19.00.01a001 \
+UNIVERSAL=0 ./Scripts/build-app.sh dist-nightly
+```
+
+`LINEUP_BUILD_CHANNEL=nightly` without both overrides fails closed. Run
+`./Scripts/nightly-release.sh` to resolve the next patch tag, date, sequence, and bundle version.
+The Nightly marker is written only to the assembled bundle; the checked-in plist remains Stable.
+
+The helper is read-only. It reads the public repository with `gh api`, never creates or uploads a
+release, and never uses the moving `latest` alias. After the exact public prerelease exists and its
+asset is attached by the maintainer, verify it before updating the feed:
+
+`--verify` requires GitHub to report `immutable=true` for the exact release and peels its Git tag
+ref to the local source commit. The repository currently has immutable releases disabled, so
+verification (and any release publishing flow that depends on it) fails closed until the
+maintainer enables GitHub immutable releases. This change does not alter repository settings.
+
+It refuses a dirty checkout; `LINEUP_ALLOW_DIRTY=1` is reserved for explicitly read-only local
+tests and must not be used for a release plan.
+
+```sh
+./Scripts/nightly-release.sh --verify v2.0.2-nightly.20260830.1
+./Scripts/sparkle-appcast.sh --nightly \
+  dist-nightly/Lineup-2.0.2.dmg \
+  https://github.com/hcaiano/lineup/releases/download/v2.0.2-nightly.20260830.1/Lineup-2.0.2-nightly.20260830.1.dmg \
+  2.0.2-nightly.20260830.1 19.00.01a001
+```
+
+`CFBundleVersion` is deliberately based on the current Stable build. With Stable build `19`, the
+pinned Sparkle comparator orders `19 < 19.00.01a001 < 19.00.01a002 < 19.01.00a001 < 20`.
+The `a1...a255` suffix range is Apple-valid and leaves a later Stable build able to supersede
+every Nightly build. The T3 Nightly version is used for the tag, asset name, and appcast
+`sparkle:shortVersionString`; the bundled `CFBundleShortVersionString` stays numeric.
+
 The same stable-signature rule applies to releases. Pass
 `REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist` to make a release build fail rather than
 ship an ad-hoc signature by accident.
@@ -148,6 +189,15 @@ rejected. The feed is `web/appcast.xml`, served at `https://lineup.caiano.com/ap
 pointed to by `SUFeedURL` in `Resources/Info.plist`. Website deploys are currently
 maintainer-controlled.
 
+Stable and Nightly share that feed, public bundle ID, config file, and TCC identity. The General
+settings window has one **Update track** picker. Stable is the default. A first Nightly install
+follows its bundle marker, while an explicit choice in `config.json` wins across later installs.
+Sparkle always includes the default channel; Nightly adds only `nightly` through its updater
+delegate. Changing the track updates the one controller and resets its update cycle. Selecting
+Stable on a newer Nightly build stops Nightly checks; Sparkle waits for a newer Stable build and
+does not auto-downgrade to an older Stable item. If a check or install is already active, it
+finishes on its current track; the new choice applies to the next check.
+
 **One-time key setup** (do this once, ever — losing the key means you can't sign future
 updates that existing installs will accept):
 
@@ -159,9 +209,11 @@ Paste the printed public key into `Resources/Info.plist` under `SUPublicEDKey` (
 placeholder). That's the only Sparkle value that ships in the app. The private key stays in
 your Keychain, exactly like the notarization credential.
 
-Downloads are **self-hosted** from 2.0.0 on: `sparkle-appcast.sh` stages the DMG into
+Stable downloads are **self-hosted** from 2.0.0 on: `sparkle-appcast.sh` stages the DMG into
 `web/downloads/` and points the enclosure at `https://lineup.caiano.com/downloads/<file>`.
-Installed copies do not depend on GitHub to fetch updates.
+Nightly appcast items are signed from the exact local DMG but point at the immutable, public
+GitHub prerelease asset for their exact tag. Nightly DMGs are therefore not copied into git.
+Installed Stable copies do not depend on GitHub to fetch updates.
 
 **Per release**, after notarizing *and stapling* the DMG:
 

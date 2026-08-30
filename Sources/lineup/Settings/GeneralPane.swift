@@ -54,6 +54,19 @@ struct GeneralPane: View {
 
                 SettingsSectionView("Updates") {
                     SettingsRow(
+                        title: "Update track",
+                        detail: updateTrackDescription
+                    ) {
+                        Picker("Update track", selection: $store.updateChannel) {
+                            ForEach(UpdateChannel.allCases) { channel in
+                                Text(channel.displayName).tag(channel)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityLabel("Update track")
+                    }
+                    SettingsRow(
                         title: "Software updates",
                         detail: "Lineup checks in the background and installs an update once you agree."
                     ) {
@@ -66,6 +79,14 @@ struct GeneralPane: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("General")
+    }
+
+    private var updateTrackDescription: String {
+        var description = store.updateChannel.settingsDescription
+        if Product.buildChannel == .nightly, store.updateChannel == .stable {
+            description += " This Nightly build returns to Stable when a newer Stable release is available."
+        }
+        return description
     }
 
     // MARK: - Rows

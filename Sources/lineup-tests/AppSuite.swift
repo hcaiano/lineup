@@ -25,6 +25,7 @@ private let sampleHyperMask: UInt32 = 0x100 | 0x800 | 0x200 | 0x1000
 
 func runAppTests() throws {
     try runEnvelopeTests()
+    try runUpdateChannelTests()
     try runStoreTests()
     try runLegacyImportTests()
     try runIdentityTests()
@@ -38,6 +39,60 @@ func runAppTests() throws {
     try runToolWriteDisciplineTests()
     try runUIStateContractTests()
     try runVisualDesignTests()
+}
+
+// MARK: - Update channels
+
+private func runUpdateChannelTests() throws {
+    check(UpdateChannel.stable.sparkleAllowedChannels.isEmpty
+            && UpdateChannel.nightly.sparkleAllowedChannels == Set([UpdateChannel.nightlySparkleChannel]),
+          "Stable keeps Sparkle on its default channel and Nightly adds only nightly")
+    check(BuildChannelMarker.fromInfoPlist("nightly") == .nightly
+            && BuildChannelMarker.fromInfoPlist("unknown") == .stable
+            && BuildChannelMarker.fromInfoPlist(nil) == .stable,
+          "the build marker opts into Nightly only with an exact value")
+    // A missing preference follows the bundle marker. An explicit Stable choice survives a
+    // Nightly install, which is the distinction a plain non-optional default cannot represent.
+    let fresh = GeneralConfig()
+    check(fresh.updateChannel == nil, "a fresh config has no explicit update-track choice")
+    check(fresh.effectiveUpdateChannel(buildChannel: .stable) == .stable,
+          "a missing preference defaults to Stable in a Stable build")
+    check(fresh.effectiveUpdateChannel(buildChannel: .nightly) == .nightly,
+          "a missing preference follows the Nightly build marker")
+    let explicitStable = GeneralConfig(updateChannel: .stable)
+    check(explicitStable.effectiveUpdateChannel(buildChannel: .nightly) == .stable,
+          "an explicit Stable choice survives a Nightly install")
+
+    let encoded = try JSONEncoder().encode(GeneralConfig(updateChannel: .nightly))
+    let decoded = try JSONDecoder().decode(GeneralConfig.self, from: encoded)
+    check(decoded.updateChannel == .nightly, "the explicit update-track choice round-trips")
+
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let firstDate = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+    let first = NightlyBuildVersion.value(date: firstDate, sequence: 1, stableBuild: 19)!
+    let second = NightlyBuildVersion.value(date: firstDate, sequence: 2, stableBuild: 19)!
+    let nextDate = calendar.date(byAdding: .day, value: 1, to: firstDate)!
+    let nextDay = NightlyBuildVersion.value(date: nextDate, sequence: 1, stableBuild: 19)!
+    let day99 = calendar.date(byAdding: .day, value: 98, to: firstDate)!
+    let day100 = calendar.date(byAdding: .day, value: 99, to: firstDate)!
+    let lastSupportedDate = calendar.date(byAdding: .day, value: 9998, to: firstDate)!
+    let firstUnsupportedDate = calendar.date(byAdding: .day, value: 9999, to: firstDate)!
+    check(first == "19.00.01a001", "the first Nightly build has an Apple-valid prerelease version")
+    check(first.hasPrefix("19.00.01a") && second.hasPrefix("19.00.01a")
+            && nextDay.hasPrefix("19.00.02a"),
+          "Nightly components advance by sequence and UTC date")
+    check(NightlyBuildVersion.value(date: day99, sequence: 1, stableBuild: 19) == "19.00.99a001"
+            && NightlyBuildVersion.value(date: day100, sequence: 1, stableBuild: 19) == "19.01.00a001"
+            && NightlyBuildVersion.value(date: lastSupportedDate, sequence: 1, stableBuild: 19) == "19.99.99a001",
+          "Nightly date components remain two digits at ordinal boundaries")
+    check(NightlyBuildVersion.value(date: firstUnsupportedDate, sequence: 1, stableBuild: 19) == nil,
+          "Nightly rejects the first date beyond its two-component range")
+    check(first != "19" && first != "20",
+          "the Nightly version is distinct from both adjacent Stable versions")
+    check(NightlyBuildVersion.isAppleValid(first), "the Nightly bundle version passes Apple validation")
+    check(!NightlyBuildVersion.isAppleValid("19.00.00x001"), "unknown prerelease suffixes are rejected")
+    check(!NightlyBuildVersion.isAppleValid("19.00.00d256"), "a prerelease suffix above 255 is rejected")
 }
 
 // MARK: - Envelope
@@ -638,6 +693,7 @@ private func runIdentityTests() throws {
     check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
 
     check(plistString("CFBundleShortVersionString") == "2.0.1", "Info.plist ships 2.0.1")
+    check(plistString("LineupBuildChannel") == "stable", "Info.plist marks the public build Stable")
     // Sparkle offers an update only when the appcast's sparkle:version (CFBundleVersion) sorts
     // ABOVE the running app's. 2.0.0 shipped as build 18, so a 2.0.1 that reused 18 would be
     // invisible to every existing user. The build number must stay strictly monotonic.
@@ -647,6 +703,37 @@ private func runIdentityTests() throws {
 
 private func runReleaseToolingTests() throws {
     let publisher = try String(contentsOfFile: "Scripts/publish-appcast.sh", encoding: .utf8)
+    let appcast = try String(contentsOfFile: "Scripts/sparkle-appcast.sh", encoding: .utf8)
+    let nightly = try String(contentsOfFile: "Scripts/nightly-release.sh", encoding: .utf8)
+    check(appcast.contains("--nightly") && appcast.contains("<sparkle:channel>nightly</sparkle:channel>"),
+          "the appcast helper emits the Nightly Sparkle channel")
+    check(appcast.contains("REMOTE_URL") && appcast.contains("github\\.com")
+            && appcast.contains("web/downloads")
+            && appcast.contains("curl --fail --location")
+            && appcast.contains("cmp -s")
+            && appcast.contains("hdiutil attach")
+            && appcast.contains("CFBundleVersion")
+            && appcast.contains("CFBundleShortVersionString"),
+          "the appcast helper proves remote bytes and embedded metadata while keeping Stable staging")
+    check(nightly.contains("gh api") && nightly.contains("--paginate --slurp")
+            && nightly.contains("prerelease")
+            && nightly.contains("releases/tags/${TAG}")
+            && nightly.contains("releases/download/${TAG}")
+            && nightly.contains("git/ref/tags/${TAG}")
+            && nightly.contains("git/tags/${TAG_OBJECT_SHA}")
+            && nightly.contains("source_sha=${SOURCE_SHA}") && nightly.contains("target_commitish")
+            && nightly.contains("tag_commit_sha")
+            && nightly.contains("immutable=true"),
+          "the Nightly helper paginates metadata and proves immutable tag and asset identity")
+    check(nightly.contains("does not match source Info.plist")
+            && nightly.contains("offset <= 9998") && nightly.contains("a{sequence:03d}")
+            && nightly.contains("is not newer than public Nightly")
+            && !nightly.contains("LINEUP_STABLE_BUILD"),
+          "the Nightly helper fails on stale metadata, uses bounded components, and enforces monotonic plans")
+    check(!nightly.contains("gh release create") && !nightly.contains("gh release upload")
+            && !nightly.contains("git push") && nightly.contains("git status --porcelain")
+            && nightly.contains("LINEUP_ALLOW_DIRTY"),
+          "the Nightly helper performs no external release mutation")
     check(publisher.contains("HOSTED_DMG=\"web/downloads/Lineup-${VERSION}.dmg\""),
           "publish-appcast names the self-hosted DMG")
     check(publisher.contains("git add -- web/appcast.xml \"$HOSTED_DMG\""),
@@ -679,6 +766,18 @@ private func runReleaseToolingTests() throws {
 private func runShellSourceScanTests() throws {
     let files = sourceFiles()
     check(!files.isEmpty, "source scan finds Swift files")
+
+    let updater = files.first(where: { $0.path == "Sources/lineup/App/Updater.swift" })?.text ?? ""
+    check(updater.contains("allowedChannels(for updater: SPUUpdater)")
+            && updater.contains("return channel.sparkleAllowedChannels"),
+          "the single updater supplies only the selected additional Sparkle channel")
+    check(updater.contains("state == .ok")
+            && updater.contains("config.schemaVersion <= LineupAppConfig.currentSchema")
+            && updater.contains("static func start(channel: UpdateChannel)")
+            && updater.contains("sessionInProgress")
+            && updater.contains("pendingChannelAfterSession")
+            && updater.contains("didFinishUpdateCycleFor updateCheck"),
+          "updater startup is fail-closed and defers track reset during active Sparkle sessions")
 
     // Two SPUStandardUpdaterControllers in one process is unsupported by Sparkle. Cycler's
     // Updater.swift is deliberately never copied.
@@ -868,6 +967,11 @@ private func runSettingsWindowTests() throws {
     }
     check(general.contains("$store.launchAtLogin") && general.contains("$store.showMenuBarIcon"),
           "General drives launch-at-login and the menu-bar icon")
+    check(general.contains("Picker(\"Update track\"")
+            && general.contains("pickerStyle(.segmented)")
+            && general.contains("UpdateChannel.allCases")
+            && general.components(separatedBy: "Picker(").count - 1 == 1,
+          "General has one compact Stable/Nightly update-track picker")
     check(general.contains("AppUpdater.shared.checkForUpdates"),
           "General's Check for Updates goes through the one Sparkle controller")
     check(general.contains("permissions.openSettings(for: permission)"),
@@ -882,6 +986,8 @@ private func runSettingsWindowTests() throws {
     check(about.contains("lineup.caiano.com"), "About links the product site")
     check(about.contains("AppUpdater.shared.checkForUpdates"), "About offers Check for Updates")
     check(about.contains("AboutFacts.copyright"), "About uses the shared attribution line")
+    check(about.contains("Product.buildChannel == .nightly") && about.contains(" Nightly"),
+          "About labels a Nightly build while leaving Stable's version line unchanged")
 
     // ---- Reopen path: with no menu-bar icon, Settings is the only way back in ----
     let shell = source("Sources/lineup/App/AppShell.swift")
@@ -921,6 +1027,15 @@ private func runSettingsWindowTests() throws {
     } else {
         check(false, "AppShell owns setShowMenuBarIcon")
     }
+    check(shell.contains("AppUpdater.start(channel: AppUpdater.initialChannel")
+            && shell.contains("state: store.state")
+            && shell.contains("private func setUpdateChannel")
+            && shell.contains("general.updateChannel = channel")
+            && shell.contains("AppUpdater.apply(channel: actual)"),
+          "the shell loads, persists, applies and fail-closes the update track")
+    check(shell.contains("settings?.refresh(updateChannel: channel)")
+            && shell.contains("AppUpdater.initialChannel(config: store.config, state: store.state)"),
+          "reset refreshes an open picker to the build default without rewriting the preference")
 }
 
 // MARK: - Integration (merge of phases 4-7b)
@@ -1556,6 +1671,9 @@ private func runParityFixTests() throws {
           "the build date the window always had is now on the Settings pane too")
     check(aboutWindow.contains("func versionLine()") && aboutPane.contains("CFBundleVersion"),
           "both Abouts show version and build")
+    check(aboutWindow.contains("Product.buildChannel == .nightly")
+            && aboutPane.contains("Product.buildChannel == .nightly"),
+          "both Abouts identify Nightly builds")
 
     // ---- The About WINDOW takes the same ref-counted activation every other window does ----
     // Without it, an agent-only app shows About behind whatever is frontmost, and the window has

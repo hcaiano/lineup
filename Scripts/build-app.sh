@@ -21,6 +21,51 @@ BUILD_DIR=".build/release"
 OUT_DIR="${1:-dist}"          # pass a target dir, e.g. ~/Applications
 APP="${OUT_DIR}/${APP_NAME}.app"
 
+# The checked-in plist describes the public Stable build. A Nightly package must opt in
+# explicitly, including its numeric X.Y.Z bundle display version and its Apple-valid prerelease
+# bundle version; the T3 Nightly display version belongs to its tag and appcast item.
+PLIST_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :LineupBuildChannel' Resources/Info.plist 2>/dev/null || echo stable)"
+BUILD_CHANNEL="${LINEUP_BUILD_CHANNEL:-${PLIST_CHANNEL}}"
+VERSION_OVERRIDE="${LINEUP_VERSION:-}"
+BUILD_OVERRIDE="${LINEUP_BUILD_VERSION:-}"
+
+case "${BUILD_CHANNEL}" in
+  stable|nightly) ;;
+  *)
+    echo "error: LINEUP_BUILD_CHANNEL must be 'stable' or 'nightly' (got '${BUILD_CHANNEL}')." >&2
+    exit 1
+    ;;
+esac
+
+if [ "${BUILD_CHANNEL}" = "nightly" ] && { [ -z "${VERSION_OVERRIDE}" ] || [ -z "${BUILD_OVERRIDE}" ]; }; then
+  echo "error: Nightly builds require LINEUP_VERSION and LINEUP_BUILD_VERSION overrides." >&2
+  echo "       Use Scripts/nightly-release.sh to resolve both values." >&2
+  exit 1
+fi
+
+# CFBundleVersion is numeric with an optional Apple development suffix. Keep this validation next
+# to the override so a malformed prerelease cannot reach Sparkle with an unorderable version.
+if [ -n "${BUILD_OVERRIDE}" ] && [[ ! "${BUILD_OVERRIDE}" =~ ^[1-9][0-9]{0,3}(\.[0-9]{1,2}(\.[0-9]{1,2})?)?((d|a|b|fc)[0-9]{1,3})?$ ]]; then
+  echo "error: LINEUP_BUILD_VERSION '${BUILD_OVERRIDE}' is not an Apple-valid CFBundleVersion." >&2
+  exit 1
+fi
+if [ -n "${BUILD_OVERRIDE}" ] && [[ "${BUILD_OVERRIDE}" =~ (d|a|b|fc)([0-9]+)$ ]]; then
+  suffix_number="${BASH_REMATCH[2]}"
+  if [ "${suffix_number}" -lt 1 ] || [ "${suffix_number}" -gt 255 ]; then
+    echo "error: LINEUP_BUILD_VERSION suffix number must be from 1 through 255." >&2
+    exit 1
+  fi
+fi
+if [ "${BUILD_CHANNEL}" = "nightly" ] && [[ ! "${BUILD_OVERRIDE}" =~ (d|a|b|fc)[0-9]{1,3}$ ]]; then
+  echo "error: Nightly LINEUP_BUILD_VERSION must include an Apple prerelease suffix." >&2
+  exit 1
+fi
+
+if [ -n "${VERSION_OVERRIDE}" ] && [[ ! "${VERSION_OVERRIDE}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: LINEUP_VERSION '${VERSION_OVERRIDE}' is not a three-part release version." >&2
+  exit 1
+fi
+
 # Build the release executable. Universal (arm64 + x86_64) by default so the app runs on every
 # supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
 # `--arch a --arch b` needs full Xcode (xcbuild); under Command Line Tools we build each slice
@@ -67,6 +112,19 @@ fi
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${EXEC_SRC}" "${APP}/Contents/MacOS/${EXEC_NAME}"
 cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
+
+# Keep the source plist Stable so ordinary builds preserve the existing release identity. Variant
+# metadata belongs in the assembled bundle and is inspectable with PlistBuddy after the build.
+if [ -n "${VERSION_OVERRIDE}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION_OVERRIDE}" \
+    "${APP}/Contents/Info.plist"
+fi
+if [ -n "${BUILD_OVERRIDE}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_OVERRIDE}" \
+    "${APP}/Contents/Info.plist"
+fi
+/usr/libexec/PlistBuddy -c "Set :LineupBuildChannel ${BUILD_CHANNEL}" \
+  "${APP}/Contents/Info.plist"
 
 # Fail closed if the real Sparkle public key was never filled in: a placeholder SUPublicEDKey
 # ships an app that can never validate an update (users would have to reinstall by hand).
@@ -195,5 +253,6 @@ if [ "${UNIVERSAL}" = "1" ]; then
 fi
 
 echo "==> done: ${APP}"
+echo "    channel: ${BUILD_CHANNEL}"
 echo "    Launch with:  open \"${APP}\""
 echo "    First launch will prompt for Accessibility permission."
