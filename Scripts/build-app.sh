@@ -92,6 +92,34 @@ if [ "${BUILD_CHANNEL}" = "nightly" ]; then
   fi
 fi
 
+# The source snapshot must remain stable while Swift compiles and while the bundle is assembled.
+# A clean release checkout must still be clean; the explicit dirty escape is only for local tests
+# and must remain marked dirty so it cannot pass the Nightly appcast gate.
+validate_source_snapshot() {
+  local phase="${1}"
+  local current_sha current_state
+  if ! current_sha="$(git rev-parse HEAD 2>/dev/null)"; then
+    echo "error: could not re-read the Nightly source commit after ${phase}." >&2
+    exit 1
+  fi
+  if [ "${current_sha}" != "${SOURCE_SHA}" ]; then
+    echo "error: Nightly source HEAD changed during ${phase}; refusing to assemble the bundle." >&2
+    exit 1
+  fi
+  if ! current_state="$(git status --porcelain --untracked-files=all)"; then
+    echo "error: could not re-check the Nightly checkout after ${phase}." >&2
+    exit 1
+  fi
+  if [ "${SOURCE_DIRTY}" -eq 0 ] && [ -n "${current_state}" ]; then
+    echo "error: Nightly checkout became dirty during ${phase}; refusing to assemble the bundle." >&2
+    exit 1
+  fi
+  if [ "${SOURCE_DIRTY}" -eq 1 ] && [ -z "${current_state}" ]; then
+    echo "error: the test-only dirty Nightly checkout became clean during ${phase}; refusing to clear its dirty marker." >&2
+    exit 1
+  fi
+}
+
 # Build the release executable. Universal (arm64 + x86_64) by default so the app runs on every
 # supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
 # `--arch a --arch b` needs full Xcode (xcbuild); under Command Line Tools we build each slice
@@ -117,6 +145,10 @@ else
   EXEC_SRC="${BUILD_DIR}/${EXEC_NAME}"
   SPARKLE_SEARCH_DIR="${BUILD_DIR}"
   SPARKLE_LICENSE=".build/checkouts/Sparkle/LICENSE"
+fi
+
+if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  validate_source_snapshot "compilation"
 fi
 
 # Ensure the icon exists.
@@ -152,6 +184,7 @@ fi
 /usr/libexec/PlistBuddy -c "Set :LineupBuildChannel ${BUILD_CHANNEL}" \
   "${APP}/Contents/Info.plist"
 if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  validate_source_snapshot "bundle assembly"
   if [ "${SOURCE_DIRTY}" -eq 1 ]; then
     # A dirty test bundle must remain useful for local inspection but can never pass the
     # Nightly appcast proof. The prefix is deliberately not a Git SHA; the appcast rejects it.

@@ -55,6 +55,9 @@ Nightly assembly also embeds `LineupSourceCommit` from `git rev-parse HEAD` and 
 checkout, so the marker proves the source used for the artifact. `LINEUP_ALLOW_DIRTY=1` is a
 test-only escape for local bundle inspection: it writes a `dirty-<sha>` source marker and
 `LineupSourceDirty=true`, which the appcast gate rejects. It must never be used for a release.
+Keep a release checkout dedicated while it builds. `build-app.sh` rechecks the same HEAD and
+checkout state after compilation and immediately before writing the source marker; any concurrent
+change aborts the Nightly assembly.
 
 The helper is read-only. It reads the public repository with `gh api`, never creates or uploads a
 release, and never uses the moving `latest` alias. After the exact public prerelease exists and its

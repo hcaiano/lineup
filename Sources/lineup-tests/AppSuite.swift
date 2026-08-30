@@ -748,6 +748,11 @@ private func runReleaseToolingTests() throws {
             && buildApp.contains("git rev-parse HEAD")
             && buildApp.contains("git status --porcelain --untracked-files=all")
             && buildApp.contains("require a clean checkout")
+            && buildApp.contains("validate_source_snapshot \"compilation\"")
+            && buildApp.contains("validate_source_snapshot \"bundle assembly\"")
+            && buildApp.contains("[ \"${current_sha}\" != \"${SOURCE_SHA}\" ]")
+            && buildApp.contains("[ \"${SOURCE_DIRTY}\" -eq 0 ]")
+            && buildApp.contains("[ \"${SOURCE_DIRTY}\" -eq 1 ]")
             && buildApp.contains("LINEUP_ALLOW_DIRTY=1")
             && buildApp.contains("local Nightly bundle tests"),
           "Nightly bundles embed a source commit only from a clean checkout")
@@ -771,6 +776,7 @@ private func runReleaseToolingTests() throws {
             && !nightly.contains("LINEUP_STABLE_BUILD")
             && nightly.contains("build-app.sh dist/nightly")
             && building.contains("build-app.sh dist/nightly")
+            && building.contains("rechecks the same HEAD")
             && !building.contains("dist-nightly"),
           "the Nightly helper fails on stale metadata, uses bounded components, and enforces monotonic plans")
     check(!nightly.contains("gh release create") && !nightly.contains("gh release upload")
