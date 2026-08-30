@@ -308,19 +308,19 @@ private let wideScreen = ScreenInfo(key: "uuid-wide", label: "Wide", pixelsWide:
 private func runLegacyImportTests() throws {
     let missing = URL(fileURLWithPath: "/nonexistent/lineup-tests/nothing.json")
 
-    // ---- neither source present: Zones on, Cycler off, Hyperkey off ----
+    // ---- neither source present: no section, default Zones, Cycler off, Hyperkey off ----
     do {
         var cfg = LineupAppConfig()
         let r = LegacyImport.run(into: &cfg, zonesURL: missing, cyclerBindingsURL: missing,
                                  now: "T", resolveLegacyScreen: neverResolve)
         check(!r.importedZones && !r.importedCycler, "fresh install imports nothing")
-        check(cfg.isEnabled(.zones) == true, "fresh install: Zones is on")
+        check(cfg.isEnabled(.zones) == nil, "fresh install: Zones keeps its default enablement")
         check(cfg.isEnabled(.cycler) == nil, "fresh install: no cycler section is invented")
         check(cfg.isEnabled(.hyperkey) == nil, "fresh install: no hyperkey section is invented")
         check(cfg.general.didImportLegacyZones && cfg.general.didImportLegacyCycler,
               "fresh install marks both imports done so they never run again")
-        check(try cfg.settings(LineupConfig.self, for: .zones) == LineupConfig(),
-              "fresh install seeds the default zones layout")
+        check(try cfg.settings(LineupConfig.self, for: .zones) == nil,
+              "fresh install leaves the Zones section absent for its adaptive preset")
     }
 
     // ---- zones only (schema 3) ----
@@ -431,7 +431,7 @@ private func runLegacyImportTests() throws {
         check(!cfg.general.showMenuBarIcon,
               "split: a Cycler-ONLY migrant's hidden-icon preference becomes the app-wide setting")
         check(cfg.general.didImportLegacyCycler, "didImportLegacyCycler is set")
-        check(cfg.isEnabled(.zones) == true, "a cycler-only import still turns Zones on")
+        check(cfg.isEnabled(.zones) == nil, "a cycler-only import leaves Zones at its default enablement")
 
         check(try Data(contentsOf: url) == before, "bindings.json is byte-identical after import")
         let afterMtime = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
@@ -2520,6 +2520,7 @@ private func runTilesShellContractTests() throws {
           "Tiles preset keeps numbered workspaces, stack, split, toggle, and movement modifier map")
     check(shortcutKit.contains("static func adaptingTilesDefaults(")
             && shortcutKit.contains("tilesShortcutKeyPaths.allSatisfy")
+            && shortcutKit.contains("\\.nextWorkspace, \\.nextWindow, \\.moveWindowToNextWorkspace")
             && shortcutKit.contains("var adapted = source")
             && shortcutKit.contains("adapted[keyPath: keyPath] = fresh[keyPath: keyPath]"),
           "an exact untouched Tiles preset can follow an Include Shift mode change while preserving other settings")
@@ -2537,17 +2538,28 @@ private func runTilesShellContractTests() throws {
     check(tilesTool.contains("func hyperkeyModeDidChange()")
             && tilesTool.contains("if runtimeReady { registerHotkeys() }")
             && tilesTool.contains("enum WorkspaceMoveShortcutState: Equatable")
-            && tilesTool.contains("workspaceMoveShortcutState(for workspace: Int)")
+            && tilesTool.contains("workspaceMoveShortcutState(for workspace: Int,\n                                    boundCombos: [ToolCombo])")
             && tilesTool.contains("return .workspaceShortcutMissing")
             && tilesTool.contains("return .unavailableWithIncludeShift")
+            && tilesTool.contains("return .unavailable(reason)")
             && tilesTool.contains("return .shortcut(ShortcutKit.display("),
           "Tiles reloads atomically adapted shortcuts and exposes derived workspace moves")
+    check(tilesTool.contains("var isRegistered: Bool")
+            && tilesTool.contains("static var registeredCases")
+            && tilesTool.contains("guard let action = Action(rawValue: action), action.isRegistered")
+            && !tilesTool.contains("Action.allCases"),
+          "legacy relative workspace actions remain decodable but never register or reserve shortcuts")
     check(tilesPane.contains("workspaceMoveShortcutRow")
             && tilesPane.contains("Move Window to Workspace")
             && tilesPane.contains("Set Workspace \\(workspace) first")
             && tilesPane.contains("Unavailable with Include Shift")
+            && tilesPane.contains("Unavailable: \\(reason)")
             && tilesPane.contains("Unavailable until Workspace \\(workspace) has a shortcut")
             && tilesPane.contains("Unavailable while Hyperkey includes Shift")
+            && tilesPane.contains("func refreshShortcutSnapshot()")
+            && tilesPane.contains("refresh(boundCombos: tool?.boundCombos() ?? [])")
+            && tilesPane.contains("model.refreshShortcutSnapshot()")
+            && tilesPane.contains("boundCombos: boundCombos")
             && !tilesPane.contains("shortcut.isEmpty")
             && tilesPane.contains("shortcutRow(.nextWindow)")
             && !tilesPane.contains("shortcutRow(.nextWorkspace)")

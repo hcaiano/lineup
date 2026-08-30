@@ -172,6 +172,10 @@ func runTilesRuntimeTests() throws {
           "tiles runtime: freeform detachment persists until explicit placement")
     check(coordinatorSource.contains("WindowEffect.setFrame") &&
           coordinatorSource.contains("managed.adoptionFrame") &&
+          coordinatorSource.contains("let screens = self.screens") &&
+          coordinatorSource.contains("safeAdoptionFrame") &&
+          coordinatorSource.contains("ScreenPicker.bestScreenIndex") &&
+          coordinatorSource.contains("FixedPlacement.center") &&
           coordinatorSource.contains("apply([effect]).first?.succeeded == true") &&
           coordinatorSource.contains("preCommitFailureMessage") &&
           coordinatorSource.contains("process(.detach(focused)") &&

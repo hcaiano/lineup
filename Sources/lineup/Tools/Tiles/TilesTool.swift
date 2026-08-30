@@ -241,6 +241,20 @@ final class TilesTool: Tool {
         func binding(_ settings: TilesSettings) -> ShortcutBinding? {
             settings[keyPath: keyPath]
         }
+
+        /// The relative workspace actions remain decodable for old settings, but they are no
+        /// longer part of the Tiles shortcut surface. Keep them inert so an old value cannot
+        /// register a Carbon hotkey or reserve a combo from another tool.
+        var isRegistered: Bool {
+            switch self {
+            case .nextWorkspace, .moveWindowToNextWorkspace:
+                return false
+            default:
+                return true
+            }
+        }
+
+        static var registeredCases: [Action] { allCases.filter(\.isRegistered) }
     }
 
     private struct HotkeyCombo: Hashable {
@@ -279,6 +293,7 @@ final class TilesTool: Tool {
         guard !isRunning else { return }
         self.services = services
         loadSettings()
+        settingsModel.refreshShortcutSnapshot()
         isRunning = true
         runtimeReady = false
         runtimeBlockedMessage = nil
@@ -430,7 +445,7 @@ final class TilesTool: Tool {
     func hyperkeyModeDidChange() {
         loadSettings()
         if runtimeReady { registerHotkeys() }
-        settingsModel.refresh()
+        settingsModel.refreshShortcutSnapshot()
         services?.refreshMenu()
         services?.refreshSettings()
     }
@@ -480,7 +495,7 @@ final class TilesTool: Tool {
     }
 
     private func bindings(in source: TilesSettings) -> [ShortcutBinding] {
-        Action.allCases.compactMap { $0.binding(source) }
+        Action.registeredCases.compactMap { $0.binding(source) }
     }
 
     /// Return the Tiles action whose generated physical-Shift combo would be replaced by this
@@ -489,7 +504,7 @@ final class TilesTool: Tool {
     /// numbered-workspace move.
     private func generatedCounterpartOwner(keyCode: Int, modifiers: UInt32) -> Action? {
         guard modifiers & UInt32(shiftKey) != 0 else { return nil }
-        return Action.allCases.first { action in
+        return Action.registeredCases.first { action in
             guard action.hasGeneratedReverse || action.hasGeneratedWorkspaceMove,
                   let binding = action.binding(settings),
                   binding.modifiers & DragSnapModifierMask.shift == 0,
@@ -536,7 +551,7 @@ final class TilesTool: Tool {
         } catch {
             log.error("Tiles reset aborted (settings left untouched): \(error, privacy: .public)")
         }
-        settingsModel.refresh()
+        settingsModel.refreshShortcutSnapshot()
         services.refreshMenu()
         services.refreshSettings()
     }
@@ -553,7 +568,7 @@ final class TilesTool: Tool {
             if spacingChanged { coordinator.update(settings: newSettings) }
             registerHotkeys()
         }
-        settingsModel.refresh()
+        settingsModel.refreshShortcutSnapshot()
         services.refreshMenu()
     }
 
@@ -579,7 +594,7 @@ final class TilesTool: Tool {
         })
         var failures: [FailedHotkey] = []
 
-        for action in Action.allCases {
+        for action in Action.registeredCases {
             guard let binding = action.binding(settings) else { continue }
             let combo = HotkeyCombo(keyCode: binding.keyCode,
                                     modifiers: UInt32(truncatingIfNeeded: binding.modifiers))
@@ -608,7 +623,7 @@ final class TilesTool: Tool {
 
         // A recorded combo without Shift gets one generated reverse. Explicit Shift bindings win
         // their exact combo, so the generated row is intentionally omitted in that case.
-        for action in Action.allCases {
+        for action in Action.registeredCases {
             guard action.hasGeneratedReverse,
                   let binding = action.binding(settings),
                   binding.modifiers & DragSnapModifierMask.shift == 0 else { continue }
@@ -646,7 +661,7 @@ final class TilesTool: Tool {
         // moves the focused window without changing the active workspace.
         // Hyperkey's include-Shift mode cannot distinguish that counterpart,
         // so only bindings without Shift receive the generated move.
-        for action in Action.allCases {
+        for action in Action.registeredCases {
             guard action.hasGeneratedWorkspaceMove,
                   let binding = action.binding(settings),
                   binding.modifiers & DragSnapModifierMask.shift == 0 else { continue }
@@ -720,7 +735,7 @@ final class TilesTool: Tool {
                                     modifiers: UInt32(truncatingIfNeeded: binding.modifiers))
             if seen.insert(combo).inserted { out.append((combo.keyCode, combo.modifiers)) }
         }
-        for action in Action.allCases where action.hasGeneratedReverse {
+        for action in Action.registeredCases where action.hasGeneratedReverse {
             guard let binding = action.binding(source),
                   binding.modifiers & DragSnapModifierMask.shift == 0 else { continue }
             let forward = UInt32(truncatingIfNeeded: binding.modifiers)
@@ -732,7 +747,7 @@ final class TilesTool: Tool {
                                               excluding: .tiles) == nil else { continue }
             if seen.insert(reverse).inserted { out.append((reverse.keyCode, reverse.modifiers)) }
         }
-        for action in Action.allCases where action.hasGeneratedWorkspaceMove {
+        for action in Action.registeredCases where action.hasGeneratedWorkspaceMove {
             guard let binding = action.binding(source),
                   binding.modifiers & DragSnapModifierMask.shift == 0 else { continue }
             let forward = UInt32(truncatingIfNeeded: binding.modifiers)
@@ -768,7 +783,7 @@ final class TilesTool: Tool {
     private func matchingAction(for combo: HotkeyCombo) -> (action: Action,
                                                              generatedReverse: Bool,
                                                              generatedWorkspaceMove: Bool)? {
-        for action in Action.allCases {
+        for action in Action.registeredCases {
             guard let binding = action.binding(settings) else { continue }
             let forward = HotkeyCombo(keyCode: binding.keyCode,
                                       modifiers: UInt32(truncatingIfNeeded: binding.modifiers))
@@ -808,7 +823,9 @@ final class TilesTool: Tool {
             return
         }
         registerHotkeys()
+        settingsModel.refreshShortcutSnapshot()
         services?.refreshMenu()
+        services?.refreshSettings()
     }
 
     private func logHotkeyFailure(_ failure: FailedHotkey) {
@@ -970,7 +987,7 @@ final class TilesTool: Tool {
         let workspaceMenu = NSMenu()
         workspaceMenu.autoenablesItems = false
         for workspace in 1...4 {
-            let action = Action.allCases.first { $0.workspaceNumber == workspace }
+            let action = Action.registeredCases.first { $0.workspaceNumber == workspace }
             let title = action.map { menuTitle("Workspace \(workspace)", action: $0) }
                 ?? "Workspace \(workspace)"
             let item = ToolMenu.item(title, symbol: "square.fill") {
@@ -988,7 +1005,7 @@ final class TilesTool: Tool {
         let moveMenu = NSMenu()
         moveMenu.autoenablesItems = false
         for workspace in 1...4 {
-            let action = Action.allCases.first { $0.workspaceNumber == workspace }
+            let action = Action.registeredCases.first { $0.workspaceNumber == workspace }
             let title = action.map {
                 menuTitle("Workspace \(workspace)", action: $0, addingShift: true)
             } ?? "Workspace \(workspace)"
@@ -1165,7 +1182,7 @@ final class TilesTool: Tool {
     }
 
     func binding(for action: String) -> ShortcutBinding? {
-        guard let action = Action(rawValue: action) else { return nil }
+        guard let action = Action(rawValue: action), action.isRegistered else { return nil }
         return action.binding(settings)
     }
 
@@ -1173,19 +1190,55 @@ final class TilesTool: Tool {
         case shortcut(String)
         case workspaceShortcutMissing
         case unavailableWithIncludeShift
+        case unavailable(String)
     }
 
-    func workspaceMoveShortcutState(for workspace: Int) -> WorkspaceMoveShortcutState {
-        guard let action = Action.allCases.first(where: { $0.workspaceNumber == workspace }),
+    /// Derive the physical-Shift workspace move from the same snapshot and failure state used by
+    /// registration. A derived combo is only shown as functional when it is free in Tiles and in
+    /// every sibling tool, and when Carbon accepted it (or has not tried it yet).
+    func workspaceMoveShortcutState(for workspace: Int,
+                                    boundCombos: [ToolCombo]) -> WorkspaceMoveShortcutState {
+        guard let action = Action.registeredCases.first(where: { $0.workspaceNumber == workspace }),
               let binding = action.binding(settings) else {
             return .workspaceShortcutMissing
         }
         guard binding.modifiers & DragSnapModifierMask.shift == 0 else {
             return .unavailableWithIncludeShift
         }
+        if let reason = workspaceMoveUnavailableReason(for: action, binding: binding,
+                                                       boundCombos: boundCombos) {
+            return .unavailable(reason)
+        }
         return .shortcut(ShortcutKit.display(
             keyCode: binding.keyCode,
             modifiers: UInt32(truncatingIfNeeded: binding.modifiers) | UInt32(shiftKey)))
+    }
+
+    private func workspaceMoveUnavailableReason(for action: Action,
+                                                binding: ShortcutBinding,
+                                                boundCombos: [ToolCombo]) -> String? {
+        let move = HotkeyCombo(
+            keyCode: binding.keyCode,
+            modifiers: UInt32(truncatingIfNeeded: binding.modifiers) | UInt32(shiftKey))
+        let explicit = Set(bindings(in: settings).map {
+            HotkeyCombo(keyCode: $0.keyCode,
+                        modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
+        })
+        guard !explicit.contains(move) else {
+            return "Shortcut already assigned in Tiles"
+        }
+        if let owner = boundCombos.conflictOwner(keyCode: move.keyCode,
+                                                 modifiers: move.modifiers,
+                                                 excluding: .tiles) {
+            return "Shortcut used by \(displayName(for: owner))"
+        }
+        if failedHotkeys.contains(where: {
+            $0.action == action && $0.generatedWorkspaceMove
+                && $0.keyCode == move.keyCode && $0.modifiers == move.modifiers
+        }) {
+            return "macOS rejected this shortcut"
+        }
+        return nil
     }
 
     /// Refresh the in-memory recommendation before the first explicit edit. No config write occurs
@@ -1208,13 +1261,12 @@ final class TilesTool: Tool {
     /// reverse. Answered from a single `boundCombos()` snapshot: that query
     /// reloads every tool's persisted section, so the pane must not repeat it
     /// per row while drawing.
-    func anyReverseShortcutAvailable() -> Bool {
-        let persisted = services?.boundCombos() ?? []
+    func anyReverseShortcutAvailable(boundCombos persisted: [ToolCombo]) -> Bool {
         let explicit = Set(bindings(in: settings).map {
             HotkeyCombo(keyCode: $0.keyCode,
                         modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
         })
-        return Action.allCases.contains { action in
+        return Action.registeredCases.contains { action in
             guard action.hasGeneratedReverse,
                   let binding = action.binding(settings),
                   binding.modifiers & DragSnapModifierMask.shift == 0 else { return false }
@@ -1228,13 +1280,12 @@ final class TilesTool: Tool {
         }
     }
 
-    func anyWorkspaceMoveShortcutAvailable() -> Bool {
-        let persisted = services?.boundCombos() ?? []
+    func anyWorkspaceMoveShortcutAvailable(boundCombos persisted: [ToolCombo]) -> Bool {
         let explicit = Set(bindings(in: settings).map {
             HotkeyCombo(keyCode: $0.keyCode,
                         modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
         })
-        return Action.allCases.contains { action in
+        return Action.registeredCases.contains { action in
             guard action.hasGeneratedWorkspaceMove,
                   let binding = action.binding(settings),
                   binding.modifiers & DragSnapModifierMask.shift == 0 else { return false }
@@ -1248,7 +1299,7 @@ final class TilesTool: Tool {
         }
     }
 
-    func nextWindowReverseShortcutAvailable() -> Bool {
+    func nextWindowReverseShortcutAvailable(boundCombos persisted: [ToolCombo]) -> Bool {
         let action = Action.nextWindow
         guard let binding = action.binding(settings),
               binding.modifiers & DragSnapModifierMask.shift == 0 else { return false }
@@ -1260,7 +1311,7 @@ final class TilesTool: Tool {
                         modifiers: UInt32(truncatingIfNeeded: $0.modifiers))
         })
         guard !explicit.contains(reverse), !isFailedHotkey(reverse) else { return false }
-        return (services?.boundCombos() ?? []).conflictOwner(
+        return persisted.conflictOwner(
             keyCode: reverse.keyCode, modifiers: reverse.modifiers,
             excluding: .tiles) == nil
     }
@@ -1272,7 +1323,7 @@ final class TilesTool: Tool {
     }
 
     func applyCapture(_ capture: ShortcutRecorder.Capture, for actionID: String) {
-        guard canEdit, let action = Action(rawValue: actionID) else { return }
+        guard canEdit, let action = Action(rawValue: actionID), action.isRegistered else { return }
         refreshRecommendedDefaultsIfNeeded(excluding: actionID)
         switch capture {
         case .clear:

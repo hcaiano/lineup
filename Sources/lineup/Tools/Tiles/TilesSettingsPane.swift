@@ -25,7 +25,8 @@ final class TilesSettingsModel: ObservableObject {
     @Published var alert: AlertItem?
 
     private weak var tool: TilesTool?
-    /// Snapshot once per recording, not once per key. The list includes disabled tools.
+    /// One consolidated snapshot for the current pane state. The list includes disabled tools and
+    /// is reused by the caption and every derived workspace-move row.
     private(set) var boundCombos: [ToolCombo] = []
     /// The pane supplies the shell's user-facing tool names for conflict alerts.
     var toolDisplayName: (ToolID) -> String = { $0.rawValue.capitalized }
@@ -35,11 +36,12 @@ final class TilesSettingsModel: ObservableObject {
 
     init(tool: TilesTool) {
         self.tool = tool
-        refresh()
+        refreshShortcutSnapshot()
     }
 
-    func refresh() {
+    func refresh(boundCombos snapshot: [ToolCombo]? = nil) {
         guard let tool else { return }
+        if let snapshot { boundCombos = snapshot }
         activeWorkspace = tool.activeWorkspace
         tileSpacingEnabled = tool.settings.tileSpacingEnabled
         canEdit = tool.canEdit
@@ -51,17 +53,24 @@ final class TilesSettingsModel: ObservableObject {
         isRestoringWindows = tool.isRestoringWindows
     }
 
+    /// Refresh the one expensive cross-tool snapshot at explicit state boundaries. Ordinary
+    /// runtime updates call `refresh()` only, so a coordinator event cannot decode every tool's
+    /// settings once per SwiftUI body pass.
+    func refreshShortcutSnapshot() {
+        refresh(boundCombos: tool?.boundCombos() ?? [])
+    }
+
     var shortcutCaption: String? {
         guard let tool else { return nil }
         var hints: [String] = []
-        if tool.anyWorkspaceMoveShortcutAvailable() {
+        if tool.anyWorkspaceMoveShortcutAvailable(boundCombos: boundCombos) {
             hints.append("Numbers switch workspaces; Shift-number moves the focused window.")
         } else if tool.hyperkeyIncludesShiftForSettings {
             hints.append("Turn off Hyperkey Include Shift to enable Shift-number window moves.")
         }
-        if tool.nextWindowReverseShortcutAvailable() {
+        if tool.nextWindowReverseShortcutAvailable(boundCombos: boundCombos) {
             hints.append("Shift-Tab reverses the stack.")
-        } else if tool.anyReverseShortcutAvailable() {
+        } else if tool.anyReverseShortcutAvailable(boundCombos: boundCombos) {
             hints.append("Hold Shift with an available cyclic shortcut for previous.")
         }
         return hints.isEmpty ? nil : hints.joined(separator: " ")
@@ -73,8 +82,7 @@ final class TilesSettingsModel: ObservableObject {
 
     func prepareForRecording(_ action: String? = nil) {
         tool?.refreshRecommendedDefaultsIfNeeded(excluding: action)
-        boundCombos = tool?.boundCombos() ?? []
-        refresh()
+        refreshShortcutSnapshot()
     }
 
     func selectWorkspace(_ workspace: Int) {
@@ -121,7 +129,8 @@ final class TilesSettingsModel: ObservableObject {
     }
 
     func workspaceMoveShortcutState(for workspace: Int) -> TilesTool.WorkspaceMoveShortcutState {
-        tool?.workspaceMoveShortcutState(for: workspace) ?? .workspaceShortcutMissing
+        tool?.workspaceMoveShortcutState(for: workspace, boundCombos: boundCombos)
+            ?? .workspaceShortcutMissing
     }
 
     func showAlert(title: String, message: String) {
@@ -251,7 +260,7 @@ private struct TilesSettingsPaneBody: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Tiles")
         .onAppear {
-            model.refresh()
+            model.refreshShortcutSnapshot()
             model.recorder = recorder
             model.cancelRecording = { [weak recorder] in recorder?.cancel() }
             model.toolDisplayName = { [weak settings] id in
@@ -338,6 +347,11 @@ private struct TilesSettingsPaneBody: View {
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                case .unavailable(let reason):
+                    Text("Unavailable: \(reason)")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             .frame(minWidth: 164)
@@ -363,6 +377,8 @@ private struct TilesSettingsPaneBody: View {
             return "Unavailable until Workspace \(workspace) has a shortcut"
         case .unavailableWithIncludeShift:
             return "Unavailable while Hyperkey includes Shift"
+        case .unavailable(let reason):
+            return "Unavailable: \(reason)"
         }
     }
 

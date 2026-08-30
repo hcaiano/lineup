@@ -19,9 +19,9 @@ define Lineup's template ownership, four-workspace model, or Accessibility limit
 
 The selected implementation slice is smaller than the full recommendation below. It includes
 directional focus, directional move with automatic stacking, closest-parent orientation toggle,
-and one fixed 8 pt spacing switch. Swap, divider nudging, direct numbered workspace shortcut rows,
-and custom gap values are deferred to keep Zones as the only geometry owner and keep Settings
-compact.
+direct workspace selection for 1 through 4, and one fixed 8 pt spacing switch. Swap, divider
+nudging, and custom gap values are deferred to keep Zones as the only geometry owner and keep
+Settings compact.
 
 ## Method and evidence rules
 
@@ -41,8 +41,8 @@ Each item below labels the type of evidence:
 ## What Lineup already has
 
 Tiles is already a separate, opt-in tool. It owns four virtual workspaces and a stack of windows
-per Zones leaf; the current shell exposes next-workspace, next-window-in-tile, and move-window-to-
-next-workspace actions. See [`TilesTool.swift`](../../Sources/lineup/Tools/Tiles/TilesTool.swift),
+per Zones leaf; the current shell exposes numbered workspace selection and next-window-in-tile.
+See [`TilesTool.swift`](../../Sources/lineup/Tools/Tiles/TilesTool.swift),
 [`TilesModel.swift`](../../Sources/TilesCore/TilesModel.swift), and the existing
 [implementation plan](../tiles-implementation-plan.md).
 
@@ -65,8 +65,8 @@ actions and full Hyper (`6912`) for movement; full-Shift mode uses full Hyper th
 | Move a window by direction | Hyprland defines `move({ direction })`, including group-aware movement. [Dispatcher docs](https://wiki.hypr.land/configuring/core/dispatchers/) | At least 3/5 files in the comparable sample bind directional window movement; the exact key names vary | **P0.** Add move-left/right/up/down. A full destination tile keeps the moved window in that tile's stack. |
 | Swap a window by direction | Hyprland defines `swap({ direction })`, plus target/next/previous variants. [Dispatcher docs](https://wiki.hypr.land/configuring/core/dispatchers/) | The exact `swapwindow` binding appeared in one inspected config; absence in the others is not evidence that users do not need it | **P0.** Add swap-left/right/up/down as an explicit, reversible operation. |
 | Direct workspace selection | The official default binds Super+1…0 to workspace selection. [Default config](https://raw.githubusercontent.com/hyprwm/Hyprland/main/example/hyprland.lua) | 5/5 configs bind direct numbered workspace selection | **P0.** Add direct selection for Lineup workspaces 1…4, with conflict detection. |
-| Move a window to a workspace | The official default binds Shift+Super+number to `movetoworkspace`; the dispatcher also supports `move({ workspace, follow? })`. [Default config](https://raw.githubusercontent.com/hyprwm/Hyprland/main/example/hyprland.lua) · [dispatchers](https://wiki.hypr.land/configuring/core/dispatchers/) | 5/5 configs expose a move-to-workspace family (direct or silent variants) | **P1.** Keep the existing next/previous actions and add a menu destination for workspace 1…4. Add direct bindings only when the recorder confirms no conflict. |
-| Cycle workspace | Hyprland's default uses mouse-wheel workspace cycling; the dispatcher documents `workspace`, `previous`, and relative selection. [Default config](https://raw.githubusercontent.com/hyprwm/Hyprland/main/example/hyprland.lua) · [dispatchers](https://wiki.hypr.land/configuring/core/dispatchers/) | 5/5 configs provide previous, cycle, scroll, or equivalent | **Already covered / P0 check.** Keep next/previous in Tiles and expose both directions in the same shortcut row. |
+| Move a window to a workspace | The official default binds Shift+Super+number to `movetoworkspace`; the dispatcher also supports `move({ workspace, follow? })`. [Default config](https://raw.githubusercontent.com/hyprwm/Hyprland/main/example/hyprland.lua) · [dispatchers](https://wiki.hypr.land/configuring/core/dispatchers/) | 5/5 configs expose a move-to-workspace family (direct or silent variants) | **P1.** Add a menu destination for workspace 1…4. In no-Shift Hyperkey mode, the physical Shift-number counterparts move the focused window. |
+| Cycle workspace | Hyprland's default uses mouse-wheel workspace cycling; the dispatcher documents `workspace`, `previous`, and relative selection. [Default config](https://raw.githubusercontent.com/hyprwm/Hyprland/main/example/hyprland.lua) · [dispatchers](https://wiki.hypr.land/configuring/core/dispatchers/) | 5/5 configs provide previous, cycle, scroll, or equivalent | **Covered by the final direct-number map and menu.** Relative workspace shortcut rows are not part of the compact Tiles surface. |
 | Toggle split orientation | Dwindle documents `togglesplit`; it changes the focused split when `preserve_split` is enabled. [Dwindle layout](https://wiki.hypr.land/0.56.0/Configuring/Layouts/Dwindle-Layout/) · [default config](https://raw.githubusercontent.com/hyprwm/Hyprland/main/example/hyprland.lua) | 4/5 inspected configs bind `togglesplit` or an equivalent orientation action | **P1.** Toggle the nearest parent split from vertical to horizontal and back, preserving boundaries and child order. |
 | Rotate a split tree | Dwindle documents `rotatesplit`, which rotates split orientation in 90-degree steps. [Dwindle layout](https://wiki.hypr.land/0.56.0/Configuring/Layouts/Dwindle-Layout/) | Not counted as a common public binding in the sample | **P2.** Consider only after a simple toggle is reliable; a four-way rotation is harder to explain in a fixed template editor. |
 | Change a divider / split ratio | Dwindle exposes `splitratio`; the default also enables a split-preserving behavior. [Dwindle layout](https://wiki.hypr.land/0.56.0/Configuring/Layouts/Dwindle-Layout/) | Public configs commonly bind resize actions; `resizeactive` appeared in at least 4/5 | **P1.** Add small grow/shrink divider nudges around the focused leaf. Keep the visual Zones divider editor as the canonical precise control. |
@@ -135,8 +135,8 @@ unimportant.
 
 5. **Direct workspace 1…4.** Keep four stable Lineup workspaces. Switching changes which model
    workspace is visible; it does not create, delete, reorder, or move native macOS Spaces. Add a
-   destination menu for moving a window to a selected workspace. Keep next and previous as
-   symmetric actions.
+   destination menu for moving a window to a selected workspace. Relative workspace shortcuts
+   remain schema-compatible but are not part of the active shortcut surface.
 
 ### P1: template editing from the keyboard
 
@@ -165,13 +165,21 @@ Keep the new Tiles tab concise, with three sections: `Navigation`, `Window movem
 divider nudge, and one spacing picker. Generate explicit Zone-N destinations from the active
 template rather than presenting an unbounded configuration list.
 
-The existing Hyper+arrow bindings belong to Zones, so Tiles must not claim them. On first
-activation, no-Shift Hyperkey mode maps focus left/down/up/right to 6400+H/J/K/semicolon,
-movement to 6912+H/J/K/semicolon, and the cyclic/split rows to 6400+Tab/grave/Space/Return.
-Full-Shift mode maps focus to 6912+H/J/K/semicolon, movement to 6912+U/I/O/P, and the
-cyclic/split rows to 6912+Tab/grave/Space/Return. Existing rows, including explicit nulls, remain
-untouched when Hyperkey changes. Every failed registration must be shown as a specific conflict;
-it must not silently replace another tool's binding.
+The existing Hyper plus arrow bindings belong to Zones, so Tiles must not claim them. The final
+recommended map is:
+
+- Hyper plus 1 through 4 selects workspace 1 through 4. With Include Shift off, physical Shift
+  plus each number moves the focused window to that workspace.
+- Hyper plus H, J, K, L focuses left, down, up, right. With Include Shift off, physical Shift plus
+  those letters moves the focused window left, down, up, right. With Include Shift on, Hyper plus
+  U, I, O, P moves it left, right, up, down.
+- Hyper plus Tab cycles the stack, and physical Shift plus Tab reverses it.
+- Hyper plus Return toggles split direction.
+- Hyper plus Space toggles tiled or freeform mode.
+
+Existing rows, including explicit nulls, remain untouched when Hyperkey changes. Every failed
+registration must be shown as a specific conflict. It must not silently replace another tool's
+binding.
 
 Use one shortcut for an action family and generate its reverse with Shift where the existing
 shortcut system supports that convention. Show confirmed feedback only after the runtime commits:

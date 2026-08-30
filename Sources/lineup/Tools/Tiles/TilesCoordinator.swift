@@ -3,6 +3,7 @@ import AppCore
 import ApplicationServices
 import Foundation
 import TilesCore
+import ZonesCore
 
 @MainActor
 final class TilesCoordinator: TilesCoordinatorProtocol {
@@ -236,6 +237,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     private func toggleFocusedTiled() {
         guard acceptingEvents else { return }
         let layouts = self.layouts
+        let screens = self.screens
         runtimeQueue.async { [weak self] in
             guard let self, self.acceptingEvents else { return }
             let snapshot = self.windowSystem.snapshot(.all)
@@ -254,10 +256,16 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                         "The focused tiled window is not available."))
                     return
                 }
+                guard let adoptionFrame = Self.safeAdoptionFrame(managed.adoptionFrame,
+                                                                  screens: screens) else {
+                    self.publishState(presentation: .failure(
+                        "Tiles could not find a connected display for this window."))
+                    return
+                }
                 let baseGeneration = self.session.transition?.mutationID.rawValue
                     ?? self.session.mutationGeneration
                 let effect = WindowEffect.setFrame(
-                    focused, managed.adoptionFrame,
+                    focused, adoptionFrame,
                     MutationID(rawValue: baseGeneration &+ 1))
                 self.process(.detach(focused), snapshot: snapshot, layouts: layouts,
                              includeDetached: true,
@@ -278,6 +286,25 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                          includeDetached: true,
                          presentationOverride: .confirmation("Window is tiled."))
         }
+    }
+
+    /// A display can disappear while a window remains managed. Before restoring its freeform
+    /// frame, keep the original size but clamp it to a connected display. If its old display is
+    /// gone, center it on the nearest live display so the toggle cannot strand it off-screen.
+    private nonisolated static func safeAdoptionFrame(_ frame: CGRect,
+                                                      screens: [LiveScreen]) -> CGRect? {
+        guard !screens.isEmpty,
+              frame.origin.x.isFinite, frame.origin.y.isFinite,
+              frame.width.isFinite, frame.height.isFinite,
+              frame.width > 0, frame.height > 0,
+              let index = ScreenPicker.bestScreenIndex(forWindow: frame,
+                                                       screens: screens.map(\.frame)),
+              screens.indices.contains(index) else { return nil }
+        let screen = screens[index]
+        let bounds = screen.visibleFrame.width > 0 && screen.visibleFrame.height > 0
+            ? screen.visibleFrame : screen.frame
+        let anchor = screen.frame.intersects(frame) ? frame : screen.frame
+        return FixedPlacement.center(size: frame.size, in: anchor, boundedBy: bounds)
     }
 
     func restoreWindows() {

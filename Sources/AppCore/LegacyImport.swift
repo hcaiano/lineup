@@ -100,12 +100,9 @@ public enum LegacyImport {
                 }
                 config.general.didImportLegacyZones = true
             case .fresh:
-                // No zones.json at all. Nothing to import; seed the incumbent default so a
-                // brand-new user still gets Zones running, and don't look again.
-                if config.section(for: .zones) == nil {
-                    try config.setSettings(LineupConfig(), for: .zones)
-                    config.setEnabled(true, for: .zones)
-                }
+                // No zones.json at all. Nothing to import; leave the section absent so Zones can
+                // use its current adaptive Compact preset. ToolRegistry seeds the enabled flag
+                // at startup, while ZonesTool keeps the preset in memory until its first write.
                 config.general.didImportLegacyZones = true
             case .deferred:
                 // The saved layout belongs to a display that isn't connected. Write NOTHING and
