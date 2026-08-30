@@ -11,7 +11,8 @@ struct AboutPane: View {
     private var version: String? {
         guard let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
               let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String else { return nil }
-        return "Version \(short) (\(build))"
+        let track = Product.buildChannel == .nightly ? " Nightly" : ""
+        return "Version \(short)\(track) (\(build))"
     }
 
     /// The same "Built <date>" line the About window shows, so neither one carries a fact the

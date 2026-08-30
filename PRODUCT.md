@@ -19,6 +19,15 @@ with something you can shape: recursive zone layouts per display, snapping by sh
 shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
 instructions, and the app then disappears into muscle memory.
 
+## Update Tracks
+
+- Stable is the default and receives tested public releases.
+- Nightly is a public opt-in in General settings. It receives newer builds that may be less
+  reliable.
+- Both tracks keep one app identity, config file, update feed and permission grants.
+- Changing from a newer Nightly build to Stable stops Nightly updates. It waits for a newer Stable
+  release; it does not install an older Stable build as a downgrade.
+
 ## Brand Personality
 
 Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in

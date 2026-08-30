@@ -30,6 +30,12 @@ Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 4. If you enable Hyperkey, allow Input Monitoring when macOS asks. The other tools do not request
    this permission.
 
+## Update tracks
+
+Stable is the default and receives tested public releases. Nightly is a public opt-in in General
+settings for newer builds that may be less reliable. Returning to Stable stops Nightly updates and
+waits for a newer Stable release; Lineup does not install an older Stable version as a downgrade.
+
 ## Build from source
 
 ```sh

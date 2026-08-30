@@ -103,8 +103,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     /// The shell calls this when a permission flips or a tool starts/stops.
-    func refresh() {
-        store.refresh()
+    func refresh(updateChannel: UpdateChannel? = nil) {
+        store.refresh(updateChannel: updateChannel)
     }
 
     // MARK: - Recording restore failures

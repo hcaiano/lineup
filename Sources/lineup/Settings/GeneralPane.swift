@@ -54,6 +54,19 @@ struct GeneralPane: View {
 
                 SettingsSectionView("Updates") {
                     SettingsRow(
+                        title: "Update track",
+                        detail: updateTrackDescription
+                    ) {
+                        Picker("Update track", selection: $store.updateChannel) {
+                            ForEach(UpdateChannel.allCases) { channel in
+                                Text(channel.displayName).tag(channel)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityLabel("Update track")
+                    }
+                    SettingsRow(
                         title: "Software updates",
                         detail: "Lineup checks in the background and installs an update once you agree."
                     ) {
@@ -66,6 +79,17 @@ struct GeneralPane: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("General")
+    }
+
+    private var updateTrackDescription: String {
+        guard store.updateChannel == .stable else {
+            return store.updateChannel.settingsDescription
+        }
+        // Explain the consequence before the user opts into Nightly. Name the alternative here:
+        // the segmented control alone is not enough context for VoiceOver or a quick scan.
+        return "Tested releases. Nightly gives you the newest public builds, which may be less "
+            + "reliable. Returning from Nightly to Stable waits for a newer Stable release; "
+            + "Lineup does not downgrade automatically."
     }
 
     // MARK: - Rows
