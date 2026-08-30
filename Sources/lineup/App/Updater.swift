@@ -67,12 +67,13 @@ enum AppUpdater {
         }
     }
 
-    /// Resolve the loaded config without taking ownership of config.json. A rejected load, or a
-    /// decoded schema newer than this build, always fails closed to Stable.
+    /// Resolve the loaded config without taking ownership of config.json. A rejected load cannot
+    /// provide a preference, so it follows this bundle's marker; a Nightly app must not become
+    /// trapped on the Stable feed just because its config is temporarily unreadable.
     static func initialChannel(config: LineupAppConfig,
                                state: LineupAppConfigStore.State) -> UpdateChannel {
         guard state == .ok, config.schemaVersion <= LineupAppConfig.currentSchema else {
-            return .stable
+            return Product.buildChannel
         }
         return config.general.effectiveUpdateChannel(buildChannel: Product.buildChannel)
     }

@@ -82,11 +82,14 @@ struct GeneralPane: View {
     }
 
     private var updateTrackDescription: String {
-        var description = store.updateChannel.settingsDescription
-        if Product.buildChannel == .nightly, store.updateChannel == .stable {
-            description += " This Nightly build returns to Stable when a newer Stable release is available."
+        guard store.updateChannel == .stable else {
+            return store.updateChannel.settingsDescription
         }
-        return description
+        // Explain the consequence before the user opts into Nightly. Name the alternative here:
+        // the segmented control alone is not enough context for VoiceOver or a quick scan.
+        return "Tested releases. Nightly gives you the newest public builds, which may be less "
+            + "reliable. Returning from Nightly to Stable waits for a newer Stable release; "
+            + "Lineup does not downgrade automatically."
     }
 
     // MARK: - Rows

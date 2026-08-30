@@ -70,6 +70,23 @@ private func runUpdateChannelTests() throws {
     let decoded = try JSONDecoder().decode(GeneralConfig.self, from: encoded)
     check(decoded.updateChannel == .nightly, "the explicit update-track choice round-trips")
 
+    // A newer build may add a channel before this build knows its name. Keep the envelope
+    // readable, use Stable until the value is understood, and preserve the raw value during an
+    // unrelated rewrite so a future build can recover it.
+    let futureChannel = try JSONDecoder().decode(
+        LineupAppConfig.self,
+        from: Data(#"{"schemaVersion":1,"general":{"updateChannel":"canary"},"tools":{}}"#.utf8))
+    check(futureChannel.general.updateChannel == .stable,
+          "an unknown update channel falls back to Stable without rejecting config.json")
+    let futureChannelJSON = try JSONDecoder().decode(JSONValue.self, from: futureChannel.encoded())
+    check(futureChannelJSON["general"]?["updateChannel"] == .string("canary"),
+          "an unknown update channel survives an unrelated config rewrite")
+    var selectedChannel = futureChannel
+    selectedChannel.general.updateChannel = .nightly
+    let selectedChannelJSON = try JSONDecoder().decode(JSONValue.self, from: selectedChannel.encoded())
+    check(selectedChannelJSON["general"]?["updateChannel"] == .string("nightly"),
+          "choosing a known update channel replaces the preserved unknown value")
+
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let firstDate = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
@@ -761,7 +778,12 @@ private func runReleaseToolingTests() throws {
             && buildApp.contains("[ \"${SOURCE_DIRTY}\" -eq 0 ]")
             && buildApp.contains("[ \"${SOURCE_DIRTY}\" -eq 1 ]")
             && buildApp.contains("LINEUP_ALLOW_DIRTY=1")
-            && buildApp.contains("local Nightly bundle tests"),
+            && buildApp.contains("local Nightly bundle tests")
+            && buildApp.contains("NIGHTLY_SNAPSHOT")
+            && buildApp.contains("git worktree add --detach")
+            && buildApp.contains("mktemp -d")
+            && buildApp.contains("--scratch-path .build")
+            && buildApp.contains("Stable LINEUP_BUILD_VERSION may not include"),
           "Nightly bundles embed a source commit only from a clean checkout")
     if let frameworkCopy = buildApp.range(of: "ditto \"${SPARKLE_FW}\""),
        let finalValidation = buildApp.range(of: "validate_source_snapshot \"bundle assembly\""),
@@ -795,6 +817,8 @@ private func runReleaseToolingTests() throws {
             && nightly.contains("build-app.sh dist/nightly")
             && building.contains("build-app.sh dist/nightly")
             && building.contains("rechecks the same HEAD")
+            && building.contains("mv dist/nightly/Lineup-2.0.2.dmg")
+            && building.contains("Lineup-2.0.2-nightly.20260830.1.dmg")
             && !building.contains("dist-nightly"),
           "the Nightly helper fails on stale metadata, uses bounded components, and enforces monotonic plans")
     check(!nightly.contains("gh release create") && !nightly.contains("gh release upload")
@@ -838,6 +862,8 @@ private func runShellSourceScanTests() throws {
     check(updater.contains("allowedChannels(for updater: SPUUpdater)")
             && updater.contains("return channel.sparkleAllowedChannels"),
           "the single updater supplies only the selected additional Sparkle channel")
+    check(updater.contains("guard state == .ok") && updater.contains("return Product.buildChannel"),
+          "a rejected config follows the running bundle channel instead of forcing Stable")
     check(updater.contains("state == .ok")
             && updater.contains("config.schemaVersion <= LineupAppConfig.currentSchema")
             && updater.contains("static func start(channel: UpdateChannel)")
@@ -1039,6 +1065,10 @@ private func runSettingsWindowTests() throws {
             && general.contains("UpdateChannel.allCases")
             && general.components(separatedBy: "Picker(").count - 1 == 1,
           "General has one compact Stable/Nightly update-track picker")
+    check(general.contains("guard store.updateChannel == .stable")
+            && general.contains("Nightly gives you the newest public builds")
+            && general.contains("Returning from Nightly to Stable waits"),
+          "General explains the Nightly return-to-Stable rule before opt-in")
     check(general.contains("AppUpdater.shared.checkForUpdates"),
           "General's Check for Updates goes through the one Sparkle controller")
     check(general.contains("permissions.openSettings(for: permission)"),

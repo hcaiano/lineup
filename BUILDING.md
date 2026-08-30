@@ -52,12 +52,13 @@ UNIVERSAL=0 ./Scripts/build-app.sh dist/nightly
 `./Scripts/nightly-release.sh` to resolve the next patch tag, date, sequence, and bundle version.
 The Nightly marker is written only to the assembled bundle; the checked-in plist remains Stable.
 Nightly assembly also embeds `LineupSourceCommit` from `git rev-parse HEAD` and requires a clean
-checkout, so the marker proves the source used for the artifact. `LINEUP_ALLOW_DIRTY=1` is a
-test-only escape for local bundle inspection: it writes a `dirty-<sha>` source marker and
-`LineupSourceDirty=true`, which the appcast gate rejects. It must never be used for a release.
-Keep a release checkout dedicated while it builds. `build-app.sh` rechecks the same HEAD and
-checkout state after compilation and immediately before writing the source marker; any concurrent
-change aborts the Nightly assembly.
+checkout, so the marker proves the source used for the artifact. The script builds from a detached
+Git worktree at that exact commit, with a new SwiftPM `.build` directory, so edits or stale output
+in the caller's checkout cannot enter the artifact. `LINEUP_ALLOW_DIRTY=1` is a test-only escape
+for local bundle inspection: it writes a `dirty-<sha>` source marker and `LineupSourceDirty=true`,
+which the appcast gate rejects. It must never be used for a release. The source checkout is
+rechecked after compilation and before the marker is written. `build-app.sh` rechecks the same HEAD
+and checkout state; any concurrent change aborts the Nightly assembly.
 
 The helper is read-only. It reads the public repository with `gh api`, never creates or uploads a
 release, and never uses the moving `latest` alias. After the exact public prerelease exists and its
@@ -78,11 +79,18 @@ source commit.
 
 ```sh
 ./Scripts/nightly-release.sh --verify v2.0.2-nightly.20260830.1
+./Scripts/make-dmg.sh dist/nightly
+mv dist/nightly/Lineup-2.0.2.dmg \
+   dist/nightly/Lineup-2.0.2-nightly.20260830.1.dmg
 ./Scripts/sparkle-appcast.sh --nightly \
-  dist/nightly/Lineup-2.0.2.dmg \
+  dist/nightly/Lineup-2.0.2-nightly.20260830.1.dmg \
   https://github.com/hcaiano/lineup/releases/download/v2.0.2-nightly.20260830.1/Lineup-2.0.2-nightly.20260830.1.dmg \
   2.0.2-nightly.20260830.1 19.02.42a001
 ```
+
+`make-dmg.sh` names the local image from the numeric bundle version. Rename it to
+`Lineup-<nightly-version>.dmg` before attaching it to the public prerelease: this is the exact
+asset name that `nightly-release.sh --verify` requires.
 
 `CFBundleVersion` is deliberately based on the current Stable build. With Stable build `19`, the
 pinned Sparkle comparator orders `19 < 19.00.01a001 < 19.00.01a002 < 19.01.00a001 < 20`.

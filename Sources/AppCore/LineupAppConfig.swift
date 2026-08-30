@@ -109,7 +109,17 @@ public struct GeneralConfig: Codable, Equatable {
     /// Explicit update-channel choice. `nil` means follow the build marker: Stable builds use
     /// Stable and Nightly builds use Nightly. Keeping the value optional is what lets a user who
     /// chose Stable on a Nightly install stay on Stable after a later Nightly update.
-    public var updateChannel: UpdateChannel?
+    public var updateChannel: UpdateChannel? {
+        didSet {
+            // A user choice supersedes an unknown value read from a newer build. Keep the
+            // unknown raw value only while it remains untouched, so an unrelated rewrite does
+            // not erase a setting this build does not understand.
+            preservedUnknownUpdateChannel = nil
+        }
+    }
+    /// Raw channel values from a newer build survive an unrelated rewrite. The effective channel
+    /// remains Stable until a build that understands the value can use it.
+    private var preservedUnknownUpdateChannel: String?
     /// Import bookkeeping. The two flags are INDEPENDENT so a failed Cycler import never
     /// blocks the Zones import, or vice versa.
     public var didImportLegacyZones: Bool
@@ -127,6 +137,7 @@ public struct GeneralConfig: Codable, Equatable {
                 didShowWhatsNew2: Bool = false,
                 extra: [String: JSONValue] = [:]) {
         self.showMenuBarIcon = showMenuBarIcon
+        self.preservedUnknownUpdateChannel = nil
         self.updateChannel = updateChannel
         self.didImportLegacyZones = didImportLegacyZones
         self.didImportLegacyCycler = didImportLegacyCycler
@@ -147,11 +158,28 @@ public struct GeneralConfig: Codable, Equatable {
         "showMenuBarIcon", "updateChannel", "didImportLegacyZones", "didImportLegacyCycler", "didShowWhatsNew2",
     ]
 
-    // Every key is optional so a file written by an older 2.x build keeps loading.
+    // Every key is optional so a file written by an older 2.x build keeps loading. A newer
+    // channel value is kept as raw data and falls back to Stable for this build.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? true
-        updateChannel = try c.decodeIfPresent(UpdateChannel.self, forKey: .updateChannel)
+        let decodedChannel: UpdateChannel?
+        let preservedChannel: String?
+        if c.contains(.updateChannel), try !c.decodeNil(forKey: .updateChannel) {
+            let raw = try c.decode(String.self, forKey: .updateChannel)
+            if let known = UpdateChannel(rawValue: raw) {
+                decodedChannel = known
+                preservedChannel = nil
+            } else {
+                decodedChannel = .stable
+                preservedChannel = raw
+            }
+        } else {
+            decodedChannel = nil
+            preservedChannel = nil
+        }
+        updateChannel = decodedChannel
+        preservedUnknownUpdateChannel = preservedChannel
         didImportLegacyZones = try c.decodeIfPresent(Bool.self, forKey: .didImportLegacyZones) ?? false
         didImportLegacyCycler = try c.decodeIfPresent(Bool.self, forKey: .didImportLegacyCycler) ?? false
         didShowWhatsNew2 = try c.decodeIfPresent(Bool.self, forKey: .didShowWhatsNew2) ?? false
@@ -162,7 +190,11 @@ public struct GeneralConfig: Codable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyCodingKey.self)
         try c.encode(showMenuBarIcon, forKey: AnyCodingKey("showMenuBarIcon"))
-        try c.encodeIfPresent(updateChannel, forKey: AnyCodingKey("updateChannel"))
+        if let preservedUnknownUpdateChannel {
+            try c.encode(preservedUnknownUpdateChannel, forKey: AnyCodingKey("updateChannel"))
+        } else {
+            try c.encodeIfPresent(updateChannel, forKey: AnyCodingKey("updateChannel"))
+        }
         try c.encode(didImportLegacyZones, forKey: AnyCodingKey("didImportLegacyZones"))
         try c.encode(didImportLegacyCycler, forKey: AnyCodingKey("didImportLegacyCycler"))
         try c.encode(didShowWhatsNew2, forKey: AnyCodingKey("didShowWhatsNew2"))
