@@ -130,9 +130,20 @@ if [ "${MODE}" = "nightly" ]; then
     echo "error: embedded Nightly LineupSourceCommit must be exactly 40 lowercase hexadecimal characters." >&2
     exit 1
   fi
-elif [ "${DMG_SHORT_VERSION}" != "${VERSION}" ]; then
-  echo "error: embedded CFBundleShortVersionString ${DMG_SHORT_VERSION} does not match Stable appcast version ${VERSION}." >&2
-  exit 1
+else
+  if [ "${DMG_SHORT_VERSION}" != "${VERSION}" ]; then
+    echo "error: embedded CFBundleShortVersionString ${DMG_SHORT_VERSION} does not match Stable appcast version ${VERSION}." >&2
+    exit 1
+  fi
+  if DMG_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :LineupBuildChannel' "${BUNDLE_PLIST}" 2>/dev/null)" \
+      && [ "${DMG_CHANNEL}" = "nightly" ]; then
+    echo "error: embedded LineupBuildChannel nightly cannot be published on the Stable appcast." >&2
+    exit 1
+  fi
+  if [[ "${DMG_BUILD}" =~ (d|a|b|fc)[0-9]{1,3}$ ]]; then
+    echo "error: embedded build ${DMG_BUILD} has an Apple prerelease suffix and cannot be published on the Stable appcast." >&2
+    exit 1
+  fi
 fi
 
 if [ "${MODE}" = "nightly" ]; then

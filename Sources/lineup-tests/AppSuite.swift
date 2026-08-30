@@ -740,6 +740,10 @@ private func runReleaseToolingTests() throws {
             && appcast.contains("DMG_SOURCE_DIRTY")
             && appcast.contains("dirty checkout"),
           "the Nightly appcast helper derives its build, enforces ordering, and permits exact reruns")
+    check(appcast.contains("LineupBuildChannel nightly cannot be published on the Stable appcast")
+            && appcast.contains("Apple prerelease suffix")
+            && appcast.contains("cannot be published on the Stable appcast"),
+          "the Stable appcast rejects Nightly channel markers and prerelease build suffixes")
     check(buildApp.contains("LineupSourceCommit")
             && buildApp.contains("SOURCE_DIRTY")
             && buildApp.contains("dirty-${SOURCE_SHA}")
