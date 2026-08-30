@@ -1,9 +1,10 @@
 # Lineup
 
-Lineup is a native macOS 13+ menu-bar suite. It combines three tools that users can enable
+Lineup is a native macOS 13+ menu-bar suite. It combines four tools that users can enable
 independently:
 
 - **Zones** arranges windows in per-screen layouts.
+- **Tiles** automatically places windows into Zones, with workspaces and stacks.
 - **Cycler** moves through apps and windows with global shortcuts.
 - **Hyperkey** maps one physical key to Control + Option + Shift + Command.
 
@@ -20,12 +21,14 @@ These contracts are more important than local convenience:
 1. `~/.config/lineup/config.json` is live user data. A failed load must block writes. An explicit
    reset must preserve the rejected bytes before replacement, and normal writes must stay atomic.
    Use temporary paths in tests.
-2. `~/.config/lineup/zones.json` and `~/.config/cycler/bindings.json` are read-only import sources.
+2. `~/.config/lineup/tiles-recovery.json` is live recovery state. Keep mode `0600`, write it
+   atomically, and use temporary paths in tests.
+3. `~/.config/lineup/zones.json` and `~/.config/cycler/bindings.json` are read-only import sources.
    Lineup never changes, moves, or deletes them.
-3. The bundle ID, hotkey signature, update feed, and signing identity are compatibility anchors.
+4. The bundle ID, hotkey signature, update feed, and signing identity are compatibility anchors.
    Keep `Sources/AppCore/Product.swift`, `Resources/Info.plist`, and the scripts consistent. The
    identity tests must pass.
-4. `web/appcast.xml`, `web/downloads/`, tags, notarization, signing keys, and deployments are
+5. `web/appcast.xml`, `web/downloads/`, tags, notarization, signing keys, and deployments are
    release state. Change or publish them only when the maintainer requests release work.
 
 Do not launch Lineup as routine automated verification. A launch uses the developer's real config,
@@ -54,7 +57,8 @@ State which paths do not apply when their omission is not obvious.
 
 ## Where code lives
 
-- `Sources/ZonesCore`, `Sources/CyclerCore`, and `Sources/HyperkeyCore` contain testable tool logic.
+- `Sources/ZonesCore`, `Sources/TilesCore`, `Sources/CyclerCore`, and `Sources/HyperkeyCore` contain
+  testable tool logic.
 - `Sources/AppCore` owns product identity, shared configuration, migration, and tool metadata.
 - `Sources/lineup/App` contains the app shell and shared macOS services.
 - `Sources/lineup/Settings` contains the SwiftUI settings interface.

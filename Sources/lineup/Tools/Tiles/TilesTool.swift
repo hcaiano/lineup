@@ -250,6 +250,9 @@ final class TilesTool: Tool {
     /// Stop is synchronous and idempotent. Every resource acquired by start is returned here,
     /// including the coordinator boundary, hotkeys, retry timer, observer and HUD.
     func stop() {
+        // Clear the in-flight recovery state even when the tool is already stopped. This keeps
+        // the Settings pane from retaining a stale progress state after every stop path.
+        isRestoringWindows = false
         guard isRunning else { return }
         services?.hotkeys.unregisterAll()
         hotkeyTokens.removeAll()

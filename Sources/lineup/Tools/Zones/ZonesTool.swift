@@ -431,24 +431,36 @@ final class ZonesTool: Tool {
         services?.refreshMenu()
     }
 
+    private func performCycle(_ side: Side, now: Double) {
+        cycleState = WindowMover.cycleFocusedWindow(
+            side, config: config, now: now, prev: cycleState,
+            onPlacement: { [weak self] placement in
+                self?.placementCenter.publish(WindowPlacementEvent(
+                    window: placement.window,
+                    target: .freeform(frame: placement.frame)))
+            })
+    }
+
     private func perform(_ action: String) {
         let now = Date().timeIntervalSinceReferenceDate
         switch action {
         case "left":
-            cycleState = WindowMover.cycleFocusedWindow(.left, config: config, now: now, prev: cycleState)
+            performCycle(.left, now: now)
         case "right":
-            cycleState = WindowMover.cycleFocusedWindow(.right, config: config, now: now, prev: cycleState)
+            performCycle(.right, now: now)
         case "center":
-            cycleState = WindowMover.cycleFocusedWindow(.center, config: config, now: now, prev: cycleState)
+            performCycle(.center, now: now)
         case "restore":
             cycleState = nil
             WindowMover.restoreFocusedWindow()
         default:
             cycleState = nil // any other action breaks an in-progress cycle
             if let zoneIndex = ZoneAction.zeroBasedIndex(from: action) {
+                let screens = NSScreen.screens
                 if let placement = WindowMover.snapFocusedWindow(toZoneIndex: zoneIndex, config: config),
-                   let screen = NSScreen.screens.first(where: { $0.frame.intersects(placement.frame) }) {
-                    let key = ScreenIdentity.info(for: screen).key
+                   let screenIndex = ScreenPicker.bestScreenIndex(
+                       forWindow: placement.frame, screens: screens.map(\.frame)) {
+                    let key = ScreenIdentity.info(for: screens[screenIndex]).key
                     placementCenter.publish(WindowPlacementEvent(
                         window: placement.window,
                         target: .zone(screenKey: key, index: zoneIndex, frame: placement.frame)))

@@ -88,6 +88,20 @@ func runTilesRuntimeTests() throws {
 
     check(axSource.contains("DispatchQueue(label: \"com.caiano.lineup.tiles.ax\""),
           "tiles runtime: AX work has a dedicated serial queue")
+    if let implementation = axSource.range(of: "final class AXWindowSystem"),
+       let start = axSource.range(of: "func start(_ receive:",
+                                  range: implementation.upperBound..<axSource.endIndex),
+       let snapshot = axSource.range(of: "func snapshot(_ scope:",
+                                     range: start.upperBound..<axSource.endIndex) {
+        let body = axSource[start.lowerBound..<snapshot.lowerBound]
+        check(axSource.contains("func updateScreens(_ screens: [LiveScreen]) {\n        queue.async") &&
+              body.contains("let generation = currentCancellationGeneration()") &&
+              body.contains("queue.async { [weak self] in") &&
+              body.contains("cancellationGeneration: generation") && !body.contains("queue.sync"),
+              "tiles runtime: startup discovery and screen updates do not block MainActor")
+    } else {
+        check(false, "tiles runtime: startup discovery and screen updates do not block MainActor")
+    }
     check(axSource.contains("CFEqual(lhs.element, rhs.element)"),
           "tiles runtime: AX identity uses ephemeral CFEqual matching")
     check(axSource.contains("AXUIElementSetMessagingTimeout(element, 0.25)"),
@@ -98,11 +112,15 @@ func runTilesRuntimeTests() throws {
           "tiles runtime: retained minimized windows remain valid bulk mutation targets")
     check(!axSource.contains("CGS") && !axSource.contains("SkyLight"),
           "tiles runtime: no private Space API is present")
-    check(axSource.contains("candidateToEntry") &&
-          !axSource.contains("if matches.count == 1"),
-          "tiles runtime: same-frame windows use collective one-to-one correlation")
+    check(axSource.contains("var candidateOwners") &&
+          axSource.contains("edges[entry].count == 1") &&
+          axSource.contains("candidateOwners[candidate].count == 1") &&
+          !axSource.contains("entry.token.rawValue.uuidString"),
+          "tiles runtime: ambiguous AX/CG matches stay unreachable without identity tie-breaks")
     check(axSource.contains("candidateEntries[index].entry"),
           "tiles runtime: recovery keeps the matcher candidate-to-entry mapping")
+    check(axSource.contains("pendingGoneTokens[entry.token] = entry.pid"),
+          "tiles runtime: dead-process pruning exposes gone tokens to reconciliation")
     check(axSource.contains("case kAXFocusedWindowChangedNotification") &&
           axSource.contains("externalActivation(focused)"),
           "tiles runtime: focused-window changes carry the focused token")
@@ -111,7 +129,9 @@ func runTilesRuntimeTests() throws {
     check(axSource.contains("eligibilityResolved") &&
           axSource.contains("initiallyMinimized") &&
           axSource.contains("let hasUsableFrame") &&
-          axSource.contains("hasUsableFrame && minimized != nil"),
+          axSource.contains("hasUsableFrame && minimized != nil") &&
+          axSource.contains("let fullScreen = bool(window, \"AXFullScreen\")") &&
+          axSource.contains("fullScreen == false"),
           "tiles runtime: incomplete initial eligibility can settle without losing minimized state")
     check(reducerSource.contains("!entry.isMinimized") &&
           reducerSource.contains("isBestEffort"),
@@ -122,6 +142,21 @@ func runTilesRuntimeTests() throws {
           "tiles runtime: coordinator applies the pure effect plan")
     check(coordinatorSource.contains("TilesReducer.commit"),
           "tiles runtime: coordinator commits only through TilesCore")
+    check(coordinatorSource.contains(
+              "committed.mutationGeneration != plan.mutationID.rawValue") &&
+          !coordinatorSource.contains("committed == priorSession"),
+          "tiles runtime: essential failures are detected by the committed mutation generation")
+    check(coordinatorSource.contains("case .externalActivation(let token)") &&
+          coordinatorSource.contains("session.windows[token]?.workspace"),
+          "tiles runtime: external activation retries from committed window ownership")
+    check(coordinatorSource.contains("noOpPresentation(for: event, snapshot: snapshot)") &&
+          coordinatorSource.contains("Only an unmanaged focus is actionable"),
+          "tiles runtime: normal directional no-ops stay silent while unmanaged focus is reported")
+    check(coordinatorSource.contains("snapshotScope: SnapshotScope") &&
+          coordinatorSource.contains("snapshot(snapshotScope)") &&
+          coordinatorSource.contains("snapshotScope: .pid(pid)") &&
+          axSource.contains("case windowChanged(WindowToken, pid_t)"),
+          "tiles runtime: coalesced window and application events use pid-scoped snapshots")
     check(coordinatorSource.contains("deminimizesWindow") &&
           coordinatorSource.contains("priorStageIntent"),
           "tiles runtime: staging intent survives until verified deminimize")
@@ -133,6 +168,18 @@ func runTilesRuntimeTests() throws {
     check(coordinatorSource.contains("synchronizeJournalWithSession()") &&
           coordinatorSource.contains("windowSystem.apply(compensation)"),
           "tiles runtime: failed effects rewrite the journal from the prior session")
+    check(coordinatorSource.contains("let compensationResults = windowSystem.apply(compensation)") &&
+          coordinatorSource.contains("synchronizeJournalWithSession(preserving: unresolvedTokens)") &&
+          coordinatorSource.contains("session = committed"),
+          "tiles runtime: unresolved compensation keeps recovery intent and removes gone windows")
+    check(coordinatorSource.contains("synchronizeJournalWithSession(\n        preserving preservedTokens:") &&
+          coordinatorSource.contains("-> Bool") &&
+          coordinatorSource.contains("try persistJournal(updated)\n            journal = updated") &&
+          coordinatorSource.contains("completed the action but could not save recovery state"),
+          "tiles runtime: post-commit journal failures are surfaced without undoing committed AX work")
+    check(coordinatorSource.contains("guard let self, self.acceptingEvents else { return }") &&
+          coordinatorSource.contains("guard self.acceptingEvents else { return }"),
+          "tiles runtime: a stopped coordinator cannot complete late startup recovery")
     check(coordinatorSource.contains("snapshot.windows[$0]?.isAvailableForPlacement") &&
           coordinatorSource.contains("let entry = snapshot.windows[token], entry.isVisible"),
           "tiles runtime: previews and placement changes require visible stack members")
@@ -160,6 +207,10 @@ func runTilesRuntimeTests() throws {
     check(coordinatorSource.contains("enqueueRelativeWorkspaceMove(forward:") &&
            coordinatorSource.contains("let source = self.session.activeWorkspace"),
           "tiles runtime: relative window moves resolve from serialized workspace state")
+    check(coordinatorSource.contains("var existingOnly = snapshot") &&
+          coordinatorSource.contains("existingOnly.windows = snapshot.windows.filter") &&
+          coordinatorSource.contains("process(.reconcile, snapshot: existingOnly"),
+          "tiles runtime: unmanaged application activation reconciles without adoption")
     check(coordinatorSource.contains("toggleParentSplit(") &&
           coordinatorSource.contains("screenKey: screenKey") &&
           coordinatorSource.contains("leafIndex: leafIndex") &&

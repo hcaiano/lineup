@@ -10,7 +10,7 @@ let package = Package(
     ],
     targets: [
         // Pure, testable layout + coordinate math for the Zones tool (the zones.json schema-3
-        // model). Was `LineupCore` in 1.x; renamed in 2.0 because Lineup is now three tools.
+        // model). Was `LineupCore` in 1.x; renamed in 2.0 because Lineup is now four tools.
         // No AppKit-only state here so it runs cleanly under `swift run lineup-tests`.
         .target(name: "ZonesCore"),
         // Pure Hyper-key persisted settings (TriggerKey + HyperKeySettings). Split out of
@@ -26,7 +26,7 @@ let package = Package(
         // Product identity, tool identity, and the unified ~/.config/lineup/config.json
         // envelope + legacy import. Needs all three tool models to do the import.
         .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore"]),
-        // Thin executable: AppKit agent shell + the three tools. AX window writes,
+        // Thin executable: AppKit agent shell + the four tools. AX window writes,
         // Carbon hotkeys, CGEventTap.
         .executableTarget(
             name: "lineup",

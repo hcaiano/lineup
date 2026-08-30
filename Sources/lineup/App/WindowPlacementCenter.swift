@@ -31,8 +31,6 @@ final class WindowPlacementObservation {
 final class WindowPlacementCenter {
     private var observers: [UUID: (WindowPlacementEvent) -> Void] = [:]
 
-    var normalizesPlacements: Bool { !observers.isEmpty }
-
     func observe(_ handler: @escaping (WindowPlacementEvent) -> Void) -> WindowPlacementObservation {
         let id = UUID()
         observers[id] = handler

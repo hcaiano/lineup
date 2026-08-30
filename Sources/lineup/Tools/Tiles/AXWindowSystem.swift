@@ -15,7 +15,7 @@ enum WindowSystemEvent: Sendable {
     case applicationActivated(pid_t)
     case externalActivation(WindowToken)
     case windowCreated(pid_t)
-    case windowChanged(WindowToken)
+    case windowChanged(WindowToken, pid_t)
     case windowDestroyed(WindowToken)
     case topologyChanged
 }
@@ -153,7 +153,7 @@ final class AXWindowSystem: TilesWindowSystem {
     private var cancellationGeneration: UInt64 = 0
 
     func updateScreens(_ screens: [LiveScreen]) {
-        queue.sync { self.screens = screens }
+        queue.async { self.screens = screens }
     }
 
     func start(_ receive: @escaping @Sendable (WindowSystemEvent) -> Void) throws {
@@ -197,9 +197,12 @@ final class AXWindowSystem: TilesWindowSystem {
         ) { [weak self] _ in self?.emit(.topologyChanged) })
 
         let applications = Self.regularApplications(workspace.runningApplications, excluding: ownPID)
-        return queue.sync {
-            for application in applications { self.installObserver(for: application) }
-            self.discover(applications: applications)
+        let generation = currentCancellationGeneration()
+        // Queue discovery before returning to MainActor. The coordinator's first recovery call
+        // enters this same serial queue, so it waits for discovery without freezing Settings.
+        queue.async { [weak self] in
+            guard let self, self.acceptingEvents else { return }
+            self.discover(applications: applications, cancellationGeneration: generation)
         }
     }
 
@@ -435,7 +438,7 @@ final class AXWindowSystem: TilesWindowSystem {
                     self.emit(.applicationChanged(pid))
                 }
             default:
-                if let token { self.emit(.windowChanged(token)) }
+                if let token { self.emit(.windowChanged(token, pid)) }
                 else { self.emit(.applicationChanged(pid)) }
             }
         }
@@ -581,8 +584,11 @@ final class AXWindowSystem: TilesWindowSystem {
                 insertEntry(entry)
             }
         }
-        let dead = entries.values.filter { !validPIDs.contains($0.pid) }.map(\.token)
-        for token in dead { removeEntry(token) }
+        let dead = entries.values.filter { !validPIDs.contains($0.pid) }
+        for entry in dead {
+            pendingGoneTokens[entry.token] = entry.pid
+            removeEntry(entry.token)
+        }
     }
 
     private func insertEntry(_ entry: Entry) {
@@ -626,15 +632,17 @@ final class AXWindowSystem: TilesWindowSystem {
         let sizeSettable = settableObservation(window, kAXSizeAttribute)
         let minimizedSettable = settableObservation(window, kAXMinimizedAttribute)
         let hasUsableFrame = frame.map { $0.width > 0 && $0.height > 0 } == true
+        let fullScreen = bool(window, "AXFullScreen")
         let complete = role != nil && subrole != nil && hasUsableFrame && minimized != nil &&
-            positionSettable != nil && sizeSettable != nil && minimizedSettable != nil
+            fullScreen != nil && positionSettable != nil && sizeSettable != nil &&
+            minimizedSettable != nil
         let eligible = role == kAXWindowRole as String &&
             subrole == kAXStandardWindowSubrole as String &&
             frame.map { candidateFrame in
                 hasUsableFrame &&
                     screens.contains(where: { screen in screen.frame.intersects(candidateFrame) })
             } == true &&
-            minimized == false && bool(window, "AXFullScreen") != true &&
+            minimized == false && fullScreen == false &&
             positionSettable == true && sizeSettable == true && minimizedSettable == true
         return EligibilityObservation(eligible: eligible, complete: complete,
                                        initiallyMinimized: minimized == true)
@@ -660,21 +668,19 @@ final class AXWindowSystem: TilesWindowSystem {
     private func correlatedTokens(_ observations: [EntryObservation]) -> Set<WindowToken> {
         guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                     kCGNullWindowID) as? [[String: Any]] else { return [] }
-        let candidates: [(pid: pid_t, frame: CGRect, title: String, windowID: UInt32)] = info.compactMap { row in
+        let candidates: [(pid: pid_t, frame: CGRect, title: String)] = info.compactMap { row in
             guard let pid = row[kCGWindowOwnerPID as String] as? NSNumber,
                   let bounds = row[kCGWindowBounds as String] as? [String: Any],
                   let cgFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary)
             else { return nil }
             return (pid.int32Value, Coord.cocoaRect(fromAX: cgFrame, primaryMaxY: primaryMaxY),
-                    row[kCGWindowName as String] as? String ?? "",
-                    (row[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0)
+                    row[kCGWindowName as String] as? String ?? "")
         }
 
-        // Build a bipartite graph and assign candidates collectively.  The
-        // old per-entry `matches.count == 1` rule rejected every AX window
-        // when macOS returned several same-frame windows with empty CG titles.
-        // A candidate can still be consumed only once, so two AX entries are
-        // never correlated to one CG window.
+        // Build a bipartite graph and keep only forced one-to-one pairs.  Two
+        // same-frame windows with empty CG titles remain ambiguous and are
+        // therefore left unreachable until another observation disambiguates
+        // them. A candidate is never correlated to more than one AX entry.
         let usable: [(entry: Entry, frame: CGRect)] = observations.compactMap { observation in
             guard let frame = observation.frame, !observation.minimized else { return nil }
             return (observation.entry, frame)
@@ -692,53 +698,18 @@ final class AXWindowSystem: TilesWindowSystem {
         }
         guard edges.contains(where: { !$0.isEmpty }) else { return [] }
 
-        // Stable ordering makes the fallback deterministic when all titles are
-        // empty.  The candidate order is the public CG order with window ID as
-        // a tie-breaker; an AX token is runtime-only, so UUID order is the
-        // stable tie-breaker for the retained entries.
-        let entryOrder = usable.indices.sorted { lhs, rhs in
-            if edges[lhs].count != edges[rhs].count {
-                return edges[lhs].count < edges[rhs].count
-            }
-            return usable[lhs].entry.token.rawValue.uuidString <
-                usable[rhs].entry.token.rawValue.uuidString
+        // An AX entry is reachable only when it has one candidate and that CG
+        // candidate has one AX owner. A runtime UUID is not correlation evidence.
+        var candidateOwners = Array(repeating: [Int](), count: candidates.count)
+        for (entry, matches) in edges.enumerated() {
+            for candidate in matches { candidateOwners[candidate].append(entry) }
         }
-        let candidateOrder = candidates.indices.sorted { lhs, rhs in
-            let left = candidates[lhs], right = candidates[rhs]
-            if left.pid != right.pid { return left.pid < right.pid }
-            if left.frame.minX != right.frame.minX { return left.frame.minX < right.frame.minX }
-            if left.frame.minY != right.frame.minY { return left.frame.minY < right.frame.minY }
-            if left.frame.width != right.frame.width { return left.frame.width < right.frame.width }
-            if left.frame.height != right.frame.height { return left.frame.height < right.frame.height }
-            if left.title != right.title { return left.title < right.title }
-            return left.windowID < right.windowID
-        }
-
-        // Rank once instead of searching `candidateOrder` inside the sort of
-        // every recursion step; the resulting edge order is identical.
-        var candidateRank = [Int](repeating: 0, count: candidates.count)
-        for (rank, candidateIndex) in candidateOrder.enumerated() { candidateRank[candidateIndex] = rank }
-
-        var candidateToEntry = Array(repeating: -1, count: candidates.count)
-        func assign(_ entryIndex: Int, _ visited: inout Set<Int>) -> Bool {
-            let orderedEdges = edges[entryIndex].sorted { candidateRank[$0] < candidateRank[$1] }
-            for candidateIndex in orderedEdges where visited.insert(candidateIndex).inserted {
-                if candidateToEntry[candidateIndex] == -1 ||
-                    assign(candidateToEntry[candidateIndex], &visited) {
-                    candidateToEntry[candidateIndex] = entryIndex
-                    return true
-                }
-            }
-            return false
-        }
-        for entryIndex in entryOrder {
-            var visited = Set<Int>()
-            _ = assign(entryIndex, &visited)
-        }
-
         var result = Set<WindowToken>()
-        for entryIndex in candidateToEntry where entryIndex >= 0 {
-            result.insert(usable[entryIndex].entry.token)
+        for entry in usable.indices where edges[entry].count == 1 {
+            let candidate = edges[entry][0]
+            if candidateOwners[candidate].count == 1 {
+                result.insert(usable[entry].entry.token)
+            }
         }
         return result
     }

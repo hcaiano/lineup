@@ -364,6 +364,20 @@ func runTilesTests() throws {
         }, "reducer: bulk adoption does not raise a non-selected overflow window")
         check(adopted.isValid, "reducer: adopted state satisfies membership invariants")
 
+        let created = token(22)
+        let createdSnapshot = WindowSnapshot([
+            entry(first, x: 10), entry(second, x: 20), entry(created, x: 30)
+        ], focused: first)
+        let createdPlan = TilesReducer.plan(state: adopted, event: .windowCreated(created),
+                                            snapshot: createdSnapshot, layouts: layouts)
+        check(createdPlan.nextState.workspaces[.workspace1]?.screens["main"]?.first?.order ==
+              [first, second, created] &&
+              createdPlan.nextState.workspaces[.workspace1]?.screens["main"]?.first?.selected == created,
+              "reducer: a new overflow window becomes the selected stack member")
+        check(createdPlan.effects.contains { if case .raise(created, _) = $0 { return true }; return false } &&
+              createdPlan.effects.contains { if case .focus(created, _) = $0 { return true }; return false },
+              "reducer: a new overflow window is raised and focused")
+
         let bestEffortCommitted = TilesReducer.commit(
             state: .empty, plan: adopt,
             results: adopt.effects.map { effect in
@@ -513,6 +527,17 @@ func runTilesTests() throws {
               "workspace: already-minimized staged windows do not create a Space barrier")
         check(bulkRestores.count == 2,
               "workspace: already-minimized staged windows restore in one bulk plan")
+
+        let goneAndFailed = twoSwitch.effects.enumerated().map { offset, effect in
+            offset == 0 ? WindowEffectResult.failure(effect, .goneWindow)
+                        : WindowEffectResult.failure(effect, .rejectedFrame)
+        }
+        let partialWorkspaceFailure = TilesReducer.commit(
+            state: twoState, plan: twoSwitch, results: goneAndFailed)
+        check(partialWorkspaceFailure.mutationGeneration != twoSwitch.mutationID.rawValue &&
+              partialWorkspaceFailure.windows[first] == nil &&
+              partialWorkspaceFailure.windows[second] != nil,
+              "workspace: gone window plus essential failure leaves mutation uncommitted")
 
         let failed = TilesReducer.commit(state: state, plan: switchPlan,
                                          results: switchPlan.effects.enumerated().map {

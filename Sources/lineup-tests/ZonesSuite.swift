@@ -1276,6 +1276,13 @@ private func runZonesToolTests() throws {
     check(dragSnap.contains("@MainActor\nfinal class DragSnapController"), "DragSnapController is @MainActor")
     check(dragSnap.contains("MainActor.assumeIsolated"),
           "the drag monitor and linger timer state their main-actor isolation")
+    check(dragSnap.contains("let target = DragTarget.rect(zone: zone, cursor: NSEvent.mouseLocation)") &&
+          !dragSnap.contains("normalizesPlacement"),
+          "Tiles observation keeps Zones half/quarter drag targets")
+    check(dragSnap.contains("if let zone = lastZoneAddress, zone.frame == rect") &&
+          dragSnap.contains("target = .zone(screenKey: zone.screenKey") &&
+          dragSnap.contains("target = .freeform(frame: placement.frame)"),
+          "drag release reports whole leaves as zones and edge targets as freeform")
     check(editor.contains("@MainActor\nfinal class LayoutEditorOverlayController"),
           "LayoutEditorOverlayController is @MainActor")
     check(editor.contains("@MainActor\nfinal class EditorWindow"), "EditorWindow is @MainActor")
@@ -1343,6 +1350,21 @@ private func runZonesToolTests() throws {
     check(tool.contains("let defaultEnabled = true"), "Zones is on by default (1.x's incumbent behaviour)")
     check(tool.contains("let requiredPermissions: Set<Permission> = [.accessibility]"),
           "Zones declares its Accessibility requirement")
+    check(tool.contains("ScreenPicker.bestScreenIndex(") &&
+          tool.contains("forWindow: placement.frame") &&
+          tool.contains("screens.map(\\.frame)") &&
+          !tool.contains("NSScreen.screens.first(where: { $0.frame.intersects(placement.frame) })"),
+          "zone shortcut placement uses the display with greatest overlap")
+    check(mover.contains("onPlacement: ((ConfirmedWindowPlacement) -> Void)? = nil") &&
+          mover.contains("if let placement = confirmedPlacement(of: window, expected: landed)") &&
+          mover.contains("onPlacement?(placement)"),
+          "cycle placement callbacks receive a confirmed moved window and frame")
+    check(tool.contains("performCycle(.left, now: now)") &&
+          tool.contains("performCycle(.right, now: now)") &&
+          tool.contains("performCycle(.center, now: now)") &&
+          tool.contains("window: placement.window") &&
+          tool.contains("target: .freeform(frame: placement.frame)"),
+          "cyclic Zones actions publish confirmed freeform placements")
 
     // ---- Menu + warnings ----
     check(tool.contains("ToolMenu.item(\"Edit Layout…\""), "the menu contributes Edit Layout…")

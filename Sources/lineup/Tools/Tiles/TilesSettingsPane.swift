@@ -183,7 +183,9 @@ private struct TilesSettingsPaneBody: View {
                             get: { model.activeWorkspace },
                             set: { model.selectWorkspace($0) })) {
                             ForEach(1...4, id: \.self) { workspace in
-                                Text("\(workspace)").tag(workspace)
+                                Text("\(workspace)")
+                                    .tag(workspace)
+                                    .accessibilityLabel("Workspace \(workspace)")
                             }
                         }
                         .pickerStyle(.segmented)

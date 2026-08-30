@@ -2502,6 +2502,14 @@ private func runTilesShellContractTests() throws {
     check(tool.contains("services.hotkeys.unregisterAll()")
             && tool.contains("TilesHUD.shared.dismiss()"),
           "stop releases hotkeys and HUD resources")
+    if let stop = tool.range(of: "func stop() {"),
+       let stopGuard = tool.range(of: "guard isRunning else { return }",
+                                  range: stop.upperBound..<tool.endIndex) {
+        check(tool[stop.lowerBound..<stopGuard.lowerBound].contains("isRestoringWindows = false"),
+              "stop clears pending restore state before its idempotent guard")
+    } else {
+        check(false, "Tiles stop clears pending restore state")
+    }
     check(tool.contains("private(set) var sectionLoadError: String?")
             && tool.contains("func resetSection()")
             && tool.contains("config.tiles-rejected-"),
@@ -2525,6 +2533,8 @@ private func runTilesShellContractTests() throws {
             && pane.contains(".pickerStyle(.segmented)")
             && pane.contains("Uses your Zones layouts. Workspaces are separate from macOS Spaces."),
           "the pane exposes four segmented workspaces and explains native Spaces")
+    check(pane.contains(".accessibilityLabel(\"Workspace \\(workspace)\")"),
+          "each workspace segment has an explicit VoiceOver name")
     // The pane renders one row per `TilesTool.Action`, so the labels live on the
     // action and the pane only has to iterate every case.
     check(pane.contains("TilesTool.Action.allCases"),
@@ -2577,6 +2587,15 @@ private func runTilesShellContractTests() throws {
             && hud.contains("HUDMotion.duration(HUDMotion.fadeOut)")
             && hud.contains("Brand.blue"),
           "Tiles HUD covers workspace, stack and failure states with shared motion")
+    if let confirmation = hud.range(of: "func showConfirmation"),
+       let dismiss = hud.range(of: "func dismiss",
+                               range: confirmation.upperBound..<hud.endIndex) {
+        let body = hud[confirmation.lowerBound..<dismiss.lowerBound]
+        check(body.contains("tint: Brand.blue") && !body.contains("systemGreen"),
+              "Tiles confirmation HUD uses the established blue accent")
+    } else {
+        check(false, "Tiles confirmation HUD uses the established blue accent")
+    }
     check(tool.contains("private func handle(_ presentation: TilesPresentation)")
             && !tool.contains("coordinator.perform(.switchWorkspace(workspace))\n        hudWasUsed"),
           "Tiles shows the HUD from confirmed coordinator feedback, not stale action state")

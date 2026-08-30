@@ -92,15 +92,21 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         let initialJournal = journal
         let initialLayouts = layouts
         runtimeQueue.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.acceptingEvents else { return }
             let recovery = self.windowSystem.recover(
                 initialJournal, deadline: .now() + .milliseconds(1200))
+            guard self.acceptingEvents else { return }
             var recoveredJournal = initialJournal
             for key in recovery.restoredIdentityKeys {
                 recoveredJournal = recoveredJournal.removing(identityKey: key)
             }
-            self.journal = recoveredJournal
-            try? self.persistJournal(recoveredJournal)
+            do {
+                try self.persistJournal(recoveredJournal)
+                self.journal = recoveredJournal
+            } catch {
+                self.publishState(presentation: .failure(
+                    "Tiles could not save its recovery state."))
+            }
             self.process(.adoptVisible, layouts: initialLayouts)
         }
     }
@@ -128,8 +134,13 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             for key in recovery.restoredIdentityKeys {
                 remaining = remaining.removing(identityKey: key)
             }
-            journal = remaining
-            try? persistJournal(remaining)
+            do {
+                try persistJournal(remaining)
+                journal = remaining
+            } catch {
+                // Keep the in-memory journal equal to the durable file. The next start keeps the
+                // recovery warning instead of claiming that restored state was saved.
+            }
             session = .empty
             recordKeys.removeAll()
             detachedTokens.removeAll()
@@ -246,18 +257,20 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         guard acceptingEvents else { return }
         switch event {
         case .windowCreated(let pid):
-            coalesce(key: "create:\(pid)", delay: .milliseconds(120), event: .reconcile)
+            coalesce(key: "create:\(pid)", delay: .milliseconds(120), event: .reconcile,
+                     snapshotScope: .pid(pid))
             retryReconcile(after: .milliseconds(360))
             retryReconcile(after: .milliseconds(900))
-        case .windowChanged(let token):
-            coalesceWindowChange(token)
+        case .windowChanged(let token, let pid):
+            coalesceWindowChange(token, pid: pid)
         case .windowDestroyed(let token):
             enqueue(.windowClosed(token))
         case .applicationChanged(let pid):
-            coalesce(key: "app:\(pid)", delay: .milliseconds(120), event: .reconcile)
-        case .applicationActivated(let pid):
+            coalesce(key: "app:\(pid)", delay: .milliseconds(120), event: .reconcile,
+                     snapshotScope: .pid(pid))
+        case .applicationActivated:
             let layouts = self.layouts
-            runtimeQueue.async { [weak self] in self?.processActivation(pid: pid, layouts: layouts) }
+            runtimeQueue.async { [weak self] in self?.processActivation(layouts: layouts) }
         case .externalActivation(let token):
             let layouts = self.layouts
             runtimeQueue.async { [weak self] in
@@ -277,7 +290,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         }
     }
 
-    nonisolated private func processActivation(pid: pid_t, layouts: LayoutSnapshot) {
+    nonisolated private func processActivation(layouts: LayoutSnapshot) {
         // One discovery per activation. The focused token is the same in every
         // scope, so a scoped snapshot would only add a second full sweep.
         let snapshot = windowSystem.snapshot(.all)
@@ -285,8 +298,12 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             process(.externalActivation(focused), snapshot: snapshot, layouts: layouts)
         } else {
             // Activation can mean a native Space change. Refresh reachability only; do not
-            // adopt and move a newly visible window because activation alone is not placement intent.
-            publishState()
+            // adopt and move a newly visible window because activation alone is not placement
+            // intent. Keep only already-managed entries in the reconcile snapshot so existing
+            // assignments are refreshed without turning activation into adoption.
+            var existingOnly = snapshot
+            existingOnly.windows = snapshot.windows.filter { session.windows[$0.key] != nil }
+            process(.reconcile, snapshot: existingOnly, layouts: layouts)
         }
     }
 
@@ -365,25 +382,28 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         }
     }
 
-    private func coalesce(key: String, delay: DispatchTimeInterval, event: TilesEvent) {
+    private func coalesce(key: String, delay: DispatchTimeInterval, event: TilesEvent,
+                          snapshotScope: SnapshotScope = .all) {
         coalescedWork[key]?.cancel()
         let layouts = self.layouts
         let work = DispatchWorkItem { [weak self] in
-            self?.process(event, layouts: layouts)
+            guard let self else { return }
+            let snapshot = self.windowSystem.snapshot(snapshotScope)
+            self.process(event, snapshot: snapshot, layouts: layouts)
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { self?.coalescedWork[key] = nil }
+                MainActor.assumeIsolated { self.coalescedWork[key] = nil }
             }
         }
         coalescedWork[key] = work
         runtimeQueue.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    private func coalesceWindowChange(_ token: WindowToken) {
+    private func coalesceWindowChange(_ token: WindowToken, pid: pid_t) {
         let key = "window:\(token.rawValue)"
         coalescedWork[key]?.cancel()
         let layouts = self.layouts
         let work = DispatchWorkItem { [weak self] in
-            self?.processWindowChange(token, layouts: layouts)
+            self?.processWindowChange(token, pid: pid, layouts: layouts)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self?.coalescedWork[key] = nil }
             }
@@ -410,8 +430,9 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                 includeDetached: includeDetached)
     }
 
-    nonisolated private func processWindowChange(_ token: WindowToken, layouts: LayoutSnapshot) {
-        let snapshot = windowSystem.snapshot(.all)
+    nonisolated private func processWindowChange(_ token: WindowToken, pid: pid_t,
+                                                 layouts: LayoutSnapshot) {
+        let snapshot = windowSystem.snapshot(.pid(pid))
         if let managed = session.windows[token], managed.visibility == .visible,
            managed.workspace == session.activeWorkspace,
            let entry = snapshot.windows[token], entry.isVisible,
@@ -459,8 +480,12 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             // model/effect change. Keep journal replacement on the runtime
             // queue so an old identity key is removed even for a no-op
             // reconciliation.
-            synchronizeJournalWithSession()
-            publishState(presentation: noOpPresentation(for: event))
+            guard synchronizeJournalWithSession() else {
+                publishState(presentation: .failure(
+                    "Tiles could not save its recovery state."))
+                return
+            }
+            publishState(presentation: noOpPresentation(for: event, snapshot: snapshot))
             return
         }
 
@@ -506,18 +531,52 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         let priorSession = session
         let results = windowSystem.apply(plan.effects)
         let committed = TilesReducer.commit(state: priorSession, plan: plan, results: results)
-        if committed == priorSession && !plan.effects.isEmpty {
+        if committed.mutationGeneration != plan.mutationID.rawValue {
             let compensation = TilesReducer.compensation(
                 for: plan, results: results, priorState: priorSession, snapshot: snapshot)
-            _ = windowSystem.apply(compensation)
-            // The intent was written before mutation. If the mutation or its
-            // compensation fails, the live model is still priorSession, so
-            // rewrite the journal from that state before reporting failure.
-            // Otherwise a crash in this interval could recover a plan that
-            // never committed.
-            synchronizeJournalWithSession()
-            publishState(presentation: failurePresentation(for: event,
-                                                            message: "Tiles could not complete that action."))
+            let compensationResults = windowSystem.apply(compensation)
+            var goneTokens: Set<WindowToken> = []
+            var unresolvedTokens: Set<WindowToken> = []
+            let isRecoveryEffect: (WindowEffect) -> Bool = { effect in
+                switch effect {
+                case .setFrame, .setMinimized: return true
+                case .raise, .focus: return false
+                }
+            }
+            for effect in plan.effects where isRecoveryEffect(effect) {
+                guard let result = results.first(where: { $0.effect == effect }) else {
+                    unresolvedTokens.insert(effect.token)
+                    continue
+                }
+                if result.isGone { goneTokens.insert(effect.token) }
+                else if !result.succeeded { unresolvedTokens.insert(effect.token) }
+            }
+            for effect in compensation {
+                guard let result = compensationResults.first(where: { $0.effect == effect }) else {
+                    unresolvedTokens.insert(effect.token)
+                    continue
+                }
+                if !result.succeeded { unresolvedTokens.insert(effect.token) }
+            }
+            let compensatedTokens = Set(compensation.map(\.token))
+            for effect in plan.effects where isRecoveryEffect(effect) {
+                guard results.first(where: { $0.effect == effect })?.succeeded == true,
+                      !compensatedTokens.contains(effect.token) else { continue }
+                // No compensating write means the successful forward mutation
+                // remains unresolved; keep its durable recovery intent.
+                unresolvedTokens.insert(effect.token)
+            }
+            unresolvedTokens.subtract(goneTokens)
+            // `commit` removes confirmed-gone tokens while keeping the prior
+            // generation. Keep that result as the in-memory baseline and only
+            // rewrite records whose forward and compensating writes are both
+            // resolved. Unresolved records retain their pre-mutation intent.
+            session = committed
+            let journalSaved = synchronizeJournalWithSession(preserving: unresolvedTokens)
+            let message = journalSaved
+                ? "Tiles could not complete that action."
+                : "Tiles could not complete that action or save recovery state."
+            publishState(presentation: failurePresentation(for: event, message: message))
             return
         }
         let previousActiveWorkspace = priorSession.activeWorkspace
@@ -530,10 +589,11 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         default:
             break
         }
-        synchronizeJournalWithSession()
+        let journalSaved = synchronizeJournalWithSession()
         if let destination = workspaceDestination(for: event, from: previousActiveWorkspace),
            session.activeWorkspace != destination {
-            publishState()
+            publishState(presentation: journalSaved ? nil : .failure(
+                "Tiles completed a step but could not save recovery state."))
             runtimeQueue.asyncAfter(deadline: .now() + .milliseconds(80)) { [weak self] in
                 self?.process(event, layouts: layouts)
             }
@@ -545,8 +605,10 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         } else {
             preview = nil
         }
-        publishState(preview: preview,
-                     presentation: presentationAfterCommit(for: event, preview: preview))
+        let presentation = journalSaved
+            ? presentationAfterCommit(for: event, preview: preview)
+            : .failure("Tiles completed the action but could not save recovery state.")
+        publishState(preview: preview, presentation: presentation)
         scheduleHealingPasses(layouts: layouts)
     }
 
@@ -554,7 +616,9 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     /// window copies the journal twice per window and rebuilds `identityKey`
     /// for every record it walks, which is quadratic in the number of managed
     /// windows. The stored shape is unchanged: records stay an array.
-    nonisolated private func synchronizeJournalWithSession() {
+    @discardableResult
+    nonisolated private func synchronizeJournalWithSession(
+        preserving preservedTokens: Set<WindowToken> = []) -> Bool {
         var updatedRecordKeys = recordKeys
         let liveTokens = Set(session.windows.keys)
         var removedKeys: Set<String> = []
@@ -563,7 +627,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             updatedRecordKeys[token] = nil
         }
         var replacements: [String: RecoveryRecord] = [:]
-        for managed in session.windows.values {
+        for managed in session.windows.values where !preservedTokens.contains(managed.token) {
             guard let record = windowSystem.recoveryRecord(
                 for: managed.token, managed: managed,
                 stageIntent: managed.visibility == .stagedByTiles) else { continue }
@@ -598,9 +662,14 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         }
 
         let updated = RecoveryJournal(schemaVersion: journal.schemaVersion, records: records)
-        journal = updated
-        recordKeys = updatedRecordKeys
-        try? persistJournal(updated)
+        do {
+            try persistJournal(updated)
+            journal = updated
+            recordKeys = updatedRecordKeys
+            return true
+        } catch {
+            return false
+        }
     }
 
     nonisolated private func workspaceDestination(for event: TilesEvent,
@@ -612,6 +681,11 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             return source.next
         case .previousWorkspace:
             return source.previous
+        case .externalActivation(let token):
+            // A barrier plan commits the destination window's visible state
+            // before the workspace switch. Resolve the retry from that
+            // committed ownership rather than the pre-barrier workspace.
+            return session.windows[token]?.workspace
         default:
             return nil
         }
@@ -659,14 +733,18 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         return nil
     }
 
-    nonisolated private func noOpPresentation(for event: TilesEvent) -> TilesPresentation? {
+    nonisolated private func noOpPresentation(for event: TilesEvent,
+                                              snapshot: WindowSnapshot) -> TilesPresentation? {
         switch event {
-        case .cycleFocusedTile:
-            return .failure("No other reachable window is available in the focused tile.")
-        case .focusTile(let direction):
-            return .failure("No reachable window is available to the \(directionName(direction)).")
-        case .moveFocusedWindowToTile(let direction):
-            return .failure("The focused window could not move \(directionName(direction)).")
+        case .cycleFocusedTile, .focusTile, .moveFocusedWindowToTile:
+            // Reaching an edge, an empty tile, or a stack with no available
+            // peer is a normal no-op. Only an unmanaged focus is actionable
+            // feedback, so it keeps the orange failure presentation.
+            guard let focused = snapshot.focused,
+                  session.windows[focused] != nil else {
+                return .failure("No focused tiled window is available.")
+            }
+            return nil
         case .switchWorkspace(let workspace):
             return workspace == session.activeWorkspace
                 ? nil

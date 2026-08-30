@@ -123,7 +123,7 @@ final class TilesHUD {
         guard !message.isEmpty else { return }
         configure(icon: NSImage(systemSymbolName: "checkmark.circle.fill",
                                 accessibilityDescription: "Complete"),
-                  tint: .systemGreen,
+                  tint: Brand.blue,
                   titleFont: .systemFont(ofSize: 13, weight: .semibold),
                   lineBreakMode: .byTruncatingTail, maximumLines: 1,
                   titleMaxLayoutWidth: 0, subtitleAlpha: nil)

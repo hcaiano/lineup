@@ -54,7 +54,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup 2.0 is one app shell hosting three independent tools, on top of four pure ("core") modules
+Lineup 2.0 is one app shell hosting four independent tools, on top of five pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -71,31 +71,37 @@ Sources/CyclerCore/         Pure, tested core for the Cycler tool
 Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   TriggerKey.swift          Trigger key enum + display names
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
+Sources/TilesCore/          Pure, tested core for the Tiles tool
+  TilesReducer.swift        Workspace, stack, placement, and effect state machine
+  TileNavigation.swift      Directional tile focus and movement
+  RecoveryModel.swift       Recovery journal schema and strong window matching
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
   Product.swift             Identity constants (name, bundle ID, paths, update feed)
   LineupAppConfig.swift     ~/.config/lineup/config.json envelope schema
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
-Sources/lineup/              AppKit agent (the app shell + the three tools)
+Sources/lineup/              AppKit agent (the app shell + the four tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
   Settings/                    Settings window: sidebar shell + shared components
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
+  Tools/Tiles/                 AX runtime, workspaces, stack HUD, Settings pane
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
   Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
-  main.swift                  Orchestrates the four suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / AppSuite.swift
+  main.swift                  Orchestrates the six suites below
+  ZonesSuite.swift / TilesSuite.swift / TilesRuntimeSuite.swift / CyclerSuite.swift /
+  HyperkeySuite.swift / AppSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
-four suites.
+six suites.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`tiles`/`cycler`/`hyperkey`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
 
 ### Downgrading from 2.0 to 1.9.x

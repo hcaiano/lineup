@@ -112,7 +112,7 @@ final class DragSnapController {
             if armed, let win = captured, let rect = lastTargetRect {
                 if let placement = WindowMover.snap(win, toCocoaRect: rect) {
                     let target: PlacementTarget
-                    if let zone = lastZoneAddress {
+                    if let zone = lastZoneAddress, zone.frame == rect {
                         target = .zone(screenKey: zone.screenKey, index: zone.index,
                                        frame: zone.frame)
                     } else {
@@ -247,19 +247,12 @@ final class DragSnapController {
 
     private func updateHighlight() {
         guard let zone = currentZoneRect() else { hideHighlight(); return }
-        let normalizesPlacement = placementCenter.normalizesPlacements
-        let target = normalizesPlacement
-            ? zone
-            : DragTarget.rect(zone: zone, cursor: NSEvent.mouseLocation)
-        if normalizesPlacement {
-            clearLinger()
-        } else {
-            trackLinger(zone: zone, targetingHalf: target != zone)
-        }
+        let target = DragTarget.rect(zone: zone, cursor: NSEvent.mouseLocation)
+        trackLinger(zone: zone, targetingHalf: target != zone)
         if target == lastTargetRect, highlight != nil { return } // unchanged — skip redraw
         lastTargetRect = target
         if highlight == nil { highlight = HighlightWindow() }
-        let hint = !normalizesPlacement && hintShown && target == zone
+        let hint = hintShown && target == zone
             ? HighlightWindow.halfHint
             : nil
         highlight?.show(at: target, hint: hint)

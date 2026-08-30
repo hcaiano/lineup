@@ -25,7 +25,8 @@ public enum TilesReducer {
             reconcileExisting(&working, snapshot: snapshot, layouts: layouts,
                               mutationID: mutationID, effects: &effects)
             adoptVisible(&working, tokens: nil, snapshot: snapshot, layouts: layouts,
-                         mutationID: mutationID, effects: &effects)
+                         mutationID: mutationID, effects: &effects,
+                         selectNewlyAdopted: true)
 
         case .adoptVisible:
             adoptVisible(&working, tokens: nil, snapshot: snapshot, layouts: layouts,
@@ -33,7 +34,8 @@ public enum TilesReducer {
 
         case let .adopt(token), let .windowCreated(token):
             adoptVisible(&working, tokens: [token], snapshot: snapshot, layouts: layouts,
-                         mutationID: mutationID, effects: &effects)
+                         mutationID: mutationID, effects: &effects,
+                         selectNewlyAdopted: true)
 
         case let .windowClosed(token):
             removeToken(&working, token: token)
@@ -343,7 +345,8 @@ public enum TilesReducer {
         snapshot: WindowSnapshot,
         layouts: LayoutSnapshot,
         mutationID: MutationID,
-        effects: inout [WindowEffect]
+        effects: inout [WindowEffect],
+        selectNewlyAdopted: Bool = false
     ) {
         let entries = snapshot.eligible
             .filter { tokens?.contains($0.token) ?? true }
@@ -372,9 +375,10 @@ public enum TilesReducer {
 
             let destination = stacks[destinationIndex].address
             let epoch = takeFocusEpoch(&state)
+            let selectsNewWindow = selectNewlyAdopted || snapshot.focused == entry.token
             _ = stacks[destinationIndex].append(
                 entry.token,
-                selecting: snapshot.focused == entry.token,
+                selecting: selectsNewWindow,
                 epoch: epoch)
             workspace.screens[entry.screenKey] = stacks
             state.workspaces[state.activeWorkspace] = workspace
@@ -394,7 +398,7 @@ public enum TilesReducer {
                 if stacks[destinationIndex].selected == entry.token {
                     effects.append(.raise(entry.token, mutationID))
                 }
-                if snapshot.focused == entry.token {
+                if selectsNewWindow {
                     effects.append(.focus(entry.token, mutationID))
                 }
             }

@@ -221,7 +221,14 @@ enum WindowMover {
 
     /// Advance the left/right/center cycle for the focused window. Returns the new cycle
     /// state to carry forward (or the previous state unchanged if nothing could be moved).
-    static func cycleFocusedWindow(_ side: Side, config: LineupConfig, now: Double, prev: CycleState?) -> CycleState? {
+    /// A supplied callback receives the moved window and frame only after confirmation.
+    static func cycleFocusedWindow(
+        _ side: Side,
+        config: LineupConfig,
+        now: Double,
+        prev: CycleState?,
+        onPlacement: ((ConfirmedWindowPlacement) -> Void)? = nil
+    ) -> CycleState? {
         guard AXIsProcessTrusted() else { return prev }
         guard let window = focusedWindow() else { return prev }
         guard let currentCocoa = currentCocoaFrame(of: window) else { return prev }
@@ -242,6 +249,9 @@ enum WindowMover {
         let target = steps[idx]
         let landed = setFrame(target, of: window)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
+        if let placement = confirmedPlacement(of: window, expected: landed) {
+            onPlacement?(placement)
+        }
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
