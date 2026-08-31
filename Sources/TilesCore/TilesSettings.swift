@@ -20,6 +20,9 @@ public struct TilesSettings: Codable, Equatable {
     /// Keep the visual rhythm of tiled windows enabled by default.  This is a
     /// single opinionated switch instead of separate inner/outer gap knobs.
     public var tileSpacingEnabled: Bool
+    /// Internal consent state. Editing shortcuts before first use must not skip the one warning
+    /// that enabling Tiles will arrange the user's current windows.
+    public var hasConfirmedInitialArrangement: Bool
     public var workspace1: ShortcutBinding?
     public var workspace2: ShortcutBinding?
     public var workspace3: ShortcutBinding?
@@ -40,6 +43,7 @@ public struct TilesSettings: Codable, Equatable {
 
     public init(schemaVersion: Int = TilesSettings.currentSchema,
                 tileSpacingEnabled: Bool = true,
+                hasConfirmedInitialArrangement: Bool = false,
                 workspace1: ShortcutBinding? = nil,
                 workspace2: ShortcutBinding? = nil,
                 workspace3: ShortcutBinding? = nil,
@@ -59,6 +63,7 @@ public struct TilesSettings: Codable, Equatable {
                 toggleTiled: ShortcutBinding? = nil) {
         self.schemaVersion = schemaVersion
         self.tileSpacingEnabled = tileSpacingEnabled
+        self.hasConfirmedInitialArrangement = hasConfirmedInitialArrangement
         self.workspace1 = workspace1
         self.workspace2 = workspace2
         self.workspace3 = workspace3
@@ -83,6 +88,7 @@ public struct TilesSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
         case tileSpacingEnabled
+        case hasConfirmedInitialArrangement
         case workspace1
         case workspace2
         case workspace3
@@ -114,6 +120,8 @@ public struct TilesSettings: Codable, Equatable {
         }
         self.schemaVersion = schema
         self.tileSpacingEnabled = try container.decodeIfPresent(Bool.self, forKey: .tileSpacingEnabled) ?? true
+        self.hasConfirmedInitialArrangement = try container.decodeIfPresent(
+            Bool.self, forKey: .hasConfirmedInitialArrangement) ?? false
         self.workspace1 = try container.decodeIfPresent(ShortcutBinding.self, forKey: .workspace1)
         self.workspace2 = try container.decodeIfPresent(ShortcutBinding.self, forKey: .workspace2)
         self.workspace3 = try container.decodeIfPresent(ShortcutBinding.self, forKey: .workspace3)
@@ -138,6 +146,8 @@ public struct TilesSettings: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encode(tileSpacingEnabled, forKey: .tileSpacingEnabled)
+        try container.encode(hasConfirmedInitialArrangement,
+                             forKey: .hasConfirmedInitialArrangement)
         // Encode nulls explicitly.  This keeps the stable section shape and
         // makes an unassigned recorder distinguishable from a missing field.
         try container.encode(workspace1, forKey: .workspace1)

@@ -607,8 +607,9 @@ public enum TilesReducer {
             // frame.  Only the selected member is raised below.
             for token in stack.order {
                 guard let managed = state.windows[token],
-                      managed.visibility != .minimizedByUser else { continue }
-                if managed.visibility == .stagedByTiles,
+                      managed.visibility != .minimizedByUser || token == forcedFocus else { continue }
+                if managed.visibility == .stagedByTiles ||
+                    (managed.visibility == .minimizedByUser && token == forcedFocus),
                    snapshot.windows[token] != nil {
                     effects.append(.setMinimized(token, false, mutationID))
                     state.windows[token]?.visibility = .visible

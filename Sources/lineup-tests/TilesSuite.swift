@@ -503,6 +503,41 @@ func runTilesTests() throws {
               "workspace: verified switch commits staging")
         check(switched.isValid, "workspace: staged source satisfies invariants")
 
+        let cyclerActivationSnapshot = WindowSnapshot([
+            entry(first, x: 10, minimized: true, reachable: true)
+        ], focused: nil)
+        let cyclerActivation = TilesReducer.plan(
+            state: switched, event: .externalActivation(first),
+            snapshot: cyclerActivationSnapshot, layouts: layouts)
+        check(cyclerActivation.nextState.activeWorkspace == .workspace1 &&
+              cyclerActivation.effects.contains {
+                  if case .setMinimized(first, false, _) = $0 { return true }
+                  return false
+              }, "workspace: explicit Cycler activation restores its inactive managed window")
+        let cyclerActivated = TilesReducer.commit(
+            state: switched, plan: cyclerActivation, results: successful(cyclerActivation))
+        check(cyclerActivated.activeWorkspace == .workspace1 &&
+              cyclerActivated.windows[first]?.visibility == .visible,
+              "workspace: explicit Cycler activation commits the destination workspace")
+
+        var userMinimizedInactive = switched
+        userMinimizedInactive.windows[first]?.visibility = .minimizedByUser
+        let explicitRestore = TilesReducer.plan(
+            state: userMinimizedInactive, event: .externalActivation(first),
+            snapshot: cyclerActivationSnapshot, layouts: layouts)
+        check(explicitRestore.nextState.activeWorkspace == .workspace1 &&
+              explicitRestore.nextState.windows[first]?.visibility == .visible &&
+              explicitRestore.effects.contains {
+                  if case .setMinimized(first, false, _) = $0 { return true }
+                  return false
+              }, "workspace: explicit Cycler activation restores a user-minimized inactive target")
+        let explicitlyRestored = TilesReducer.commit(
+            state: userMinimizedInactive, plan: explicitRestore,
+            results: successful(explicitRestore))
+        check(explicitlyRestored.activeWorkspace == .workspace1 &&
+              explicitlyRestored.windows[first]?.visibility == .visible,
+              "workspace: verified Cycler restore commits a user-minimized destination")
+
         let unreachableSnapshot = WindowSnapshot([
             entry(first, x: 10, reachable: false)
         ], focused: nil)
@@ -772,5 +807,13 @@ func runTilesTests() throws {
               "recovery: one strong candidate matches")
         check(RecoveryModel.match(record: record, candidates: [candidate, candidate]).isAmbiguous,
               "recovery: ambiguous candidates are never auto-selected")
+        let dialogCandidate = RecoveryCandidate(
+            bundleIdentifier: candidate.bundleIdentifier, pid: candidate.pid,
+            role: candidate.role, subrole: "AXDialog",
+            titleDigest: candidate.titleDigest,
+            ordinalAmongExactPeers: candidate.ordinalAmongExactPeers,
+            frame: candidate.frame)
+        check(RecoveryModel.match(record: record, candidates: [dialogCandidate]) == .none,
+              "recovery: a standard-window record never mutates a dialog candidate")
     }
 }

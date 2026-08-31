@@ -1,4 +1,5 @@
 import AppKit
+import AppCore
 import ApplicationServices
 import CoreGraphics
 
@@ -15,9 +16,10 @@ import CoreGraphics
 final class PermissionCenter {
     static let shared = PermissionCenter()
 
-    /// Called whenever a permission's status changes, so the menu and Settings refresh live
-    /// instead of waiting for a relaunch.
-    var onChange: (() -> Void)?
+    /// Called after a trust observation. The watcher reports `.unchanged` for the explicit
+    /// activation recheck so the shell can refresh status without turning an initial untrusted
+    /// state into a revocation message.
+    var onChange: ((AccessibilityTrustTransition) -> Void)?
 
     private var lastTrusted = AXIsProcessTrusted()
     private var trustTimer: Timer?
@@ -69,18 +71,26 @@ final class PermissionCenter {
     }
 
     @objc private func accessibilityMaybeChanged() {
-        let trusted = AXIsProcessTrusted()
-        guard trusted != lastTrusted else { return }
-        lastTrusted = trusted
-        onChange?()
-        if trusted { trustTimer?.invalidate(); trustTimer = nil } // revocation still notifies
+        let transition = updateAccessibilityTrust()
+        guard transition != .unchanged else { return }
+        onChange?(transition)
     }
 
     /// Called from `applicationDidBecomeActive`: coming back from System Settings is the moment
     /// an Input Monitoring grant becomes visible to us.
     func recheck() {
-        accessibilityMaybeChanged()
-        onChange?()
+        onChange?(updateAccessibilityTrust())
+    }
+
+    private func updateAccessibilityTrust() -> AccessibilityTrustTransition {
+        let trusted = AXIsProcessTrusted()
+        let transition = AccessibilityTrustTransition.from(
+            previouslyTrusted: lastTrusted,
+            currentlyTrusted: trusted)
+        guard transition != .unchanged else { return transition }
+        lastTrusted = trusted
+        if trusted { trustTimer?.invalidate(); trustTimer = nil }
+        return transition
     }
 
     // MARK: - Request / recovery

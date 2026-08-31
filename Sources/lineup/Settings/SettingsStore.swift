@@ -103,6 +103,26 @@ final class SettingsStore: ObservableObject {
         toolEnableError = nil
     }
 
+    /// A legacy or prerelease config can say that Tiles is enabled before it has recorded the
+    /// first-arrangement acknowledgement. Startup deliberately leaves that tool stopped. This
+    /// action is the explicit Settings path that completes the same preflight as the enable switch
+    /// without silently changing the persisted enabled flag.
+    func confirmPendingTilesEnable() {
+        stopAllRecording()
+        guard registry.isEnabled(.tiles),
+              let tiles = registry.tool(.tiles) as? TilesTool,
+              !tiles.isRunning,
+              tiles.needsInitialEnableConfirmation,
+              prepareTilesEnable() else { return }
+        registry.setEnabled(true, for: .tiles)
+    }
+
+    /// Read-only view used by a tool pane to distinguish a disabled first-use tool from an
+    /// enabled tool held back by its first-arrangement acknowledgement.
+    func isToolEnabled(_ id: ToolID) -> Bool {
+        registry.isEnabled(id)
+    }
+
     // MARK: - Tools
 
     /// The tool's display name, or its raw id when the tool isn't registered in this build —
@@ -120,8 +140,47 @@ final class SettingsStore: ObservableObject {
         Binding(
             get: { [weak self] in self?.registry.isEnabled(id) ?? false },
             set: { [weak self] newValue in
-                self?.registry.setEnabled(newValue, for: id)
+                guard let self else { return }
+                if id == .tiles, newValue, !self.prepareTilesEnable() {
+                    // The confirmation was cancelled. Publish the unchanged registry value so
+                    // SwiftUI does not leave an optimistic switch rendering in the on state.
+                    self.refresh()
+                    return
+                }
+                self.registry.setEnabled(newValue, for: id)
             })
+    }
+
+    /// Tiles is the only tool whose first live effect changes every eligible window. Confirm that
+    /// transition without changing any sibling tool's shortcuts.
+    private func prepareTilesEnable() -> Bool {
+        stopAllRecording()
+        let needsInitialConfirmation = (registry.tool(.tiles) as? TilesTool)?
+            .needsInitialEnableConfirmation ?? false
+        guard needsInitialConfirmation else { return true }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Turn on Tiles?"
+        alert.informativeText = "Tiles will arrange your open app windows into the layouts from Zones. Your Cycler and Zones shortcuts stay unchanged. Turning Tiles off restores only the window state that Tiles changed."
+        alert.addButton(withTitle: "Arrange Windows")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        return confirmInitialTilesArrangement(ifNeeded: true)
+    }
+
+    private func confirmInitialTilesArrangement(ifNeeded: Bool) -> Bool {
+        guard ifNeeded else { return true }
+        guard let tiles = registry.tool(.tiles) as? TilesTool else { return false }
+        do {
+            try tiles.confirmInitialArrangement()
+            return true
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "Tiles could not save your confirmation"
+            alert.runModal()
+            return false
+        }
     }
 
     @ViewBuilder

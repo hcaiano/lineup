@@ -29,6 +29,41 @@ func runCyclerTests() throws {
     check(WindowCycle.next(count: 3, current: 2, direction: .backward) == 1, "backward 2 -> 1")
     check(WindowCycle.next(count: 3, current: 9) == 1, "stale out-of-range index is normalised (9%3=0 -> 1)")
 
+    // ---- WindowRoutingSelector: pure Tiles-aware candidate ranking ----
+    let visibleRouting = WindowRoutingSelector.select([
+        WindowRoutingCandidate(windowID: 40, isMinimized: true, disposition: .currentContext),
+        WindowRoutingCandidate(windowID: 20, isMinimized: false, disposition: .unmanaged),
+        WindowRoutingCandidate(windowID: 30, isMinimized: false,
+                               disposition: .inactiveWorkspace(workspace: 2, focusEpoch: 99)),
+        WindowRoutingCandidate(windowID: 10, isMinimized: false, disposition: .currentContext),
+    ])
+    check(visibleRouting.indices == [1, 3] && visibleRouting.hasCurrentCandidates,
+          "visible current and unmanaged windows win in stable input order")
+
+    let minimizedRouting = WindowRoutingSelector.select([
+        WindowRoutingCandidate(windowID: 50, isMinimized: true, disposition: .currentContext),
+        WindowRoutingCandidate(windowID: 15, isMinimized: true, disposition: .unmanaged),
+        WindowRoutingCandidate(windowID: 5, isMinimized: false,
+                               disposition: .inactiveWorkspace(workspace: 2, focusEpoch: 100)),
+    ])
+    check(minimizedRouting.indices == [1] && minimizedRouting.hasCurrentCandidates,
+          "one current minimized window wins by stable window ID before inactive workspaces")
+
+    let inactiveRouting = WindowRoutingSelector.select([
+        WindowRoutingCandidate(windowID: 40, isMinimized: false,
+                               disposition: .inactiveWorkspace(workspace: 2, focusEpoch: 7)),
+        WindowRoutingCandidate(windowID: 30, isMinimized: false,
+                               disposition: .inactiveWorkspace(workspace: 3, focusEpoch: 9)),
+        WindowRoutingCandidate(windowID: 20, isMinimized: false,
+                               disposition: .inactiveWorkspace(workspace: 4, focusEpoch: 9)),
+        WindowRoutingCandidate(windowID: 10, isMinimized: false,
+                               disposition: .unavailable(message: "Tiles is paused")),
+    ])
+    check(inactiveRouting.indices == [2] && !inactiveRouting.hasCurrentCandidates,
+          "inactive fallback prefers latest Tiles focus then the lowest stable ID")
+    check(inactiveRouting.unavailableMessage == "Tiles is paused",
+          "routing preserves unavailable feedback while choosing an inactive candidate")
+
     // ---- CyclerConfig: round-trips and tolerates a missing/empty file ----
     do {
         let cfg = CyclerConfig(bindings: [
@@ -371,12 +406,122 @@ private func runCyclerToolChecks() throws {
     check(activator.contains(".map { tame($0) }") && activator.contains(".lazy.map({ tame($0) })"),
           "window elements are tamed as well, not just the application element")
 
+    // ---- Tiles stays behind an injected, app-target-only routing seam ----
+    check(activator.contains("enum CyclerWindowContext: Equatable")
+            && activator.contains("case currentContext")
+            && activator.contains("case unmanaged")
+            && activator.contains("case inactiveWorkspace(workspace: Int, focusEpoch: UInt64)")
+            && activator.contains("case unavailable(message: String)"),
+          "Cycler exposes the routed window contexts, including unavailable Tiles windows")
+    check(activator.contains("struct CyclerWindowRoute")
+            && activator.contains("let context: CyclerWindowContext")
+            && activator.contains("let requestInactiveActivation: (@MainActor () -> Void)?")
+            && activator.contains("struct CyclerWindowRouting")
+            && activator.contains("let route: @MainActor (AXUIElement) -> CyclerWindowRoute")
+            && activator.contains("typealias CyclerWindowRoutingProvider = @MainActor () -> CyclerWindowRouting?"),
+          "Cycler routing captures context and an optional actor-isolated inactive action")
+    check(!activator.contains("import TilesCore") && !tool.contains("import TilesCore"),
+          "Cycler does not import the Tiles model")
+    check(tool.contains("private let windowRoutingProvider: CyclerWindowRoutingProvider")
+            && tool.contains("init(windowRouting: @escaping CyclerWindowRoutingProvider = { nil })")
+            && tool.contains("let windowRouting = windowRoutingProvider()")
+            && tool.contains("windowRouting: windowRouting)"),
+          "Cycler resolves one optional routed-window seam per engagement")
+
+    // A context switch changes the candidate array. Remembering an index would then select a
+    // different window; the stable CGWindowID remains meaningful across filtering and reordering.
+    check(activator.contains("private var lastWindowID: [String: CGWindowID] = [:]")
+            && activator.components(separatedBy: "firstIndex { $0.windowID == rememberedID }").count - 1 == 2
+            && !activator.contains("lastIndex"),
+          "Cycler remembers the last real window ID instead of a filtered-array index")
+    check(activator.contains("var route: CyclerWindowRoute?")
+            && activator.components(separatedBy: "windowRouting?.route(window)").count - 1 == 1
+            && activator.contains("switch window.route?.context {")
+            && !activator.contains("route(window.element)"),
+          "routed window context and action are captured once and reused for selection")
+    check(activator.contains("if !isStandardWindow(window) {")
+            && activator.contains("guard minimized, hasWindowRole(window),")
+            && activator.contains("let route, route.context != .unmanaged else { return nil }")
+            && activator.contains("AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString")
+            && activator.contains("return role == kAXWindowRole as String")
+            && !activator.contains("kAXDialogSubrole")
+            && !activator.contains("com.apple.finder"),
+          "only a minimized Tiles-managed AXWindow may bypass the standard-window filter")
+    let routingSelector = (try? String(
+        contentsOfFile: "Sources/CyclerCore/WindowRoutingSelection.swift", encoding: .utf8)) ?? ""
+    check(activator.contains("private struct CandidateSelection")
+            && activator.contains("var hasCurrentCandidates: Bool")
+            && activator.contains("var unavailableMessage: String?")
+            && activator.contains("var isMinimized: Bool")
+            && activator.contains("private static func candidateSelection(from windows: [WindowRecord],")
+            && activator.contains("WindowRoutingSelector.select")
+            && activator.contains("selection.indices.map { windows[$0] }")
+            && routingSelector.contains("var currentVisible: [Int] = []")
+            && routingSelector.contains("var currentMinimized: [Int] = []")
+            && routingSelector.contains("lhs.focusEpoch > rhs.focusEpoch"),
+          "AppKit delegates deterministic current, minimized, and inactive ranking to CyclerCore")
+    let cycleHUD = files.first(where: { $0.path.hasSuffix("CycleHUD.swift") })?.text ?? ""
+    check(activator.contains("case .unavailable(let message): disposition = .unavailable(message: message)")
+            && routingSelector.contains("if unavailableMessage == nil { unavailableMessage = message }")
+            && cycleHUD.contains("func showBlocked(_ message: String)")
+            && cycleHUD.contains("exclamationmark.triangle.fill")
+            && cycleHUD.contains("rowViews[0].update(title: message"),
+          "Cycler carries unavailable feedback through CandidateSelection to an explicit warning HUD")
+    check(activator.contains("if windowRouting != nil, windows.isEmpty, !allWindows.isEmpty {")
+            && activator.contains("if let message = selection.unavailableMessage")
+            && activator.contains("CycleHUD.shared.showBlocked(message)"),
+          "Cycler skips unavailable Tiles windows and does not hide during a runtime pause")
+    check(activator.contains("if windows.count == 1, windows[0].isMinimized")
+            && activator.contains("let minimized = isMinimized(window)")
+            && activator.contains("isMinimized: minimized")
+            && activator.contains("Self.allWindows(of: apps, using:"),
+          "an explicit Cycler press can restore a routed minimized window without a second AX read")
+    check(activator.contains("Self.showGroupHUD(display)")
+            && activator.contains("if !selection.windows.isEmpty {")
+            && activator.contains("if allWindows.isEmpty, app.isHidden {")
+            && activator.contains("allWindows = Self.allWindows(of: apps, using: windowRouting)")
+            && activator.contains("let targetIndex = Self.indexOfMain(in: selection.windows) ?? 0")
+            && activator.contains("let targetWindow = selection.windows[targetIndex]")
+            && !activator.contains("selection.windows.first")
+            && activator.contains("Self.activateRoutedWindow(targetWindow)")
+            && activator.contains("} else if let message = selection.unavailableMessage {")
+            && activator.contains("CycleHUD.shared.showBlocked(message)\n                    return"),
+          "a group prefers its current main window and reports unavailable routing before a false-success HUD")
+    check(activator.contains("case .hide(let bundleIdentifier):")
+            && activator.contains("if !selection.windows.isEmpty, !selection.hasCurrentCandidates {")
+            && activator.contains("Self.activateRoutedWindow(selection.windows[targetIndex])")
+            && activator.contains("selection.windows.isEmpty, !allWindows.isEmpty,"),
+          "a frontmost group returns to its staged Tiles window instead of hiding its process")
+    check(activator.contains("guard windowRouting != nil else {")
+            && activator.contains("hasCurrentCandidates: !windows.isEmpty")
+            && activator.contains("unavailableMessage: nil")
+            && activator.contains("windowRouting.map { Self.allWindows(of: apps, using: $0) }")
+            && activator.contains("?? Self.windows(of: apps)")
+            && activator.contains("windows(of: apps, includeMinimized: false, windowRouting: nil)")
+            && activator.contains("direction: direction)"),
+          "nil routing keeps the visible-window cycle and forward/reverse direction")
+    check(activator.contains("guard case .inactiveWorkspace = context")
+            && activator.contains("if window.route?.activateIfInactive() == true { return true }")
+            && activator.contains("raise(window.element)")
+            && activator.contains("window.app.activate(options: [])")
+            && activator.contains("return false"),
+          "only an inactive route delegates activation; current and unmanaged routes raise directly")
+    check(activator.contains("let tilesOwnsFeedback = Self.activateRoutedWindow")
+            && activator.contains("if !tilesOwnsFeedback")
+            && activator.contains("if !tilesOwnsFeedback { Self.showGroupHUD(display) }"),
+          "Cycler suppresses its own HUD when Tiles owns inactive-workspace feedback")
+
     // ---- First press enumerates the window list ONCE ----
     // Activating and then re-reading every window of every process doubled the AX round trips on
     // the commonest path; `indexOfMain` reads each window's live AXMain anyway, so only an EMPTY
     // first pass (a hidden app whose windows appear once it is unhidden) is worth a second sweep.
-    check(activator.contains("let visibleWindows = windows.isEmpty ? Self.windows(of: apps) : windows"),
-          "the first press re-enumerates windows only when the first pass found none")
+    check(activator.contains("if windows.isEmpty, allWindows.isEmpty {")
+            && activator.contains("if windowRouting != nil, app.isHidden { app.unhide() }")
+            && activator.contains("let refreshed = windowRouting.map { Self.allWindows(of: apps, using: $0) }"),
+          "the first press unhides without activating every window and re-enumerates only when no routed windows were found")
+    check(activator.contains("if allWindows.isEmpty, app.isHidden {")
+            && activator.contains("app.unhide()\n                    allWindows = Self.allWindows(of: apps, using: windowRouting)"),
+          "a hidden group publishes AX windows before Tiles chooses which routed window to activate")
     let sweeps = activator.components(separatedBy: "Self.windows(of: apps)").count - 1
     check(sweeps == 2, "engage() has exactly two window sweeps in its source, one of them conditional (got \(sweeps))")
 
@@ -419,7 +564,11 @@ private func runCyclerToolChecks() throws {
 
     // The tool has to be registered, or none of the above is reachable.
     let shell = (try? String(contentsOfFile: "Sources/lineup/App/AppShell.swift", encoding: .utf8)) ?? ""
-    check(shell.contains("registry.register(CyclerTool())"), "AppShell registers the Cycler tool")
+    check(shell.contains("registry.register(CyclerTool(windowRouting: {")
+            && shell.contains("guard let self, self.tilesCoordinator.isCyclerRoutingActive else { return nil }")
+            && shell.contains("return CyclerWindowRouting(route: { [weak self] element in")
+            && shell.contains("cyclerWindowRoute(for: element)"),
+          "AppShell registers Cycler with an optional actionable Tiles routing seam")
 
     // ---- CyclerToolSettings: the section Cycler actually writes ----
     do {

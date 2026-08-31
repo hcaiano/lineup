@@ -26,14 +26,33 @@ Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 Zones is on by default. Tiles, Cycler, and Hyperkey start off, so an update does not arrange
 windows or claim new keys without an explicit choice.
 
+Before Tiles arranges windows for the first time, Lineup asks you to confirm. Editing Tiles
+shortcuts before enabling it does not skip this confirmation.
+An older enabled setup that has not recorded this choice waits safely in Tiles Settings after an
+update. It does not move windows during launch.
+
 ## Recommended keyboard model
 
-The fresh preset keeps one meaning per key family. With Hyperkey on, Caps+1…4 switches Tiles
-workspaces and physical Shift+Caps+1…4 moves the focused window. Caps+H/J/K/L focuses tiles;
-Shift+Caps+H/J/K/L moves windows. Caps+Tab cycles a tile stack, Caps+Return changes the split,
-Caps+Space toggles tiled/freeform, and Caps+arrows keeps the Zones quick actions. Cycler app groups
-use letters. If Hyperkey includes Shift, Lineup adapts an untouched preset and keeps customized
-shortcuts unchanged.
+The fresh preset keeps Caps+1…4 and every existing Cycler letter unchanged. With Hyperkey Include
+Shift off, Caps+U/I/O/P switches Tiles Workspaces 1…4, and physical Shift+Caps+U/I/O/P moves the
+focused window to that workspace. Caps+W/A/X/D focuses the nearest tile up/left/down/right;
+physical Shift+Caps+W/A/X/D moves the focused window in that direction. Caps+Tab cycles a tile
+stack; physical Shift+Caps+Tab cycles it in reverse. Caps+Return changes the split, Caps+Space
+toggles tiled/freeform, and Caps+arrows keeps the Zones quick actions.
+
+When Hyperkey Include Shift is on, the same U/I/O/P workspace and W/A/X/D focus shortcuts use the
+full Hyper mask. Their physical Shift variants are not generated because they are indistinguishable
+from the base shortcuts. Y/G/B/H forms a second up/left/down/right movement diamond in that mode.
+An untouched preset follows the Hyperkey mode; customized shortcuts and Cycler bindings are never
+changed silently.
+
+If an existing Cycler app group conflicts with a recommended Tiles key, Lineup keeps the Cycler
+binding unchanged and marks the Tiles shortcut as blocked. Choose a different Tiles shortcut to
+resolve the conflict. Lineup never changes Cycler keys. While Tiles is active, Cycler uses windows
+in the current Tiles context first, then brings forward one safe inactive-workspace window when
+needed. During a layout pause, current-context and freeform Cycler actions remain usable. Only an
+inactive-workspace switch shows blocked feedback. Tiles resumes automatically when the Zones layout
+is available.
 
 ## Install
 

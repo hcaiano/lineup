@@ -54,7 +54,10 @@ the main behavior. The pane explains once that a Tiles workspace is not a macOS 
 
 - Exactly four global workspaces.
 - Workspace 1 is active at start.
-- Current visible eligible windows are adopted into Workspace 1 when Tiles starts.
+- Before the first arrangement, the user must confirm that Tiles may arrange current visible
+  eligible windows. Editing Tiles settings before enabling it does not satisfy this confirmation.
+- After confirmation, current visible eligible windows are adopted into Workspace 1 when Tiles
+  starts.
 - New windows fill empty tiles in visual order.
 - When every tile is occupied, a new window joins the focused tile on the same display.
 - If no managed tile is focused, the shortest stack wins, with visual order as the tie-breaker.
@@ -99,17 +102,27 @@ Spaces while Tiles is active.
 ### 4.1 Enable Tiles
 
 1. The user opens Settings > Tiles and enables the shared header switch.
-2. `ToolRegistry.setEnabled` persists `tools.tiles.enabled = true` before starting the tool.
-3. `TilesTool.start` validates Tiles settings, the Zones layout snapshot, Accessibility access,
+2. Settings checks the recommended Tiles combinations against existing Cycler rows. Cycler rows
+   stay unchanged. If a combination conflicts, Settings shows the blocked Tiles shortcut and the
+   user can edit that Tiles shortcut before arranging. Lineup never changes Cycler keys.
+3. If this is the first arrangement, Settings asks the user to confirm that Tiles will arrange the
+   current open app windows. This confirmation remains required after pre-enable shortcut edits.
+4. `ToolRegistry.setEnabled` persists `tools.tiles.enabled = true` before starting the tool.
+5. `TilesTool.start` validates Tiles settings, the Zones layout snapshot, Accessibility access,
    and recovery-journal access.
-4. It registers configured hotkeys and workspace/application/screen observers.
-5. It starts one serial AX worker and performs a stable initial snapshot.
-6. It adopts eligible on-screen windows into Workspace 1, stores their original frames, and
+6. It registers configured hotkeys and workspace/application/screen observers.
+7. It starts one serial AX worker and performs a stable initial snapshot.
+8. It adopts eligible on-screen windows into Workspace 1, stores their original frames, and
    applies the current Zones leaf frames.
-7. It shows a short non-activating HUD for Workspace 1.
+9. It shows a short non-activating HUD for Workspace 1.
 
 If a required preflight fails, Tiles acquires no window-management resources and shows an
-actionable warning. A settings-save failure leaves the tool disabled.
+actionable warning. A settings-save failure leaves the tool disabled. If the user keeps conflicting
+Cycler keys, the affected Tiles hotkeys remain visibly blocked.
+
+At launch, an enabled section that predates the confirmation stays enabled but does not start the
+runtime. Settings shows `Arrange Windows…`; only that explicit action runs the confirmation flow.
+Lineup never shows this modal automatically during launch.
 
 ### 4.2 Open a new window
 
@@ -186,7 +199,7 @@ Zones remains the layout owner and the manual placement tool.
 - The Tiles Space shortcut is a true toggle: a managed focused window is restored to its safe
   adoption frame and detached; a detached focused window is adopted into the active workspace and
   tiled. Every frame write is verified before the ownership mutation, and failures show HUD feedback.
-- Zones quick-action arrows remain placement controls; Tiles H/J/K/L shortcuts navigate focus
+- Zones quick-action arrows remain placement controls; Tiles W/A/X/D shortcuts navigate focus
   between tiles.
 - A normal user drag whose center settles inside another leaf transfers the window to that tile.
 - An external resize of a managed window is corrected to its tile after debounce.
@@ -196,6 +209,12 @@ Zones action from a delayed frame notification.
 
 ### 4.7 External activation and minimization
 
+- While Tiles is active, Cycler prefers current-context and freeform windows. If none are available,
+  it brings forward one managed window from an inactive workspace, selected by recent Tiles focus.
+  Cycler does not cycle multiple inactive workspaces in one engagement.
+- During a layout pause, current-context and freeform Cycler actions remain usable. Only an
+  inactive-workspace switch is blocked and reports that Tiles cannot switch context. Cycler does
+  not hide or activate an unavailable window.
 - If the user activates a managed window from an inactive workspace through any external path,
   including the Dock, Cmd-Tab, or Lineup's Cycler tool, Tiles switches to that workspace and
   selects the window. Cycler raise/focus actions count as external activation and follow the same
@@ -386,6 +405,9 @@ protocol ZoneLayoutSource: AnyObject {
 `PersistedZoneLayoutSource` decodes the authoritative Zones section from
 `LineupAppConfigStore`, validates `LineupConfig`, and uses the same default layout as Zones when the
 section is absent. An invalid Zones section pauses Tiles instead of silently changing geometry.
+The pause is visible in Settings, the menu warning, and the HUD. Tiles blocks layout mutations
+while paused and resumes automatically after a valid layout becomes available, with a
+`Tiles resumed` confirmation.
 
 `LineupAppConfigStore` publishes changed `ToolID` values only after a successful atomic write.
 The source reacts only to `.zones`.
@@ -519,31 +541,38 @@ The content has three compact sections:
 2. **Behavior**: one `Space between tiles` switch. On uses the fixed 8 pt product spacing; off
    uses the exact Zones frames. A caption explains the fixed fill-then-stack policy.
 3. **Shortcuts**: recorder rows grouped as workspace and stacks, focus tile, move window, and
-   layout. The groups include four numbered workspace actions, their four read-only derived move
-   rows, the stack action, four focus directions, four move directions, Switch Split Direction,
-   and Toggle Tiled / Freeform. The two legacy relative-workspace fields stay in the schema but are
-   omitted from the opinionated pane. Numbers switch workspaces; physical Shift-number moves the
-   focused window without switching. Shift-Tab reverses the stack when that generated reverse is
-   available.
+   layout. The groups include four direct workspace actions, the stack action, four focus
+   directions, four move directions, Switch Split Direction, and Toggle Tiled / Freeform. The two
+   legacy relative-workspace fields stay in the schema but are omitted from the opinionated pane.
+   The four physical Shift-workspace move actions derive from the workspace actions, so they
+   have no separate Settings rows. Settings teaches them in one caption and in the menu only when
+   a generated move shortcut is available. Shift-Tab reverses the stack when that generated reverse
+   is available.
 
-Before first activation, Tiles has no settings section and shows its adaptive recommendation only
-in memory, so a disabled never-activated tool reserves no shortcut combinations. On first
-activation, Tiles writes an adaptive preset from the current Hyperkey mode. With
-`includeShift=false`, numbered workspaces use mask `6400` plus 1/2/3/4, focus left/down/up/right
-uses mask `6400` plus H/J/K/L, movement uses full Hyper mask `6912` plus H/J/K/L, and stack/split/
-toggle uses mask `6400` plus Tab/Return/Space. The legacy relative workspace rows are unassigned.
-With `includeShift=true`, numbered workspace rows still select their workspace with full Hyper but
-do not generate a physical Shift move because that counterpart cannot be distinguished; focus uses
-full Hyper plus H/J/K/L, movement uses full Hyper plus U/I/O/P, and stack/split/toggle use full
-Hyper plus Tab/Return/Space. An exact untouched preset follows an explicit Include Shift change in
-the same atomic config write. Customized settings, including explicit null bindings, are never
-normalized; reset creates the current adaptive preset.
+When the Tiles settings section is missing, Tiles shows its adaptive recommendation only in memory
+before first activation, so a disabled never-activated tool reserves no shortcut combinations. A
+pre-enable settings edit persists a section, but `hasConfirmedInitialArrangement` remains `false`.
+Enabling Tiles still asks for the first-arrangement confirmation. For a missing section, first
+activation writes an adaptive preset from the current Hyperkey mode. A persisted edited section is
+used unchanged. With `includeShift=false`, `U/I/O/P` use mask `6400` to select Workspaces 1…4;
+their physical Shift counterparts use full Hyper (`6912`) to move the focused window to that
+workspace. `W/A/X/D` uses mask `6400` for spatial focus up/left/down/right and full Hyper for the
+same physical-Shift movement. Stack/split/toggle use mask `6400` plus Tab/Return/Space. The legacy
+relative workspace rows are unassigned. With `includeShift=true`, the same U/I/O/P workspace and
+W/A/X/D focus rows use full Hyper. Their physical Shift counterparts are not generated because
+the masks cannot be distinguished; Y/G/B/H are distinct full-Hyper movement keys. Stack/split/
+toggle use full Hyper plus Tab/Return/Space. An exact untouched preset follows an explicit Include
+Shift change in the same atomic config write. Customized settings, including explicit null bindings,
+are never normalized; reset creates the current adaptive preset.
 
-Only the three cyclic workspace/stack actions can generate a Shift reverse, and the UI shows hints
-only for reverses that are available.
+Only the stack action can generate a Shift reverse; the legacy relative-workspace actions are
+not registered. The UI shows a hint only when that reverse is available. The first enable still requires explicit confirmation that
+Tiles may arrange current windows, even after shortcut edits made while it was off.
 
-Cycler receives no new app bindings as part of this preset. H/J/K/L remain the recommended Tiles
-focus letters; any existing Cycler rows remain explicit and win normal conflict checks.
+Cycler receives no new app bindings as part of this preset. Caps+1…4 and all existing Cycler letter
+bindings remain unchanged. If a Cycler row conflicts with a recommended Tiles key, the conflict is
+visible and the user must resolve it explicitly; Lineup never rewrites Cycler keys silently. The
+affected Tiles shortcut remains visibly blocked until the conflict is resolved.
 
 Zones' fresh quick-action defaults use the current Hyperkey mask too: `6400` when Include Shift is
 off and `6912` when it is on. An exact untouched adaptive set follows an explicit Include Shift
@@ -579,7 +608,8 @@ Use a non-activating, click-through `NSPanel` based on the existing Cycle HUD be
 
 - Workspace switch: large workspace number and four position indicators.
 - Stack cycle: app icon, up to seven window titles, selected row, and position.
-- Failure: short orange status that cannot be mistaken for success.
+- Failure or layout pause: a short orange status that cannot be mistaken for success. A recovered
+  layout shows `Tiles resumed`.
 - Selection and progress use `Brand.blue` only.
 - Use `HUDMotion`, `canJoinAllSpaces`, `fullScreenAuxiliary`, and `ignoresCycle`.
 - Post an accessibility announcement such as `Workspace 2` or `Window 2 of 4`.
@@ -597,6 +627,7 @@ public struct TilesSettings: Codable, Equatable {
     public static let currentSchema = 1
     public var schemaVersion: Int
     public var tileSpacingEnabled: Bool
+    public var hasConfirmedInitialArrangement: Bool
     public var workspace1: ShortcutBinding?
     public var workspace2: ShortcutBinding?
     public var workspace3: ShortcutBinding?
@@ -625,6 +656,7 @@ The opaque tool section is:
   "settings": {
     "schemaVersion": 1,
     "tileSpacingEnabled": true,
+    "hasConfirmedInitialArrangement": false,
     "workspace1": null,
     "workspace2": null,
     "workspace3": null,
@@ -657,6 +689,9 @@ or rewritten while stored state is loaded. The schema stays at `1`. `persistedCo
 generated reverse combos when they exist. Recording checks enabled and disabled sibling tools through
 `boundCombos`. `start`, restore-after-recording,
 activation, and the retry timer follow the current hotkey failure behavior.
+
+`hasConfirmedInitialArrangement` defaults to `false` when the field is absent. It becomes `true` only
+after the user confirms the first arrangement and remains independent of shortcut edits.
 
 ## 11. File plan
 
@@ -804,6 +839,9 @@ design.
 
 ### 13.2 Runtime with fakes
 
+- Editing settings before the first enable does not bypass the initial arrangement confirmation.
+- An enabled but unconfirmed section acquires no runtime resources at launch and can continue only
+  through the explicit Settings action.
 - Initial start stores the original frame before the first effect.
 - Observer create plus reconciliation adopts once.
 - Unstable new windows settle through bounded retry.
@@ -815,6 +853,8 @@ design.
 - Late self-generated notifications do not loop.
 - Layout source change reflows once.
 - Display change during transition cancels and replans.
+- An invalid connected-monitor layout pauses mutations, reports the reason, and resumes after the
+  layout becomes valid.
 - `start/stop/start` does not duplicate observers, timers, hotkeys, HUDs, or AX elements.
 - Disabled Tiles owns zero resources.
 
@@ -824,6 +864,12 @@ design.
 - Unknown tool sections and unknown keys survive config round-trips.
 - Existing legacy import output remains unchanged.
 - Shortcut conflicts include disabled tools and generated reverse bindings.
+- Cycler rows and app groups remain unchanged. A conflict leaves the affected Tiles shortcut
+  visibly blocked until the user edits the Tiles binding.
+- Settings has no derived Shift-workspace rows. The caption and menu show a generated move shortcut
+  only when it is available.
+- Cycler prefers current-context and freeform windows, uses one recent inactive-workspace fallback,
+  and reports only blocked inactive-workspace switches while Tiles is paused.
 - Tool switch persists before lifecycle changes.
 - `stop` unregisters all owned resources.
 - Tiles requests Accessibility only.
@@ -848,9 +894,15 @@ Use a packaged app, not only `swift run`.
 
 - Open Settings from the status item.
 - Confirm Tiles appears after Zones and uses the shared header switch.
+- Edit a Tiles shortcut while the tool is off, then enable Tiles. Confirm the first arrangement
+  prompt still appears and that cancel leaves Tiles off.
+- Create a Cycler/Tiles shortcut conflict. Confirm Cycler remains unchanged and the affected Tiles
+  shortcut is visibly blocked until its binding is edited.
 - Toggle on/off and relaunch; confirm persistence.
 - Confirm no window mutation before Accessibility and no extra permission request.
-- Record, clear, cancel, conflict, and restore shortcuts with keyboard only.
+- Record, clear, cancel, conflict, and restore shortcuts with keyboard only. Confirm the four
+  derived Shift-workspace moves appear only in the caption and menu when available, not as Settings
+  rows.
 - Inspect light/dark mode, narrow window, VoiceOver labels, and focus order.
 
 ### Window behavior
@@ -859,6 +911,10 @@ Use a packaged app, not only `swift run`.
 - Fill leaves, overflow into the focused stack, cycle, close selected, and restore.
 - Move and resize manually; drag through Zones; run a freeform Zones quick action.
 - Switch and move across all four workspaces.
+- With Tiles active, confirm Cycler uses current-context and freeform windows first, then one safe
+  inactive-workspace fallback. Invalidate a Zones layout and confirm an inactive-workspace Cycler
+  switch shows blocked feedback while current-context and freeform actions remain usable; restore
+  the layout and confirm Tiles resumes automatically.
 - Toggle a focused managed window to its safe freeform frame and back with the Tiles Space
   shortcut; verify a detached window is adopted into the active workspace on the second press.
 - Measure a switch with at least ten managed windows across two displays. It must complete in under
@@ -892,6 +948,7 @@ runtime checks.
 
 - Tiles is a separate fourth tool named Tiles and is disabled by default.
 - Settings has a dedicated Tiles entry with one global switch and no nested settings tabs.
+- The first arrangement requires explicit confirmation, including after pre-enable settings edits.
 - Tiles always derives tile geometry from current Zones layouts.
 - New eligible windows are automatically placed by the agreed policy.
 - Four global workspaces switch safely without native Space APIs.
@@ -902,6 +959,13 @@ runtime checks.
   active workspace tile.
 - Config has one binary spacing choice and optional action shortcuts; workspace, placement, and
   stack policies are fixed.
+- Derived Shift-workspace moves have no Settings rows and appear in the caption and menu only when
+  available.
+- Cycler always keeps its app bindings. Resolve a conflict by editing the Tiles shortcut. Current-
+  context windows win, with one safe inactive-workspace fallback.
+- An unavailable Zones layout pauses Tiles visibly, blocks inactive-workspace switches, and resumes
+  automatically when the layout becomes valid. Current-context and freeform Cycler actions remain
+  usable during the pause.
 - All mutations are planned, bounded, verified, and recoverable.
 - Normal stop restores Tiles-owned minimize state and conditionally restores frames.
 - No Tiles operation writes an off-screen frame or uses a private Space API.
@@ -972,16 +1036,18 @@ set that fits its Zones-owned layout model:
 4. Use one fixed 8 pt internal spacing switch. Off reproduces the exact Zones frames. Screen edges
    keep no outer gap.
 
-The actions are available from the Tiles menu and shortcut rows. On first activation, the rows use
-an adaptive preset that avoids Zones' Hyper plus arrow keys: the no-Shift Hyperkey mode uses
-Control-Option-Command (`6400`) for numbered workspace selection, focus, and stack/split/toggle
-actions; its physical Shift-number counterparts move the focused window, while full Hyper (`6912`)
-plus H/J/K/L moves it spatially. The full-Shift mode uses full Hyper for focus, movement fallback
-U/I/O/P, and stack/split/toggle; numbered workspace rows still select workspaces but have no
-generated Shift move because that counterpart cannot be distinguished. An exact untouched preset
-follows an explicit Hyperkey mode change; customized rows are preserved. Reset uses the mode active
-at reset time. Shift reverse remains limited to the three cyclic actions and is generated only for
-bindings that do not already include Shift.
+The actions are available from the Tiles menu and shortcut rows. The four physical Shift-workspace
+move actions are derived from the workspace rows, so they have no separate Settings rows; the
+Settings caption and menu teach them only when a generated move is available. On first activation,
+the rows use an adaptive preset that avoids Zones' Hyper plus arrow keys: the no-Shift Hyperkey
+mode uses Control-Option-Command (`6400`) with U/I/O/P for Workspace 1…4 and W/A/X/D for spatial
+focus up/left/down/right. Physical Shift generates full-Hyper (`6912`) workspace and spatial moves
+for those same keys. The full-Shift mode keeps U/I/O/P and W/A/X/D for workspace selection and
+focus, uses distinct Y/G/B/H movement keys, and does not generate physical Shift counterparts
+because they cannot be distinguished. Stack/split/toggle follow the current Hyperkey mask. An
+exact untouched preset follows an explicit Hyperkey mode change; customized rows are preserved.
+Reset uses the mode active at reset time. Shift reverse remains limited to the stack action and is
+generated only when its binding does not already include Shift.
 
 Swap, divider nudging, cross-display navigation, and custom gap values remain deferred. Swap had
 weak binding evidence in the inspected sample; divider nudging would extend the Zones editing

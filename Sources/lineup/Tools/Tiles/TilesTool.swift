@@ -39,6 +39,7 @@ enum TilesPresentation {
     case workspace(Int)
     case movedWindow(Int)
     case stack(TilesStackPreview)
+    case addedToStack(TilesStackPreview)
     case confirmation(String)
     case recoveryCompleted
     case failure(String)
@@ -54,6 +55,7 @@ protocol TilesCoordinatorProtocol: AnyObject {
     var activeWorkspace: Int { get }
     var recoveryRequired: Bool { get }
     var stackPreview: TilesStackPreview? { get }
+    var runtimePauseMessage: String? { get }
     var onStateChange: (() -> Void)? { get set }
     var onPresentation: ((TilesPresentation) -> Void)? { get set }
 
@@ -78,6 +80,9 @@ final class TilesTool: Tool {
     let requiredPermissions: Set<Permission> = [.accessibility]
     /// A silent update must not begin arranging windows on an existing desktop.
     let defaultEnabled = false
+    /// An enabled legacy section may predate the first-arrangement acknowledgement. Keep its
+    /// persisted enabled flag, but make launch wait for the explicit Settings confirmation.
+    var allowsAutomaticStartup: Bool { !needsInitialEnableConfirmation }
 
     private(set) var isRunning = false
     private(set) var settings = TilesSettings()
@@ -86,6 +91,11 @@ final class TilesTool: Tool {
     /// flag-only section still counts as first use; a decoded section, including all-null rows,
     /// is explicit user state and must not be replaced by defaults.
     private var hasStoredSettings = false
+    /// Fail closed after a malformed load. `loadSettings()` installs a safe false fallback, so a
+    /// reset can repair the bytes but still cannot arrange windows before explicit confirmation.
+    var needsInitialEnableConfirmation: Bool {
+        !settings.hasConfirmedInitialArrangement
+    }
 
     /// A section that exists but cannot be decoded must remain untouched. The pane then offers a
     /// reset, and start acquires no runtime resources until the user repairs the section.
@@ -100,6 +110,8 @@ final class TilesTool: Tool {
     private var coordinatorStarted = false
     private(set) var runtimeReady = false
     private(set) var runtimeBlockedMessage: String?
+    var runtimePauseMessage: String? { coordinatorStarted ? coordinator.runtimePauseMessage : nil }
+    var runtimeUsable: Bool { runtimeReady && runtimePauseMessage == nil }
     private(set) var isRestoringWindows = false
     private var hotkeyTokens: [HotkeyManager.Token] = []
     private var failedHotkeys: [FailedHotkey] = []
@@ -114,6 +126,10 @@ final class TilesTool: Tool {
     private var hudWasUsed = false
     private lazy var settingsModel = TilesSettingsModel(tool: self)
     private var log: Logger { services?.log ?? Logger(subsystem: Product.logSubsystem, category: "tiles") }
+    private static let accessibilityNeededMessage =
+        "Tiles needs Accessibility access to arrange application windows."
+    private static let accessibilityRevokedMessage =
+        "Tiles paused because Accessibility access was removed. Grant access again to resume safely."
 
     /// Internal, not private: the Settings pane renders its shortcut rows from
     /// these cases so a renamed action can never drift from its row.
@@ -284,7 +300,7 @@ final class TilesTool: Tool {
     func attach(_ services: ToolServices) {
         self.services = services
         loadSettings()
-        settingsModel.refresh()
+        settingsModel.refreshShortcutSnapshot()
     }
 
     /// Start keeps the enabled tool visible in the menu even when a required preflight is blocked,
@@ -351,6 +367,41 @@ final class TilesTool: Tool {
             }
     }
 
+    /// Accessibility can be revoked while Tiles is running. Stop at that boundary instead of
+    /// letting later AX calls fail one window at a time, and keep the recovery journal for the
+    /// normal start path when the user grants access again. An initial or repeated untrusted
+    /// observation keeps the actionable "needs Accessibility" state; only a real trusted to
+    /// untrusted transition uses the stronger revoked copy.
+    func accessibilityPermissionDidChange(_ transition: AccessibilityTrustTransition) {
+        guard isRunning, let services else { return }
+        if services.permissions.isAccessibilityTrusted {
+            if !runtimeReady { attemptRuntimeStart() }
+            return
+        }
+
+        guard transition == .revoked else {
+            if !runtimeReady, runtimeBlockedMessage == nil {
+                attemptRuntimeStart()
+            }
+            return
+        }
+
+        services.hotkeys.unregisterAll()
+        hotkeyTokens.removeAll()
+        failedHotkeys.removeAll()
+        failedHotkeyRetryTimer?.invalidate()
+        failedHotkeyRetryTimer = nil
+        coordinator.onStateChange = nil
+        coordinator.onPresentation = nil
+        if coordinatorStarted { coordinator.stop() }
+        coordinatorStarted = false
+        runtimeReady = false
+        runtimeBlockedMessage = Self.accessibilityRevokedMessage
+        settingsModel.refresh()
+        services.refreshMenu()
+        services.refreshSettings()
+    }
+
     private func attemptRuntimeStart() {
         guard isRunning, !runtimeReady else { return }
 
@@ -382,7 +433,9 @@ final class TilesTool: Tool {
         // stays enabled, so keep one app-activation retry observer for that preflight only.
         installActivationObserver()
         guard services.permissions.isAccessibilityTrusted else {
-            runtimeBlockedMessage = "Tiles needs Accessibility access to arrange application windows."
+            if runtimeBlockedMessage != Self.accessibilityRevokedMessage {
+                runtimeBlockedMessage = Self.accessibilityNeededMessage
+            }
             settingsModel.refresh()
             services.refreshMenu()
             return
@@ -478,7 +531,7 @@ final class TilesTool: Tool {
         var seen = Set<HotkeyCombo>()
         // An explicit Shift variant can already be stored by an older/custom configuration. Keep
         // it loadable and untouched; applyCapture rejects only a new edit that would steal a
-        // generated reverse or numbered-workspace move.
+        // generated reverse or workspace-move counterpart.
         for binding in bindings(in: candidate) {
             guard (0...127).contains(binding.keyCode) else {
                 throw TilesToolError.invalidSettings("The Tiles shortcut key code is invalid.")
@@ -501,7 +554,7 @@ final class TilesTool: Tool {
     /// Return the Tiles action whose generated physical-Shift combo would be replaced by this
     /// explicit capture. Stored settings are allowed to keep such a value for compatibility;
     /// rejecting it here only protects a new recorder edit from silently disabling a reverse or
-    /// numbered-workspace move.
+    /// workspace-move counterpart.
     private func generatedCounterpartOwner(keyCode: Int, modifiers: UInt32) -> Action? {
         guard modifiers & UInt32(shiftKey) != 0 else { return nil }
         return Action.registeredCases.first { action in
@@ -534,7 +587,8 @@ final class TilesTool: Tool {
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 try encoder.encode(rejected).write(to: url, options: .atomic)
             }
-            let fresh = ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())
+            var fresh = ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())
+            fresh.hasConfirmedInitialArrangement = settings.hasConfirmedInitialArrangement
             let spacingChanged = settings.tileSpacingEnabled != fresh.tileSpacingEnabled
             try validate(fresh)
             try services.config.save(fresh)
@@ -578,6 +632,15 @@ final class TilesTool: Tool {
         var updated = settings
         updated.tileSpacingEnabled = enabled
         saveFromPane(updated)
+    }
+
+    /// Persist the one first-use warning without changing runtime state. This flag is separate
+    /// from stored preferences because a user can edit spacing or shortcuts before enabling Tiles.
+    func confirmInitialArrangement() throws {
+        guard needsInitialEnableConfirmation else { return }
+        var confirmed = settings
+        confirmed.hasConfirmedInitialArrangement = true
+        try save(confirmed)
     }
 
     // MARK: Hotkeys
@@ -657,7 +720,7 @@ final class TilesTool: Tool {
             }
         }
 
-        // A numbered workspace combo gets a physical Shift counterpart that
+        // A direct workspace combo gets a physical Shift counterpart that
         // moves the focused window without changing the active workspace.
         // Hyperkey's include-Shift mode cannot distinguish that counterpart,
         // so only bindings without Shift receive the generated move.
@@ -847,6 +910,10 @@ final class TilesTool: Tool {
         case .stack(let preview):
             TilesHUD.shared.showStack(appIcon: preview.appIcon, titles: preview.titles,
                                       selectedIndex: preview.selectedIndex)
+        case .addedToStack(let preview):
+            TilesHUD.shared.showStack(appIcon: preview.appIcon, titles: preview.titles,
+                                      selectedIndex: preview.selectedIndex,
+                                      title: "Added to stack")
         case .confirmation(let message):
             TilesHUD.shared.showConfirmation(message)
         case .recoveryCompleted:
@@ -994,7 +1061,7 @@ final class TilesTool: Tool {
                 [weak self] in self?.selectWorkspace(workspace)
             }
             item.state = activeWorkspace == workspace ? .on : .off
-            item.isEnabled = runtimeReady
+            item.isEnabled = runtimeUsable
             workspaceMenu.addItem(item)
         }
         workspaces.submenu = workspaceMenu
@@ -1004,15 +1071,19 @@ final class TilesTool: Tool {
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
         let moveMenu = NSMenu()
         moveMenu.autoenablesItems = false
+        let shortcutSnapshot = boundCombos()
         for workspace in 1...4 {
-            let action = Action.registeredCases.first { $0.workspaceNumber == workspace }
-            let title = action.map {
-                menuTitle("Workspace \(workspace)", action: $0, addingShift: true)
-            } ?? "Workspace \(workspace)"
+            let title: String
+            switch workspaceMoveShortcutState(for: workspace, boundCombos: shortcutSnapshot) {
+            case .shortcut(let shortcut):
+                title = "Workspace \(workspace)  \(shortcut)"
+            case .workspaceShortcutMissing, .workspaceShortcutUsesShift, .unavailable:
+                title = "Workspace \(workspace)"
+            }
             let item = ToolMenu.item(title, symbol: "arrow.right.square") {
                 [weak self] in self?.moveFocusedWindowToWorkspace(workspace)
             }
-            item.isEnabled = runtimeReady
+            item.isEnabled = runtimeUsable
             moveMenu.addItem(item)
         }
         move.submenu = moveMenu
@@ -1021,7 +1092,7 @@ final class TilesTool: Tool {
                                   symbol: "arrow.triangle.2.circlepath") {
             [weak self] in self?.cycleFocusedTile()
         }
-        cycle.isEnabled = runtimeReady
+        cycle.isEnabled = runtimeUsable
 
         let focus = NSMenuItem(title: "Focus Tile", action: nil, keyEquivalent: "")
         focus.image = NSImage(systemSymbolName: "scope", accessibilityDescription: nil)?
@@ -1033,11 +1104,11 @@ final class TilesTool: Tool {
                                      symbol: symbol) { [weak self] in
                 self?.focusTile(direction)
             }
-            item.isEnabled = runtimeReady
+            item.isEnabled = runtimeUsable
             focusMenu.addItem(item)
         }
         focus.submenu = focusMenu
-        focus.isEnabled = runtimeReady
+        focus.isEnabled = runtimeUsable
 
         let moveTile = NSMenuItem(title: "Move Focused Window", action: nil, keyEquivalent: "")
         moveTile.image = NSImage(systemSymbolName: "arrow.up.and.down.and.arrow.left.and.right",
@@ -1050,25 +1121,25 @@ final class TilesTool: Tool {
                                      symbol: symbol) { [weak self] in
                 self?.moveFocusedWindowToTile(direction)
             }
-            item.isEnabled = runtimeReady
+            item.isEnabled = runtimeUsable
             moveTileMenu.addItem(item)
         }
         moveTile.submenu = moveTileMenu
-        moveTile.isEnabled = runtimeReady
+        moveTile.isEnabled = runtimeUsable
 
         let toggleSplit = ToolMenu.item(
             menuTitle("Switch Split Direction", action: .toggleSplitOrientation),
             symbol: "rectangle.split.2x1") {
             [weak self] in self?.toggleFocusedSplitOrientation()
         }
-        toggleSplit.isEnabled = runtimeReady
+        toggleSplit.isEnabled = runtimeUsable
 
         let toggleTiled = ToolMenu.item(
             menuTitle("Toggle Tiled / Freeform", action: .toggleTiled),
             symbol: "rectangle.inset.filled.and.person.filled") {
             [weak self] in self?.toggleFocusedTiled()
         }
-        toggleTiled.isEnabled = runtimeReady
+        toggleTiled.isEnabled = runtimeUsable
 
         var items: [NSMenuItem] = [workspaces, move, focus, moveTile, toggleSplit, toggleTiled, cycle]
         if coordinator.recoveryRequired {
@@ -1091,13 +1162,9 @@ final class TilesTool: Tool {
     /// Show configured global shortcuts as reference text without assigning AppKit key
     /// equivalents. The Carbon hotkey remains the single dispatcher, including while this menu
     /// is open, so an action cannot fire twice.
-    private func menuTitle(_ title: String, action: Action, addingShift: Bool = false) -> String {
+    private func menuTitle(_ title: String, action: Action) -> String {
         guard let binding = action.binding(settings) else { return title }
-        var modifiers = UInt32(truncatingIfNeeded: binding.modifiers)
-        if addingShift {
-            guard modifiers & UInt32(shiftKey) == 0 else { return title }
-            modifiers |= UInt32(shiftKey)
-        }
+        let modifiers = UInt32(truncatingIfNeeded: binding.modifiers)
         return "\(title)  \(ShortcutKit.display(keyCode: binding.keyCode, modifiers: modifiers))"
     }
 
@@ -1140,6 +1207,12 @@ final class TilesTool: Tool {
                     self?.services?.permissions.openAccessibilitySettings()
                 } : { [weak self] in self?.retryRuntime() }))
         }
+        if let runtimePauseMessage {
+            out.append(ToolWarning(
+                id: "tiles.layout",
+                text: "⚠︎ Tiles is paused",
+                detailLines: [runtimePauseMessage]))
+        }
         if !failedHotkeys.isEmpty {
             var details = failedHotkeys.prefix(4).map { failure in
                 let prefix = failure.generatedReverse ? "Reverse " :
@@ -1177,6 +1250,32 @@ final class TilesTool: Tool {
         services?.boundCombos() ?? []
     }
 
+    struct ShortcutConflictSummary: Equatable {
+        var count: Int
+        var owners: Set<ToolID>
+        var actions: Set<Action>
+    }
+
+    /// Compare the complete recommended vocabulary, including generated Shift actions, with every
+    /// sibling's persisted rows. This runs before Tiles is enabled so Settings can prevent a
+    /// first-use preset that looks valid but has dead workspace and movement keys.
+    func shortcutConflictSummary(boundCombos: [ToolCombo]) -> ShortcutConflictSummary? {
+        let desired = ownPersistedCombos(from: settings, siblingCombos: [])
+        var collisions = Set<HotkeyCombo>()
+        var owners = Set<ToolID>()
+        var actions = Set<Action>()
+        for combo in desired {
+            guard let owner = boundCombos.conflictOwner(
+                keyCode: combo.keyCode, modifiers: combo.modifiers, excluding: .tiles) else { continue }
+            let hotkey = HotkeyCombo(keyCode: combo.keyCode, modifiers: combo.modifiers)
+            collisions.insert(hotkey)
+            owners.insert(owner)
+            if let match = matchingAction(for: hotkey) { actions.insert(match.action) }
+        }
+        guard !collisions.isEmpty else { return nil }
+        return ShortcutConflictSummary(count: collisions.count, owners: owners, actions: actions)
+    }
+
     func openAccessibilitySettings() {
         services?.permissions.openAccessibilitySettings()
     }
@@ -1189,7 +1288,7 @@ final class TilesTool: Tool {
     enum WorkspaceMoveShortcutState: Equatable {
         case shortcut(String)
         case workspaceShortcutMissing
-        case unavailableWithIncludeShift
+        case workspaceShortcutUsesShift
         case unavailable(String)
     }
 
@@ -1203,7 +1302,7 @@ final class TilesTool: Tool {
             return .workspaceShortcutMissing
         }
         guard binding.modifiers & DragSnapModifierMask.shift == 0 else {
-            return .unavailableWithIncludeShift
+            return .workspaceShortcutUsesShift
         }
         if let reason = workspaceMoveUnavailableReason(for: action, binding: binding,
                                                        boundCombos: boundCombos) {
@@ -1337,7 +1436,7 @@ final class TilesTool: Tool {
         case .combo(let keyCode, let modifiers):
             if let owner = generatedCounterpartOwner(keyCode: keyCode, modifiers: modifiers) {
                 let generatedKind = owner.hasGeneratedWorkspaceMove
-                    ? "the Shift-number window move"
+                    ? "the Shift workspace move"
                     : "the Shift reverse"
                 settingsModel.showAlert(
                     title: "Shortcut reserved",

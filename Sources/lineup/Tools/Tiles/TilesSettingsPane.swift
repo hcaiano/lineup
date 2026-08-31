@@ -15,18 +15,24 @@ final class TilesSettingsModel: ObservableObject {
 
     @Published private(set) var activeWorkspace = 1
     @Published private(set) var tileSpacingEnabled = true
+    @Published private(set) var isRunning = false
+    @Published private(set) var needsInitialEnableConfirmation = false
     @Published private(set) var canEdit = false
     @Published private(set) var canReset = false
     @Published private(set) var canUseRuntime = false
     @Published private(set) var blockedMessage: String?
     @Published private(set) var runtimeBlockedMessage: String?
+    @Published private(set) var runtimePauseMessage: String?
+    @Published private(set) var shortcutConflictCount = 0
+    @Published private(set) var shortcutConflictOwners = Set<ToolID>()
+    @Published private(set) var shortcutConflictActions = Set<TilesTool.Action>()
     @Published private(set) var recoveryRequired = false
     @Published private(set) var isRestoringWindows = false
     @Published var alert: AlertItem?
 
     private weak var tool: TilesTool?
     /// One consolidated snapshot for the current pane state. The list includes disabled tools and
-    /// is reused by the caption and every derived workspace-move row.
+    /// is reused by the shortcut guidance.
     private(set) var boundCombos: [ToolCombo] = []
     /// The pane supplies the shell's user-facing tool names for conflict alerts.
     var toolDisplayName: (ToolID) -> String = { $0.rawValue.capitalized }
@@ -41,14 +47,24 @@ final class TilesSettingsModel: ObservableObject {
 
     func refresh(boundCombos snapshot: [ToolCombo]? = nil) {
         guard let tool else { return }
-        if let snapshot { boundCombos = snapshot }
+        if let snapshot {
+            boundCombos = snapshot
+            let conflicts = tool.shortcutConflictSummary(boundCombos: snapshot)
+            shortcutConflictCount = conflicts?.count ?? 0
+            shortcutConflictOwners = conflicts?.owners ?? []
+            shortcutConflictActions = conflicts?.actions ?? []
+        }
         activeWorkspace = tool.activeWorkspace
         tileSpacingEnabled = tool.settings.tileSpacingEnabled
+        isRunning = tool.isRunning
+        needsInitialEnableConfirmation = tool.needsInitialEnableConfirmation
         canEdit = tool.canEdit
         canReset = tool.canReset
-        canUseRuntime = tool.runtimeReady
+        canUseRuntime = tool.runtimeUsable
         blockedMessage = tool.configBlockedMessage
         runtimeBlockedMessage = blockedMessage == nil ? tool.runtimeBlockedMessage : nil
+        runtimePauseMessage = blockedMessage == nil && runtimeBlockedMessage == nil
+            ? tool.runtimePauseMessage : nil
         recoveryRequired = tool.recoveryRequired
         isRestoringWindows = tool.isRestoringWindows
     }
@@ -64,12 +80,12 @@ final class TilesSettingsModel: ObservableObject {
         guard let tool else { return nil }
         var hints: [String] = []
         if tool.anyWorkspaceMoveShortcutAvailable(boundCombos: boundCombos) {
-            hints.append("Numbers switch workspaces; Shift-number moves the focused window.")
+            hints.append("Workspace shortcuts switch workspaces; physical Shift moves the focused window.")
         } else if tool.hyperkeyIncludesShiftForSettings {
-            hints.append("Turn off Hyperkey Include Shift to enable Shift-number window moves.")
+            hints.append("Turn off Hyperkey Include Shift to enable physical-Shift workspace moves.")
         }
         if tool.nextWindowReverseShortcutAvailable(boundCombos: boundCombos) {
-            hints.append("Shift-Tab reverses the stack.")
+            hints.append("Add physical Shift to the full stack shortcut to cycle in reverse.")
         } else if tool.anyReverseShortcutAvailable(boundCombos: boundCombos) {
             hints.append("Hold Shift with an available cyclic shortcut for previous.")
         }
@@ -78,6 +94,16 @@ final class TilesSettingsModel: ObservableObject {
 
     var runtimeNeedsAccessibility: Bool {
         runtimeBlockedMessage?.localizedCaseInsensitiveContains("Accessibility") == true
+    }
+
+    var shortcutConflictMessage: String? {
+        guard shortcutConflictCount > 0 else { return nil }
+        let names = shortcutConflictOwners.map(toolDisplayName).sorted().joined(separator: ", ")
+        return "\(shortcutConflictCount) Tiles shortcuts are already used by \(names). Change the affected Tiles shortcuts below; Lineup will not change your other tools."
+    }
+
+    func isShortcutConflicted(_ action: TilesTool.Action) -> Bool {
+        shortcutConflictActions.contains(action)
     }
 
     func prepareForRecording(_ action: String? = nil) {
@@ -126,11 +152,6 @@ final class TilesSettingsModel: ObservableObject {
     func shortcutText(for action: String) -> String {
         guard let binding = tool?.binding(for: action) else { return "" }
         return ShortcutKit.display(keyCode: binding.keyCode, modifiers: binding.modifiers)
-    }
-
-    func workspaceMoveShortcutState(for workspace: Int) -> TilesTool.WorkspaceMoveShortcutState {
-        tool?.workspaceMoveShortcutState(for: workspace, boundCombos: boundCombos)
-            ?? .workspaceShortcutMissing
     }
 
     func showAlert(title: String, message: String) {
@@ -183,9 +204,51 @@ private struct TilesSettingsPaneBody: View {
                 }
             }
 
+            if let message = model.runtimePauseMessage {
+                PinnedBannerStrip {
+                    BlockedBanner(message: message,
+                                  systemImage: "exclamationmark.triangle.fill",
+                                  actionTitle: "Open Zones",
+                                  action: { settings.selection = .tool(.zones) })
+                }
+            }
+
+            if settings.isToolEnabled(.tiles),
+               model.needsInitialEnableConfirmation,
+               !model.isRunning,
+               model.blockedMessage == nil,
+               model.runtimeBlockedMessage == nil,
+               model.runtimePauseMessage == nil {
+                PinnedBannerStrip {
+                    BlockedBanner(
+                        message: "Tiles is enabled but is waiting for your first arrangement choice.",
+                        systemImage: "square.grid.3x3.fill",
+                        actionTitle: "Arrange Windows…",
+                        action: { settings.confirmPendingTilesEnable() })
+                }
+            }
+
+            if let message = model.shortcutConflictMessage,
+               model.blockedMessage == nil,
+               model.runtimeBlockedMessage == nil,
+               model.runtimePauseMessage == nil,
+               !(settings.isToolEnabled(.tiles)
+                 && model.needsInitialEnableConfirmation
+                 && !model.isRunning),
+               !model.recoveryRequired {
+                PinnedBannerStrip {
+                    BlockedBanner(message: message,
+                                  systemImage: "exclamationmark.triangle.fill")
+                }
+            }
+
             if model.recoveryRequired,
                model.blockedMessage == nil,
-               model.runtimeBlockedMessage == nil {
+               model.runtimeBlockedMessage == nil,
+               model.runtimePauseMessage == nil,
+               !(settings.isToolEnabled(.tiles)
+                 && model.needsInitialEnableConfirmation
+                 && !model.isRunning) {
                 PinnedBannerStrip {
                     BlockedBanner(
                         message: !model.canUseRuntime
@@ -222,7 +285,7 @@ private struct TilesSettingsPaneBody: View {
 
                         SettingsCaption(
                             text: model.canUseRuntime
-                                ? "Uses your Zones layouts. Workspaces are separate from macOS Spaces. Use a Zones Hyper+arrow quick action to float a window."
+                                ? "Uses your Zones layouts. Workspaces are separate from macOS Spaces. Press Caps+Space to toggle the focused window between tiled and freeform."
                                 : "Tiles starts in Workspace \(model.activeWorkspace). It uses your Zones layouts when enabled.",
                             systemImage: "square.grid.3x3")
                             .padding(.top, 8)
@@ -284,6 +347,12 @@ private struct TilesSettingsPaneBody: View {
         HStack(spacing: 12) {
             Text(row.title)
             Spacer(minLength: 18)
+            if model.isShortcutConflicted(row) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help("This Tiles shortcut conflicts with another tool")
+                    .accessibilityLabel("Shortcut conflict")
+            }
             RecorderButton(
                 text: model.shortcutText(for: row.rawValue),
                 emptyText: "Set shortcut",
@@ -292,6 +361,8 @@ private struct TilesSettingsPaneBody: View {
                 accessibilityLabel: "Shortcut for \(row.title)",
                 rejectionCount: recorder.rejectionCount,
                 action: { record(row.rawValue) })
+                .accessibilityValue(model.isShortcutConflicted(row)
+                                    ? "Conflicts with another tool" : "Available")
             CircleClearButton(
                 help: "Clear shortcut",
                 accessibilityLabel: "Clear shortcut for \(row.title)",
@@ -315,70 +386,11 @@ private struct TilesSettingsPaneBody: View {
             ForEach(TilesTool.Action.allCases.filter { $0.workspaceNumber != nil }, id: \.self) { row in
                 shortcutRow(row)
             }
-            ForEach(1...4, id: \.self) { workspace in
-                workspaceMoveShortcutRow(workspace)
-            }
             shortcutRow(.nextWindow)
         case .focus, .move, .layout:
             ForEach(TilesTool.Action.allCases.filter { $0.group == group }, id: \.self) { row in
                 shortcutRow(row)
             }
-        }
-    }
-
-    @ViewBuilder
-    private func workspaceMoveShortcutRow(_ workspace: Int) -> some View {
-        let title = "Move Window to Workspace \(workspace)"
-        let state = model.workspaceMoveShortcutState(for: workspace)
-        HStack(spacing: 12) {
-            Text(title)
-            Spacer(minLength: 18)
-            Group {
-                switch state {
-                case .shortcut(let shortcut):
-                    KeyCapRow(display: shortcut)
-                case .workspaceShortcutMissing:
-                    Text("Set Workspace \(workspace) first")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                case .unavailableWithIncludeShift:
-                    Text("Unavailable with Include Shift")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                case .unavailable(let reason):
-                    Text("Unavailable: \(reason)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(minWidth: 164)
-            Color.clear
-                .frame(width: 16, height: 16)
-                .accessibilityHidden(true)
-        }
-        .frame(minHeight: SettingsMetrics.shortcutRowHeight)
-        .padding(.vertical, 3)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(workspaceMoveAccessibilityValue(state, workspace: workspace))
-        Divider()
-    }
-
-    private func workspaceMoveAccessibilityValue(
-        _ state: TilesTool.WorkspaceMoveShortcutState,
-        workspace: Int
-    ) -> String {
-        switch state {
-        case .shortcut(let shortcut): return shortcut
-        case .workspaceShortcutMissing:
-            return "Unavailable until Workspace \(workspace) has a shortcut"
-        case .unavailableWithIncludeShift:
-            return "Unavailable while Hyperkey includes Shift"
-        case .unavailable(let reason):
-            return "Unavailable: \(reason)"
         }
     }
 

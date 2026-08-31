@@ -22,6 +22,7 @@ final class CycleHUD {
     private enum Mode {
         case windows
         case appGroup
+        case status
     }
 
     private let panel: HUDPanel
@@ -114,6 +115,29 @@ final class CycleHUD {
         present()
     }
 
+    /// Explain why a routed Cycler action could not change Tiles context. This uses Cycler's own
+    /// HUD so a blocked app shortcut never looks like a successful Tiles workspace change.
+    func showBlocked(_ message: String) {
+        guard !message.isEmpty else { return }
+
+        generation += 1
+        dismissWorkItem?.cancel()
+
+        let icon = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
+                           accessibilityDescription: "Warning")
+        icon?.isTemplate = true
+        iconView.image = icon
+        iconView.contentTintColor = .systemOrange
+        appLabel.stringValue = "Cycler"
+        countLabel.stringValue = "Unavailable"
+        if shownCount != 1 || shownMode != .status { rebuildRows(1, mode: .status) }
+        shownCount = 1
+        rowViews[0].update(title: message, selected: false)
+
+        present(duration: 2.5)
+        announce(message)
+    }
+
     /// Tear the HUD down right now, cancelling the pending auto-dismiss.
     ///
     /// Added for Lineup 2.0: `CycleHUD` is a singleton that outlives the tool, so `CyclerTool.stop()`
@@ -128,7 +152,7 @@ final class CycleHUD {
         panel.orderOut(nil)
     }
 
-    private func present() {
+    private func present(duration: TimeInterval = 1.0) {
         if let content = measureView {
             content.layoutSubtreeIfNeeded()
             let size = NSSize(width: width, height: content.fittingSize.height)
@@ -150,7 +174,7 @@ final class CycleHUD {
 
         let work = DispatchWorkItem { [weak self] in self?.hide() }
         dismissWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
 
     private func hide() {
@@ -166,6 +190,13 @@ final class CycleHUD {
                 self.panel.orderOut(nil)
             }
         }
+    }
+
+    private func announce(_ text: String) {
+        guard let app = NSApp else { return }
+        NSAccessibility.post(element: app,
+                             notification: .announcementRequested,
+                             userInfo: [.announcement: text])
     }
 
     private func rebuildRows(_ count: Int, mode: Mode) {

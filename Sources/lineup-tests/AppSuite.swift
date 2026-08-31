@@ -2,6 +2,7 @@ import Foundation
 import AppCore
 import CyclerCore
 import HyperkeyCore
+import TilesCore
 import ZonesCore
 
 // Shell-level checks: the config envelope, its write discipline, the legacy import/split, and
@@ -39,6 +40,76 @@ func runAppTests() throws {
     try runUIStateContractTests()
     try runVisualDesignTests()
     try runTilesShellContractTests()
+    try runAccessibilityTransitionTests()
+}
+
+private func runAccessibilityTransitionTests() throws {
+    check(AccessibilityTrustTransition.from(previouslyTrusted: false,
+                                             currentlyTrusted: false) == .unchanged,
+          "an initially untrusted Accessibility check is not a revocation")
+    check(AccessibilityTrustTransition.from(previouslyTrusted: true,
+                                             currentlyTrusted: true) == .unchanged,
+          "a repeated trusted Accessibility check has no transition")
+    check(AccessibilityTrustTransition.from(previouslyTrusted: false,
+                                             currentlyTrusted: true) == .granted,
+          "an Accessibility grant is identified as a grant")
+    check(AccessibilityTrustTransition.from(previouslyTrusted: true,
+                                             currentlyTrusted: false) == .revoked,
+          "only a trusted to untrusted Accessibility change is a revocation")
+
+    let files = sourceFiles()
+    func source(_ path: String) -> String {
+        files.first { $0.path == path }?.text ?? ""
+    }
+    let permissionCenter = source("Sources/lineup/App/PermissionCenter.swift")
+    let shell = source("Sources/lineup/App/AppShell.swift")
+    let tiles = source("Sources/lineup/Tools/Tiles/TilesTool.swift")
+    let registry = source("Sources/lineup/App/ToolRegistry.swift")
+    check(permissionCenter.contains("var onChange: ((AccessibilityTrustTransition) -> Void)?")
+            && permissionCenter.contains("AccessibilityTrustTransition.from(")
+            && permissionCenter.contains("onChange?(updateAccessibilityTrust())"),
+          "the permission watcher propagates an explicit trust transition")
+    check(shell.contains("accessibilityPermissionDidChange(transition)"),
+          "the shell passes the trust transition to Tiles")
+    check(tiles.contains("func accessibilityPermissionDidChange(_ transition: AccessibilityTrustTransition)")
+            && tiles.contains("guard transition == .revoked else")
+            && tiles.contains("runtimeBlockedMessage != Self.accessibilityRevokedMessage")
+            && tiles.contains("runtimeBlockedMessage = Self.accessibilityNeededMessage"),
+          "Tiles keeps needs-Accessibility copy initially and preserves revoked copy while untrusted")
+    check(registry.contains("tool.allowsAutomaticStartup"),
+          "automatic tool startup honours the explicit startup policy")
+    check(tiles.contains("var allowsAutomaticStartup: Bool { !needsInitialEnableConfirmation }"),
+          "Tiles cannot arrange automatically before first-arrangement confirmation")
+    check(tiles.contains("var needsInitialEnableConfirmation: Bool {\n        !settings.hasConfirmedInitialArrangement")
+            && !tiles.contains("sectionLoadError == nil && !settings.hasConfirmedInitialArrangement"),
+          "malformed Tiles settings fail closed and cannot bypass first-arrangement confirmation")
+    var fallbackSettings = TilesSettings()
+    check(!fallbackSettings.hasConfirmedInitialArrangement,
+          "the fail-safe settings value used after a malformed load requires confirmation")
+    fallbackSettings.hasConfirmedInitialArrangement = true
+    check(fallbackSettings.hasConfirmedInitialArrangement,
+          "only an explicit persisted confirmation opens automatic Tiles startup")
+    let tilesPane = source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
+    let settingsStore = source("Sources/lineup/Settings/SettingsStore.swift")
+    check(settingsStore.contains("func confirmPendingTilesEnable()")
+            && settingsStore.contains("prepareTilesEnable()")
+            && settingsStore.contains("registry.setEnabled(true, for: .tiles)"),
+          "enabled-but-unconfirmed Tiles has an explicit Settings activation path")
+    check(tilesPane.contains("model.needsInitialEnableConfirmation")
+            && tilesPane.contains("settings.confirmPendingTilesEnable()")
+            && tilesPane.contains("Arrange Windows…"),
+          "Tiles Settings offers first-arrangement confirmation without showing it at launch")
+    check(shell.contains("shell.tilesAwaitingArrangement")
+            && shell.contains("Tiles is waiting to arrange windows")
+            && shell.contains("registry.isEnabled(.tiles)")
+            && shell.contains("!tiles.isRunning")
+            && shell.contains("tiles.needsInitialEnableConfirmation"),
+          "enabled-but-unconfirmed Tiles stays stopped and surfaces an actionable global warning")
+    check(shell.contains("openSettings(selecting: .tool(.tiles))")
+            && shell.contains("settings.store.selection = selection")
+            && shell.contains("store.selection = selection")
+            && shell.contains("statusItem.onOpenSettings = { [weak self] in self?.openSettings() }"),
+          "the Tiles warning opens Settings on Tiles without changing the normal Settings action")
 }
 
 // MARK: - Envelope
@@ -1385,7 +1456,7 @@ private func runOnboardingTests() throws {
     check(addButtons == 2,
           "the Cycler pane declares the Add control twice — empty state and list footer — and shows exactly one at a time (got \(addButtons))")
     if let empty = cyclerPane.range(of: "if model.rows.isEmpty {"),
-       let footer = cyclerPane.range(of: "Use letters for app groups. Tiles uses 1–4 for workspaces. Add ⇧ to cycle backwards.") {
+       let footer = cyclerPane.range(of: "Keep 1–4 and letters for apps. Tiles uses U/I/O/P for workspaces. Add ⇧ to cycle backwards.") {
         check(empty.lowerBound < footer.lowerBound,
               "the list footer is on the non-empty branch, below the empty state")
     } else {
@@ -1395,8 +1466,8 @@ private func runOnboardingTests() throws {
           "the Cycler pane's loose instruction paragraph is gone — the hero summary carries it")
     check(!cyclerPane.contains("Use one app to cycle its windows, or add several apps to cycle between them. Add"),
           "the tripled guidance sentence is not repeated in the pane body")
-    check(cyclerPane.contains("Add one or several apps to a letter. Tiles uses 1–4 for workspaces."),
-          "the Cycler empty state teaches the shared letters-versus-workspaces shortcut model")
+    check(cyclerPane.contains("Add apps to 1–4 or letters. Tiles uses U/I/O/P for workspaces."),
+          "the Cycler empty state preserves app keys and teaches the Tiles workspace row")
 
     let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
     check(zonesPane.contains("caption: \"Click a shortcut, then press a key combo."),
@@ -2055,9 +2126,11 @@ private func runUIStateContractTests() throws {
 
     // ---- 19. One refresh per sidebar toggle ----
     if let start = settingsStore.range(of: "func binding(forTool id: ToolID)") {
-        let body = settingsStore[start.lowerBound...].prefix(600)
-        check(body.contains("registry.setEnabled(newValue, for: id)") && !body.contains("self?.refresh()"),
-              "the toggle relies on the registry's own change callback instead of refreshing twice")
+        let body = settingsStore[start.lowerBound...].prefix(900)
+        check(body.contains("!self.prepareTilesEnable()")
+                && body.contains("self.refresh()")
+                && body.contains("registry.setEnabled(newValue, for: id)"),
+              "a cancelled Tiles confirmation republishes off while accepted toggles use the registry callback")
     } else {
         check(false, "SettingsStore owns binding(forTool:)")
     }
@@ -2465,7 +2538,7 @@ private func runTilesShellContractTests() throws {
     let shell = source("Sources/lineup/App/AppShell.swift")
     guard let zones = shell.range(of: "registry.register(ZonesTool("),
           let tiles = shell.range(of: "registry.register(TilesTool("),
-          let cycler = shell.range(of: "registry.register(CyclerTool())") else {
+          let cycler = shell.range(of: "registry.register(CyclerTool(windowRouting:") else {
         check(false, "AppShell registers Zones, Tiles and Cycler")
         return
     }
@@ -2506,18 +2579,32 @@ private func runTilesShellContractTests() throws {
     }
     let preset = shortcutKit[presetStart.lowerBound..<presetEnd.lowerBound]
     check(preset.contains("let base = includeShift ? hyper : hyperWithoutShift")
-            && preset.contains("let focusKeys = [kVK_ANSI_H, kVK_ANSI_J, kVK_ANSI_K, kVK_ANSI_L]")
-            && preset.contains("[kVK_ANSI_U, kVK_ANSI_I, kVK_ANSI_O, kVK_ANSI_P]"),
-          "Tiles preset keeps the exact focus and full-Shift movement key order")
-    check(preset.contains("workspace1: binding(\"workspace1\", kVK_ANSI_1, base)")
-            && preset.contains("workspace4: binding(\"workspace4\", kVK_ANSI_4, base)")
+            && preset.contains("let focusKeys = [kVK_ANSI_W, kVK_ANSI_A, kVK_ANSI_X, kVK_ANSI_D]")
+            && preset.contains("? [kVK_ANSI_Y, kVK_ANSI_G, kVK_ANSI_B, kVK_ANSI_H]")
+            && preset.contains(": focusKeys"),
+          "Tiles preset keeps workspace, spatial focus, and mode-specific movement key order")
+    check(preset.contains("workspace1: binding(\"workspace1\", kVK_ANSI_U, base)")
+            && preset.contains("workspace2: binding(\"workspace2\", kVK_ANSI_I, base)")
+            && preset.contains("workspace3: binding(\"workspace3\", kVK_ANSI_O, base)")
+            && preset.contains("workspace4: binding(\"workspace4\", kVK_ANSI_P, base)")
+            && preset.contains("focusTileLeft: binding(\"focusTileLeft\", focusKeys[1], base)")
+            && preset.contains("focusTileUp: binding(\"focusTileUp\", focusKeys[0], base)")
+            && preset.contains("focusTileDown: binding(\"focusTileDown\", focusKeys[2], base)")
+            && preset.contains("focusTileRight: binding(\"focusTileRight\", focusKeys[3], base)")
             && preset.contains("nextWindow: binding(\"nextWindow\", kVK_Tab, base)")
             && preset.contains("toggleSplitOrientation: binding(\"toggleSplitOrientation\", kVK_Return, base)")
             && preset.contains("toggleTiled: binding(\"toggleTiled\", kVK_Space, base)")
-            && preset.contains("moveWindowLeft: binding(\"moveWindowLeft\", moveKeys[0], hyper)")
+            && preset.contains("moveWindowLeft: binding(\"moveWindowLeft\", moveKeys[1], hyper)")
+            && preset.contains("moveWindowUp: binding(\"moveWindowUp\", moveKeys[0], hyper)")
+            && preset.contains("moveWindowDown: binding(\"moveWindowDown\", moveKeys[2], hyper)")
+            && preset.contains("moveWindowRight: binding(\"moveWindowRight\", moveKeys[3], hyper)")
             && !preset.contains("kVK_ANSI_Grave")
+            && !preset.contains("kVK_ANSI_1")
+            && !preset.contains("kVK_ANSI_2")
+            && !preset.contains("kVK_ANSI_3")
+            && !preset.contains("kVK_ANSI_4")
             && !preset.contains("moveWindowToNextWorkspace"),
-          "Tiles preset keeps numbered workspaces, stack, split, toggle, and movement modifier map")
+          "Tiles preset uses U/I/O/P and W/A/X/D, leaving Caps+1…4 for Cycler, with stack, split, toggle, and movement")
     check(shortcutKit.contains("static func adaptingTilesDefaults(")
             && shortcutKit.contains("tilesShortcutKeyPaths.allSatisfy")
             && shortcutKit.contains("\\.nextWorkspace, \\.nextWindow, \\.moveWindowToNextWorkspace")
@@ -2535,12 +2622,16 @@ private func runTilesShellContractTests() throws {
 
     let tilesTool = source("Sources/lineup/Tools/Tiles/TilesTool.swift")
     let tilesPane = source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
+    check(tilesTool.contains("var needsInitialEnableConfirmation: Bool")
+            && tilesTool.contains("!settings.hasConfirmedInitialArrangement")
+            && !tilesTool.contains("sectionLoadError == nil && !settings.hasConfirmedInitialArrangement"),
+          "Tiles requires first-enable confirmation, including after a malformed settings load")
     check(tilesTool.contains("func hyperkeyModeDidChange()")
             && tilesTool.contains("if runtimeReady { registerHotkeys() }")
             && tilesTool.contains("enum WorkspaceMoveShortcutState: Equatable")
             && tilesTool.contains("workspaceMoveShortcutState(for workspace: Int,\n                                    boundCombos: [ToolCombo])")
             && tilesTool.contains("return .workspaceShortcutMissing")
-            && tilesTool.contains("return .unavailableWithIncludeShift")
+            && tilesTool.contains("return .workspaceShortcutUsesShift")
             && tilesTool.contains("return .unavailable(reason)")
             && tilesTool.contains("return .shortcut(ShortcutKit.display("),
           "Tiles reloads atomically adapted shortcuts and exposes derived workspace moves")
@@ -2549,26 +2640,41 @@ private func runTilesShellContractTests() throws {
             && tilesTool.contains("guard let action = Action(rawValue: action), action.isRegistered")
             && !tilesTool.contains("Action.allCases"),
           "legacy relative workspace actions remain decodable but never register or reserve shortcuts")
-    check(tilesPane.contains("workspaceMoveShortcutRow")
-            && tilesPane.contains("Move Window to Workspace")
-            && tilesPane.contains("Set Workspace \\(workspace) first")
-            && tilesPane.contains("Unavailable with Include Shift")
-            && tilesPane.contains("Unavailable: \\(reason)")
-            && tilesPane.contains("Unavailable until Workspace \\(workspace) has a shortcut")
-            && tilesPane.contains("Unavailable while Hyperkey includes Shift")
-            && tilesPane.contains("func refreshShortcutSnapshot()")
-            && tilesPane.contains("refresh(boundCombos: tool?.boundCombos() ?? [])")
-            && tilesPane.contains("model.refreshShortcutSnapshot()")
-            && tilesPane.contains("boundCombos: boundCombos")
-            && !tilesPane.contains("shortcut.isEmpty")
+    check(tilesPane.contains("shortcutGroup(\"Workspace and stacks\", .workspaceAndStacks)")
+            && tilesPane.contains("ForEach(TilesTool.Action.allCases.filter { $0.workspaceNumber != nil }")
             && tilesPane.contains("shortcutRow(.nextWindow)")
-            && !tilesPane.contains("shortcutRow(.nextWorkspace)")
-            && !tilesPane.contains("shortcutRow(.moveWindowToNextWorkspace)"),
-          "Tiles distinguishes missing and full-Hyper workspace moves and omits unfinished relative rows")
-    check(tilesTool.contains("private func menuTitle(")
-            && tilesTool.contains("addingShift: true")
+            && tilesPane.contains("shortcutGroup(\"Focus tile\", .focus)")
+            && tilesPane.contains("shortcutGroup(\"Move window\", .move)")
+            && tilesPane.contains("shortcutGroup(\"Layout\", .layout)"),
+          "Tiles Settings groups only the registered shortcut rows")
+
+    guard let menuStart = tilesTool.range(of: "    func menuItems() -> [NSMenuItem] {"),
+          let menuEnd = tilesTool.range(of: "    private static let directionMenuEntries",
+                                        range: menuStart.upperBound..<tilesTool.endIndex) else {
+        check(false, "Tiles menu has a bounded derived-state section")
+        return
+    }
+    let menu = String(tilesTool[menuStart.lowerBound..<menuEnd.lowerBound])
+    check(menu.contains("let shortcutSnapshot = boundCombos()")
+            && menu.contains("switch workspaceMoveShortcutState(for: workspace, boundCombos: shortcutSnapshot)")
+            && menu.contains("case .shortcut(let shortcut):")
+            && menu.contains("title = \"Workspace \\(workspace)  \\(shortcut)\"")
+            && menu.contains("case .workspaceShortcutMissing, .workspaceShortcutUsesShift, .unavailable:"),
+          "Tiles menu derives workspace labels from honest shortcut availability")
+    check(menu.contains("item.isEnabled = runtimeUsable")
+            && menu.contains("cycle.isEnabled = runtimeUsable")
+            && menu.contains("focus.isEnabled = runtimeUsable")
+            && menu.contains("moveTile.isEnabled = runtimeUsable")
+            && menu.contains("toggleSplit.isEnabled = runtimeUsable")
+            && menu.contains("toggleTiled.isEnabled = runtimeUsable")
+            && menu.contains("restore.isEnabled = runtimeReady")
+            && menu.components(separatedBy: "isEnabled = runtimeReady").count - 1 == 1,
+          "Tiles disables runtime actions during a pause while keeping Restore available")
+    check(tilesTool.contains("private func menuTitle(_ title: String, action: Action)")
+            && tilesTool.contains("let modifiers = UInt32(truncatingIfNeeded: binding.modifiers)")
+            && tilesTool.contains("return \"\\(title)  \\(ShortcutKit.display")
             && tilesTool.contains("The Carbon hotkey remains the single dispatcher"),
-          "the Tiles menu teaches configured shortcuts without adding a second dispatcher")
+          "the Tiles menu labels actions from configured shortcuts without a second dispatcher")
 
     let mutationCenter = source("Sources/lineup/App/ZoneLayoutMutationCenter.swift")
     check(mutationCenter.contains("@MainActor\nfinal class ZoneLayoutMutationCenter")
@@ -2629,6 +2735,13 @@ private func runTilesShellContractTests() throws {
             && tool.contains("hasGeneratedWorkspaceMove")
             && tool.contains("conflictOwner(keyCode:"),
           "persistedCombos includes generated reverse, workspace-move, and sibling conflicts")
+    check(tool.contains("var actions: Set<Action>")
+            && tool.contains("actions.insert(match.action)")
+            && source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
+                .contains("model.isShortcutConflicted(row)")
+            && source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
+                .contains("Conflicts with another tool"),
+          "Tiles marks each persisted shortcut row involved in a sibling-tool conflict")
     check(tool.contains("private var hasStoredSettings = false")
             && tool.contains("guard !hasStoredSettings else { return true }")
             && tool.contains("let loaded = stored ?? ShortcutKit.tilesDefaults(includeShift: hyperkeyIncludesShift())")
@@ -2686,7 +2799,7 @@ private func runTilesShellContractTests() throws {
     check(pane.contains("TilesTool.Action.allCases"),
           "Tiles Settings renders a shortcut row for every action")
     for label in ["Workspace 1", "Workspace 2", "Workspace 3", "Workspace 4",
-                  "Next Workspace", "Next Window in Tile", "Move Window to Next Workspace",
+                  "Next Window in Tile",
                   "Focus Tile Left", "Focus Tile Right", "Focus Tile Up", "Focus Tile Down",
                   "Move Window Left", "Move Window Right", "Move Window Up", "Move Window Down",
                   "Switch Split Direction", "Toggle Tiled / Freeform"] {
@@ -2706,9 +2819,10 @@ private func runTilesShellContractTests() throws {
             && pane.contains("Set shortcut")
             && pane.contains("prepareForRecording(_ action")
             && pane.contains("model.prepareForRecording(action)")
-            && pane.contains("Numbers switch workspaces")
+            && pane.contains("Workspace shortcuts switch workspaces; physical Shift moves the focused window.")
             && pane.contains("Turn off Hyperkey Include Shift")
-            && pane.contains("Shift-Tab reverses"),
+            && pane.contains("Add physical Shift to the full stack shortcut to cycle in reverse")
+            && pane.contains("Add physical Shift to the full stack shortcut to cycle in reverse."),
           "Tiles shortcuts use the shared recorder and describe only available reverses")
     check(pane.contains("BlockedBanner(message: message")
             && pane.contains("model.canEdit")
@@ -2739,6 +2853,10 @@ private func runTilesShellContractTests() throws {
             && hud.contains("HUDMotion.duration(HUDMotion.fadeOut)")
             && hud.contains("Brand.blue"),
           "Tiles HUD covers workspace, stack and failure states with shared motion")
+    check(hud.contains("title: String = \"Tile stack\"")
+            && hud.contains("titleLabel.stringValue = title")
+            && hud.contains("window \\(selectedInStack + 1) of \\(titles.count)"),
+          "Tiles stack HUD can label a committed stack addition and keeps its count and list")
     if let confirmation = hud.range(of: "func showConfirmation"),
        let dismiss = hud.range(of: "func dismiss",
                                range: confirmation.upperBound..<hud.endIndex) {

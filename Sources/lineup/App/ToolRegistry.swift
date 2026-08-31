@@ -60,7 +60,9 @@ final class ToolRegistry {
                     log.error("could not seed \(tool.id.rawValue, privacy: .public) enabled=\(tool.defaultEnabled): \(error, privacy: .public)")
                 }
             }
-            if isEnabled(tool.id), !tool.isRunning { start(tool) }
+            if isEnabled(tool.id), tool.allowsAutomaticStartup, !tool.isRunning {
+                start(tool)
+            }
         }
     }
 

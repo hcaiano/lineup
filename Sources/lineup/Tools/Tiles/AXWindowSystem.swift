@@ -267,7 +267,8 @@ final class AXWindowSystem: TilesWindowSystem {
         let generation = currentCancellationGeneration()
         return queue.sync {
             var correlated = correlatedTokens(liveObservations())
-            return effects.map { effect in
+            var identityChangedPIDs = Set<pid_t>()
+            let results: [WindowEffectResult] = effects.map { effect in
                 guard !isCancelled(generation) else { return .failure(effect, .cancelled) }
                 guard let entry = entries[effect.token] else {
                     return .failure(effect, .goneWindow)
@@ -277,6 +278,7 @@ final class AXWindowSystem: TilesWindowSystem {
                     let error = setBool(false, on: entry.element,
                                         attribute: kAXMinimizedAttribute, verify: true)
                     if error == .success {
+                        identityChangedPIDs.insert(entry.pid)
                         // Deminimizing a staged window is the one permitted effect while it is
                         // absent from the current on-screen CG snapshot. Wait for bounded public
                         // CG correlation before any following frame/raise/focus effect.
@@ -302,9 +304,10 @@ final class AXWindowSystem: TilesWindowSystem {
                     guard isSafeOnScreen(frame) else { return .failure(effect, .rejectedFrame) }
                     return result(effect, from: setFrame(frame, on: entry.element))
                 case .setMinimized(_, let minimized, _):
-                    return result(effect, from: setBool(minimized, on: entry.element,
-                                                        attribute: kAXMinimizedAttribute,
-                                                        verify: true))
+                    let error = setBool(minimized, on: entry.element,
+                                        attribute: kAXMinimizedAttribute, verify: true)
+                    if error == .success { identityChangedPIDs.insert(entry.pid) }
+                    return result(effect, from: error)
                 case .raise:
                     return result(effect, from: AXUIElementPerformAction(
                         entry.element, kAXRaiseAction as CFString))
@@ -324,6 +327,14 @@ final class AXWindowSystem: TilesWindowSystem {
                     return focused ? .success(effect) : .failure(effect, .cannotComplete)
                 }
             }
+            // One scoped AX sweep per batch is enough to refresh recovery identities. Repeating
+            // NSWorkspace enumeration and discovery after every window effect makes a workspace
+            // switch increasingly slow as the number of windows grows.
+            if !identityChangedPIDs.isEmpty, !isCancelled(generation) {
+                refreshTrackedIdentity(for: identityChangedPIDs,
+                                       cancellationGeneration: generation)
+            }
+            return results
         }
     }
 
@@ -334,13 +345,18 @@ final class AXWindowSystem: TilesWindowSystem {
     func stackPreview(tokens: [WindowToken], selected: WindowToken) -> TilesStackPreview? {
         queue.sync {
             guard let selectedIndex = tokens.firstIndex(of: selected), !tokens.isEmpty else { return nil }
-            let titles = tokens.compactMap { token -> String? in
+            let rows = tokens.compactMap { token -> (app: String, title: String)? in
                 guard let entry = entries[token] else { return nil }
                 let title = string(entry.element, kAXTitleAttribute) ?? ""
-                if !title.isEmpty { return title }
-                return NSRunningApplication(processIdentifier: entry.pid)?.localizedName ?? "Window"
+                let app = NSRunningApplication(processIdentifier: entry.pid)?.localizedName ?? "Window"
+                return (app, title)
             }
-            guard titles.count == tokens.count else { return nil }
+            guard rows.count == tokens.count else { return nil }
+            let mixedApps = Set(rows.map { $0.app }).count > 1
+            let titles = rows.map { row in
+                guard !row.title.isEmpty else { return row.app }
+                return mixedApps ? "\(row.app) - \(row.title)" : row.title
+            }
             let icon = entries[selected]
                 .flatMap { NSRunningApplication(processIdentifier: $0.pid) }?.icon
             return TilesStackPreview(appIcon: icon, titles: titles, selectedIndex: selectedIndex)
@@ -665,6 +681,18 @@ final class AXWindowSystem: TilesWindowSystem {
         }
     }
 
+    /// Minimize and deminimize can change an app's AX role fingerprint while keeping the same
+    /// window element. Refresh that app before the coordinator writes its post-effect journal, so
+    /// recovery never waits for a later notification or healing pass to learn the new identity.
+    private func refreshTrackedIdentity(for pids: Set<pid_t>,
+                                        cancellationGeneration: UInt64) {
+        let applications = Self.regularApplications(NSWorkspace.shared.runningApplications,
+                                                    excluding: ownPID)
+        discover(applications: applications,
+                 cancellationGeneration: cancellationGeneration,
+                 scanning: pids)
+    }
+
     private func correlatedTokens(_ observations: [EntryObservation]) -> Set<WindowToken> {
         guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                     kCGNullWindowID) as? [[String: Any]] else { return [] }
@@ -789,10 +817,17 @@ final class AXWindowSystem: TilesWindowSystem {
                          verify: Bool) -> AXError {
         let error = AXUIElementSetAttributeValue(element, attribute as CFString,
                                                  value ? kCFBooleanTrue : kCFBooleanFalse)
-        guard error == .success, !verify || bool(element, attribute) == value else {
-            return error == .success ? .failure : error
+        guard verify else { return error }
+
+        // Some apps, including Finder, apply minimization after the AX setter returns and can
+        // even report a timeout although the requested state is committed moments later. Treat
+        // the observed postcondition as authoritative, with a short bounded wait so a delayed
+        // window cannot stall Tiles indefinitely.
+        for attempt in 0..<3 {
+            if bool(element, attribute) == value { return .success }
+            if attempt < 2 { usleep(40_000) }
         }
-        return .success
+        return error == .success ? .cannotComplete : error
     }
 
     private func result(_ effect: WindowEffect, from error: AXError) -> WindowEffectResult {

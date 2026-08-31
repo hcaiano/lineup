@@ -9,9 +9,43 @@ private let log = Logger(subsystem: Product.logSubsystem, category: "cycler.acti
 @_silgen_name("_AXUIElementGetWindow")
 private func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
 
+/// Tiles classifies each AX window without exposing its model to Cycler. A freeform window is
+/// unmanaged for routing purposes: it stays available in the current context.
+enum CyclerWindowContext: Equatable {
+    case currentContext
+    case unmanaged
+    case inactiveWorkspace(workspace: Int, focusEpoch: UInt64)
+    /// Tiles knows the window, but cannot safely change its workspace right now.
+    case unavailable(message: String)
+}
+
+struct CyclerWindowRoute {
+    let context: CyclerWindowContext
+    let requestInactiveActivation: (@MainActor () -> Void)?
+
+    init(context: CyclerWindowContext,
+         requestInactiveActivation: (@MainActor () -> Void)? = nil) {
+        self.context = context
+        self.requestInactiveActivation = requestInactiveActivation
+    }
+
+    @MainActor @discardableResult
+    func activateIfInactive() -> Bool {
+        guard case .inactiveWorkspace = context, let requestInactiveActivation else { return false }
+        requestInactiveActivation()
+        return true
+    }
+}
+
+struct CyclerWindowRouting {
+    let route: @MainActor (AXUIElement) -> CyclerWindowRoute
+}
+
+typealias CyclerWindowRoutingProvider = @MainActor () -> CyclerWindowRouting?
+
 /// The heart of Cycler: press a per-app hotkey to bring an app to the front; press it again to
-/// walk that app's windows one at a time. Multi-app groups use the same app activation helpers,
-/// but intentionally stay window-agnostic.
+/// walk that app's windows one at a time. Multi-app groups still cycle apps, but can raise one
+/// routed window after choosing the next app.
 ///
 /// First press (app not already frontmost) = "go to this app": activate it and remember its main
 /// standard window. Repeat press (app already frontmost) = advance through a stable CGWindowID
@@ -22,24 +56,26 @@ private func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePo
 final class AppActivator {
     static let shared = AppActivator()
 
-    /// Index of the window we focused last time, per bundle id, so a repeat press advances from
-    /// where we left off if the system's main-window readback is momentarily stale.
-    private var lastIndex: [String: Int] = [:]
+    /// Window we focused last time, per bundle id, so filtering a different Tiles context does not
+    /// make an old array index point at another window.
+    private var lastWindowID: [String: CGWindowID] = [:]
 
     /// Drop every remembered window position. `AppActivator` is a shared singleton that outlives
     /// the Cycler tool, so `CyclerTool.stop()` calls this: a disabled tool must not keep per-app
     /// state alive, and re-enabling should start from a clean slate rather than resume a cycle
     /// the user abandoned several minutes ago.
     func reset() {
-        lastIndex.removeAll()
+        lastWindowID.removeAll()
     }
 
     /// Bring `bundleIdentifier` forward, or cycle its windows if it's already frontmost.
-    func engage(bundleIdentifier: String, direction: WindowCycle.Direction = .forward) {
+    func engage(bundleIdentifier: String,
+                direction: WindowCycle.Direction = .forward,
+                windowRouting: CyclerWindowRouting? = nil) {
         let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
         guard !apps.isEmpty else {
             Self.launch(bundleIdentifier: bundleIdentifier)
-            lastIndex.removeValue(forKey: bundleIdentifier)
+            lastWindowID.removeValue(forKey: bundleIdentifier)
             return
         }
 
@@ -48,35 +84,101 @@ final class AppActivator {
             return
         }
 
-        let windows = Self.windows(of: apps)
+        let allWindows = windowRouting.map { Self.allWindows(of: apps, using: $0) }
+            ?? Self.windows(of: apps)
+        let selection = Self.candidateSelection(from: allWindows, using: windowRouting)
+        let windows = selection.windows
         let app = Self.preferredApplication(from: apps, bundleIdentifier: bundleIdentifier, windows: windows)
         let alreadyFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleIdentifier
 
-        if windows.isEmpty, let minimizedWindow = Self.firstMinimizedWindow(of: apps) {
+        if windowRouting == nil, windows.isEmpty,
+           let minimizedWindow = Self.firstMinimizedWindow(of: apps) {
             Self.activate(minimizedWindow.app)
             Self.raise(minimizedWindow.element)
-            lastIndex.removeValue(forKey: bundleIdentifier)
+            lastWindowID[bundleIdentifier] = minimizedWindow.windowID
             return
         }
 
         if !alreadyFront {
             // First press: go to the app. Show the current window position without advancing, so
             // the HUD appears consistently on the first engagement for multi-window apps.
-            Self.activate(app)
+            if windowRouting == nil { Self.activate(app) }
             // A second full AX sweep is only worth its cost when the first one found nothing —
-            // a hidden app whose windows appear once `activate()` unhides it. Otherwise the list
+            // a hidden app whose windows appear once it is unhidden. Otherwise the list
             // we already have is the one we cycle, and `indexOfMain` reads each window's live
             // `AXMain` anyway, so nothing here is stale.
-            let visibleWindows = windows.isEmpty ? Self.windows(of: apps) : windows
-            let remembered = lastIndex[bundleIdentifier].flatMap { visibleWindows.indices.contains($0) ? $0 : nil }
+            let visibleSelection: CandidateSelection
+            if windows.isEmpty, allWindows.isEmpty {
+                // Some hidden apps publish no AXWindows until they are unhidden. With routing,
+                // the first pass therefore has no target to classify. Make the app publish its
+                // windows, then route the refreshed target in this same key press.
+                // Do not activate every app window before Tiles has selected the routed target.
+                // That activation can make an unrelated AXMain window switch the workspace.
+                if windowRouting != nil, app.isHidden { app.unhide() }
+                let refreshed = windowRouting.map { Self.allWindows(of: apps, using: $0) }
+                    ?? Self.windows(of: apps)
+                visibleSelection = Self.candidateSelection(from: refreshed, using: windowRouting)
+            } else {
+                visibleSelection = selection
+            }
+            let visibleWindows = visibleSelection.windows
+            let remembered = lastWindowID[bundleIdentifier].flatMap { rememberedID in
+                visibleWindows.firstIndex { $0.windowID == rememberedID }
+            }
             let current = Self.indexOfMain(in: visibleWindows)
                 ?? remembered
                 ?? (visibleWindows.isEmpty ? nil : 0)
             if let current {
                 let selectedWindow = visibleWindows[current]
-                Self.raise(selectedWindow.element)
-                lastIndex[bundleIdentifier] = current
-                Self.showWindowHUD(selectedWindow.app, windows: visibleWindows, selectedIndex: current)
+                let tilesOwnsFeedback: Bool
+                if windowRouting == nil {
+                    Self.raise(selectedWindow.element)
+                    tilesOwnsFeedback = false
+                } else {
+                    tilesOwnsFeedback = Self.activateRoutedWindow(selectedWindow)
+                }
+                lastWindowID[bundleIdentifier] = selectedWindow.windowID
+                if !tilesOwnsFeedback {
+                    Self.showWindowHUD(selectedWindow.app, windows: visibleWindows,
+                                       selectedIndex: current)
+                }
+            } else if windowRouting != nil {
+                if let message = visibleSelection.unavailableMessage {
+                    CycleHUD.shared.showBlocked(message)
+                } else if allWindows.isEmpty {
+                    Self.activate(app)
+                }
+            }
+            return
+        }
+
+        // A non-empty AX list with no routed candidates means every window is managed by Tiles
+        // but temporarily unavailable. Do not turn that state into Cycler's single-window hide.
+        if windowRouting != nil, windows.isEmpty, !allWindows.isEmpty {
+            if let message = selection.unavailableMessage {
+                CycleHUD.shared.showBlocked(message)
+            }
+            return
+        }
+
+        if windows.count == 1, windows[0].isMinimized {
+            let targetWindow = windows[0]
+            let tilesOwnsFeedback = Self.activateRoutedWindow(targetWindow)
+            lastWindowID[bundleIdentifier] = targetWindow.windowID
+            if !tilesOwnsFeedback {
+                Self.showWindowHUD(targetWindow.app, windows: windows, selectedIndex: 0)
+            }
+            return
+        }
+
+        // An inactive-workspace fallback is intentionally a single target. Raising it lets Tiles
+        // switch context; another quick key press must not select a second inactive workspace.
+        if windowRouting != nil, !windows.isEmpty, !selection.hasCurrentCandidates {
+            let targetWindow = windows[0]
+            let tilesOwnsFeedback = Self.activateRoutedWindow(targetWindow)
+            lastWindowID[bundleIdentifier] = targetWindow.windowID
+            if !tilesOwnsFeedback {
+                Self.showWindowHUD(targetWindow.app, windows: windows, selectedIndex: 0)
             }
             return
         }
@@ -84,28 +186,41 @@ final class AppActivator {
         guard windows.count >= 2 else {
             // With nothing to cycle, repeat presses become a show/hide toggle.
             app.hide()
-            lastIndex.removeValue(forKey: bundleIdentifier)
+            lastWindowID.removeValue(forKey: bundleIdentifier)
             return
         }
 
         // Repeat press: advance from whatever window is focused now (falling back to our last
         // remembered index), then raise the next one.
-        let current = Self.indexOfMain(in: windows) ?? lastIndex[bundleIdentifier]
+        let remembered = lastWindowID[bundleIdentifier].flatMap { rememberedID in
+            windows.firstIndex { $0.windowID == rememberedID }
+        }
+        let current = Self.indexOfMain(in: windows) ?? remembered
         guard let nextIdx = WindowCycle.next(count: windows.count, current: current, direction: direction) else { return }
         let targetWindow = windows[nextIdx]
-        Self.activate(targetWindow.app)
-        Self.raise(targetWindow.element)
-        lastIndex[bundleIdentifier] = nextIdx
-        Self.showWindowHUD(targetWindow.app, windows: windows, selectedIndex: nextIdx)
+        let tilesOwnsFeedback: Bool
+        if windowRouting == nil {
+            Self.activate(targetWindow.app)
+            Self.raise(targetWindow.element)
+            tilesOwnsFeedback = false
+        } else {
+            tilesOwnsFeedback = Self.activateRoutedWindow(targetWindow)
+        }
+        lastWindowID[bundleIdentifier] = targetWindow.windowID
+        if !tilesOwnsFeedback {
+            Self.showWindowHUD(targetWindow.app, windows: windows, selectedIndex: nextIdx)
+        }
     }
 
-    /// Cycle between the running members of an app group. Groups deliberately do not inspect or
-    /// cycle windows: a multi-app shortcut means "switch apps", while a single-app shortcut keeps
-    /// the per-window behaviour above.
-    func engageGroup(bundleIdentifiers: [String], direction: WindowCycle.Direction = .forward) {
+    /// Cycle between the running members of an app group. A multi-app shortcut still means
+    /// "switch apps"; routing only chooses which window to raise after the app member is chosen.
+    func engageGroup(bundleIdentifiers: [String],
+                     direction: WindowCycle.Direction = .forward,
+                     windowRouting: CyclerWindowRouting? = nil) {
         guard bundleIdentifiers.count > 1 else {
             if let bundleIdentifier = bundleIdentifiers.first {
-                engage(bundleIdentifier: bundleIdentifier, direction: direction)
+                engage(bundleIdentifier: bundleIdentifier, direction: direction,
+                       windowRouting: windowRouting)
             }
             return
         }
@@ -129,11 +244,52 @@ final class AppActivator {
             Self.launch(bundleIdentifier: bundleIdentifier)
             Self.showGroupHUD(display)
         case .activate(let bundleIdentifier):
-            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first else { return }
-            Self.activate(app)
-            Self.showGroupHUD(display)
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            guard let app = apps.first else { return }
+            var tilesOwnsFeedback = false
+            if let windowRouting {
+                var allWindows = Self.allWindows(of: apps, using: windowRouting)
+                if allWindows.isEmpty, app.isHidden {
+                    // Publish AXWindows without activating an arbitrary main window first.
+                    app.unhide()
+                    allWindows = Self.allWindows(of: apps, using: windowRouting)
+                }
+                let selection = Self.candidateSelection(from: allWindows, using: windowRouting)
+                if !selection.windows.isEmpty {
+                    let targetIndex = Self.indexOfMain(in: selection.windows) ?? 0
+                    let targetWindow = selection.windows[targetIndex]
+                    tilesOwnsFeedback = Self.activateRoutedWindow(targetWindow)
+                } else if let message = selection.unavailableMessage {
+                    CycleHUD.shared.showBlocked(message)
+                    return
+                } else if allWindows.isEmpty {
+                    Self.activate(app)
+                }
+            } else {
+                Self.activate(app)
+            }
+            if !tilesOwnsFeedback { Self.showGroupHUD(display) }
         case .hide(let bundleIdentifier):
-            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first else { return }
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            guard let app = apps.first else { return }
+            if let windowRouting {
+                let allWindows = Self.allWindows(of: apps, using: windowRouting)
+                let selection = Self.candidateSelection(from: allWindows, using: windowRouting)
+                // A frontmost process can have every managed window staged in an inactive Tiles
+                // workspace. In that state the group key means return to the app's workspace,
+                // not hide the already windowless process.
+                if !selection.windows.isEmpty, !selection.hasCurrentCandidates {
+                    let targetIndex = Self.indexOfMain(in: selection.windows) ?? 0
+                    let tilesOwnsFeedback = Self.activateRoutedWindow(selection.windows[targetIndex])
+                    if !tilesOwnsFeedback { Self.showGroupHUD(display) }
+                    return
+                }
+                if selection.windows.isEmpty, !allWindows.isEmpty,
+                   let message = selection.unavailableMessage {
+                    CycleHUD.shared.showBlocked(message)
+                    return
+                }
+            }
             app.hide()
         case .none:
             let label = bundleIdentifiers.joined(separator: ", ")
@@ -169,6 +325,12 @@ final class AppActivator {
         var app: NSRunningApplication
         var element: AXUIElement
         var windowID: CGWindowID
+        /// Captured while enumerating the AX windows. Routed Cycler selection must not ask AX
+        /// again just to decide whether a current-context window is a minimized fallback.
+        var isMinimized: Bool
+        /// Captured once during enumeration. Besides avoiding a second synchronous Tiles lookup,
+        /// this proves that a transient nonstandard AX window was already managed by Tiles.
+        var route: CyclerWindowRoute?
     }
 
     /// Every AX call below is synchronous on the main thread, and a beachballing target app blocks
@@ -189,22 +351,80 @@ final class AppActivator {
     }
 
     private static func windows(of apps: [NSRunningApplication]) -> [WindowRecord] {
+        windows(of: apps, includeMinimized: false, windowRouting: nil)
+    }
+
+    private static func allWindows(of apps: [NSRunningApplication],
+                                   using windowRouting: CyclerWindowRouting) -> [WindowRecord] {
+        windows(of: apps, includeMinimized: true, windowRouting: windowRouting)
+    }
+
+    private static func windows(of apps: [NSRunningApplication],
+                                includeMinimized: Bool,
+                                windowRouting: CyclerWindowRouting?) -> [WindowRecord] {
         apps
-            .flatMap { app in windows(of: axApplication(app.processIdentifier), app: app) }
+            .flatMap { app in
+                windows(of: axApplication(app.processIdentifier), app: app,
+                        includeMinimized: includeMinimized, windowRouting: windowRouting)
+            }
             .sorted { lhs, rhs in lhs.windowID < rhs.windowID }
     }
 
-    private static func windows(of axApp: AXUIElement, app: NSRunningApplication) -> [WindowRecord] {
+    private static func windows(of axApp: AXUIElement,
+                                app: NSRunningApplication,
+                                includeMinimized: Bool,
+                                windowRouting: CyclerWindowRouting?) -> [WindowRecord] {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement] else { return [] }
         return windows
             .map { tame($0) }
-            .filter { isStandardWindow($0) && !isMinimized($0) }
             .compactMap { window in
+                let minimized = isMinimized(window)
+                let route = windowRouting?.route(window)
+                if !isStandardWindow(window) {
+                    guard minimized, hasWindowRole(window),
+                          let route, route.context != .unmanaged else { return nil }
+                }
+                guard includeMinimized || !minimized else { return nil }
                 guard let windowID = windowID(of: window) else { return nil }
-                return WindowRecord(app: app, element: window, windowID: windowID)
+                return WindowRecord(app: app, element: window, windowID: windowID,
+                                    isMinimized: minimized, route: route)
             }
+    }
+
+    private struct CandidateSelection {
+        var windows: [WindowRecord]
+        var hasCurrentCandidates: Bool
+        var unavailableMessage: String?
+    }
+
+    /// Current-context and freeform windows cycle in stable CGWindowID order. When none exist,
+    /// one inactive target wins by most recent Tiles focus, then by the same stable ID order.
+    private static func candidateSelection(from windows: [WindowRecord],
+                                           using windowRouting: CyclerWindowRouting?) -> CandidateSelection {
+        guard windowRouting != nil else {
+            return CandidateSelection(windows: windows,
+                                      hasCurrentCandidates: !windows.isEmpty,
+                                      unavailableMessage: nil)
+        }
+        let selection = WindowRoutingSelector.select(windows.map { window in
+            let disposition: WindowRoutingDisposition
+            switch window.route?.context {
+            case .currentContext: disposition = .currentContext
+            case .unmanaged: disposition = .unmanaged
+            case .inactiveWorkspace(let workspace, let focusEpoch):
+                disposition = .inactiveWorkspace(workspace: workspace, focusEpoch: focusEpoch)
+            case .unavailable(let message): disposition = .unavailable(message: message)
+            case nil: disposition = .unavailable(message: "Window routing is unavailable.")
+            }
+            return WindowRoutingCandidate(windowID: window.windowID,
+                                          isMinimized: window.isMinimized,
+                                          disposition: disposition)
+        })
+        return CandidateSelection(windows: selection.indices.map { windows[$0] },
+                                  hasCurrentCandidates: selection.hasCurrentCandidates,
+                                  unavailableMessage: selection.unavailableMessage)
     }
 
     private static func firstMinimizedWindow(of apps: [NSRunningApplication]) -> WindowRecord? {
@@ -224,7 +444,9 @@ final class AppActivator {
                       .first(where: { isStandardWindow($0) && isMinimized($0) }) else {
                 continue
             }
-            return WindowRecord(app: app, element: window, windowID: windowID(of: window) ?? CGWindowID(0))
+            return WindowRecord(app: app, element: window,
+                                windowID: windowID(of: window) ?? CGWindowID(0),
+                                isMinimized: true, route: nil)
         }
         return nil
     }
@@ -234,6 +456,13 @@ final class AppActivator {
         guard AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &value) == .success,
               let subrole = value as? String else { return false }
         return subrole == kAXStandardWindowSubrole as String
+    }
+
+    private static func hasWindowRole(_ window: AXUIElement) -> Bool {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &value) == .success,
+              let role = value as? String else { return false }
+        return role == kAXWindowRole as String
     }
 
     private static func isMinimized(_ window: AXUIElement) -> Bool {
@@ -313,6 +542,23 @@ final class AppActivator {
         // single-window app toggled off with hide() never came back.
         if app.isHidden { app.unhide() }
         app.activate(options: [.activateAllWindows])
+    }
+
+    /// Establish the routed target before bringing its app forward. This prevents activating an
+    /// unrelated main window from briefly sending Tiles through another workspace first.
+    @discardableResult
+    private static func activateRoutedWindow(_ window: WindowRecord) -> Bool {
+        // Tiles owns an inactive managed window's whole transition, including AX restore and focus.
+        // Queue that explicit intent instead of racing it with a direct raise on the main actor.
+        if case .inactiveWorkspace = window.route?.context {
+            if window.app.isHidden { window.app.unhide() }
+            if window.route?.activateIfInactive() == true { return true }
+        }
+        if window.app.isHidden { window.app.unhide() }
+        raise(window.element)
+        window.app.activate(options: [])
+        raise(window.element)
+        return false
     }
 
     private static func launch(bundleIdentifier: String) {

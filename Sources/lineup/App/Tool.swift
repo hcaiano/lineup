@@ -177,6 +177,11 @@ protocol Tool: AnyObject {
     /// auto-update must never arrange windows, start an event tap, or grab Caps Lock.
     var defaultEnabled: Bool { get }
 
+    /// Whether this tool may acquire runtime resources during automatic launch startup. Tools
+    /// that need a user acknowledgement can remain enabled in persisted state while waiting for
+    /// an explicit Settings action.
+    var allowsAutomaticStartup: Bool { get }
+
     var isRunning: Bool { get }
 
     /// Handed the tool's services at REGISTRATION time, before anything is started and whether or
@@ -221,6 +226,7 @@ protocol Tool: AnyObject {
 }
 
 extension Tool {
+    var allowsAutomaticStartup: Bool { true }
     func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)] { [] }
     func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure]) {}
 }

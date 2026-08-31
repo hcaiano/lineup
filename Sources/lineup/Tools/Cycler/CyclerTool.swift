@@ -26,6 +26,11 @@ final class CyclerTool: Tool {
     let defaultEnabled = false
 
     private(set) var isRunning = false
+    private let windowRoutingProvider: CyclerWindowRoutingProvider
+
+    init(windowRouting: @escaping CyclerWindowRoutingProvider = { nil }) {
+        self.windowRoutingProvider = windowRouting
+    }
 
     /// Kept after `stop()` on purpose: the Settings pane is rendered even while the tool is off,
     /// and it still has to be able to read and write the `cycler` config section.
@@ -255,10 +260,17 @@ final class CyclerTool: Tool {
     }
 
     private func engage(_ binding: AppBinding, direction: WindowCycle.Direction) {
+        let windowRouting = windowRoutingProvider()
         if binding.isGroup {
-            AppActivator.shared.engageGroup(bundleIdentifiers: binding.bundleIdentifiers, direction: direction)
+            AppActivator.shared.engageGroup(
+                bundleIdentifiers: binding.bundleIdentifiers,
+                direction: direction,
+                windowRouting: windowRouting)
         } else {
-            AppActivator.shared.engage(bundleIdentifier: binding.bundleIdentifier, direction: direction)
+            AppActivator.shared.engage(
+                bundleIdentifier: binding.bundleIdentifier,
+                direction: direction,
+                windowRouting: windowRouting)
         }
     }
 

@@ -74,7 +74,8 @@ final class TilesHUD {
         announce("Workspace \(workspace)")
     }
 
-    func showStack(appIcon: NSImage?, titles: [String], selectedIndex: Int) {
+    func showStack(appIcon: NSImage?, titles: [String], selectedIndex: Int,
+                   title: String = "Tile stack") {
         guard !titles.isEmpty else { return }
         configure(icon: appIcon ?? NSImage(systemSymbolName: "square.stack.3d.up",
                                            accessibilityDescription: "Window stack"),
@@ -88,7 +89,7 @@ final class TilesHUD {
             : min(max(0, selectedInStack - maxVisibleRows / 2), titles.count - maxVisibleRows)
         let visibleEnd = min(titles.count, visibleStart + maxVisibleRows)
         let visibleTitles = Array(titles[visibleStart..<visibleEnd])
-        titleLabel.stringValue = "Focused tile"
+        titleLabel.stringValue = title
         titleLabel.textColor = .white
         subtitleLabel.stringValue = "Window \(selectedInStack + 1) of \(titles.count)"
         subtitleLabel.isHidden = false
@@ -99,7 +100,8 @@ final class TilesHUD {
                        selected: idx == selectedInStack - visibleStart)
         }
         present()
-        announce("Window \(selectedInStack + 1) of \(titles.count)")
+        let selectedTitle = titles[selectedInStack].isEmpty ? "Untitled" : titles[selectedInStack]
+        announce("\(title), window \(selectedInStack + 1) of \(titles.count), \(selectedTitle)")
     }
 
     func showFailure(_ message: String) {

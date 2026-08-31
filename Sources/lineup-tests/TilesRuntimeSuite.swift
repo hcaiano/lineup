@@ -47,6 +47,8 @@ func runTilesRuntimeTests() throws {
         let decoded = try TilesSettings.decode(legacy)
         check(decoded.tileSpacingEnabled,
               "tiles settings: legacy schema defaults to tile spacing enabled")
+        check(!decoded.hasConfirmedInitialArrangement,
+              "tiles settings: legacy schema still requires the first arrangement confirmation")
         check(decoded.workspace1 == nil && decoded.workspace4 == nil &&
               decoded.focusTileLeft == nil && decoded.toggleSplitOrientation == nil &&
               decoded.toggleTiled == nil,
@@ -57,6 +59,7 @@ func runTilesRuntimeTests() throws {
         }
         let full = TilesSettings(
             tileSpacingEnabled: false,
+            hasConfirmedInitialArrangement: true,
             workspace1: binding("workspace1", 9),
             workspace2: binding("workspace2", 10),
             workspace3: binding("workspace3", 11),
@@ -72,7 +75,7 @@ func runTilesRuntimeTests() throws {
             toggleSplitOrientation: binding("toggleSplitOrientation", 8),
             toggleTiled: binding("toggleTiled", 13))
         check(try TilesSettings.decode(full.encoded()) == full,
-              "tiles settings: spacing and all directional shortcuts round-trip")
+              "tiles settings: consent, spacing, and all directional shortcuts round-trip")
     }
 
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -156,6 +159,13 @@ func runTilesRuntimeTests() throws {
     check(coordinatorSource.contains("case .externalActivation(let token)") &&
           coordinatorSource.contains("session.windows[token]?.workspace"),
           "tiles runtime: external activation retries from committed window ownership")
+    check(coordinatorSource.contains("func cyclerWindowRoute(for element: AXUIElement) -> CyclerWindowRoute") &&
+          coordinatorSource.contains("requestInactiveActivation: { [weak self] in") &&
+          coordinatorSource.contains("self?.enqueueCyclerExternalActivation(token)") &&
+          coordinatorSource.contains("private func enqueueCyclerExternalActivation(_ token: WindowToken)") &&
+          coordinatorSource.contains("managed.workspace != self.session.activeWorkspace") &&
+          coordinatorSource.contains("self.process(.externalActivation(token), snapshot: snapshot, layouts: layouts)"),
+          "tiles runtime: Cycler explicitly queues an inactive managed token as external activation")
     check(coordinatorSource.contains("noOpPresentation(for: event, snapshot: snapshot)") &&
           coordinatorSource.contains("Only an unmanaged focus is actionable"),
           "tiles runtime: normal directional no-ops stay silent while unmanaged focus is reported")
@@ -164,25 +174,43 @@ func runTilesRuntimeTests() throws {
           coordinatorSource.contains("snapshotScope: .pid(pid)") &&
           axSource.contains("case windowChanged(WindowToken, pid_t)"),
           "tiles runtime: coalesced window and application events use pid-scoped snapshots")
-    check(coordinatorSource.contains("deminimizesWindow") &&
+    check(coordinatorSource.contains("wasStagedByTiles") &&
           coordinatorSource.contains("priorStageIntent"),
           "tiles runtime: staging intent survives until verified deminimize")
     check(coordinatorSource.contains("detachedTokens") &&
           coordinatorSource.contains("includeDetached: true"),
           "tiles runtime: freeform detachment persists until explicit placement")
-    check(coordinatorSource.contains("WindowEffect.setFrame") &&
-          coordinatorSource.contains("managed.adoptionFrame") &&
-          coordinatorSource.contains("let screens = self.screens") &&
-          coordinatorSource.contains("safeAdoptionFrame") &&
-          coordinatorSource.contains("ScreenPicker.bestScreenIndex") &&
-          coordinatorSource.contains("FixedPlacement.center") &&
-          coordinatorSource.contains("apply([effect]).first?.succeeded == true") &&
-          coordinatorSource.contains("preCommitFailureMessage") &&
-          coordinatorSource.contains("process(.detach(focused)") &&
-          coordinatorSource.contains("process(.adopt(focused)") &&
-          coordinatorSource.contains("case .adopt(let token):") &&
-          coordinatorSource.contains("detachedTokens.remove(token)"),
-          "tiles runtime: the tiled/freeform toggle verifies the safe frame and clears its marker on adoption")
+    if let toggleStart = coordinatorSource.range(of: "private func toggleFocusedTiled()"),
+       let frameStart = coordinatorSource.range(of: "private nonisolated static func safeAdoptionFrame",
+                                                range: toggleStart.upperBound..<coordinatorSource.endIndex) {
+        let toggleBody = coordinatorSource[toggleStart.lowerBound..<frameStart.lowerBound]
+        check(coordinatorSource.contains("private let currentScreens: @MainActor () -> [LiveScreen]") &&
+              coordinatorSource.contains("currentScreens: @escaping @MainActor () -> [LiveScreen] = LiveScreen.current") &&
+              toggleBody.contains("WindowEffect.setFrame") &&
+              toggleBody.contains("managed.adoptionFrame") &&
+              toggleBody.contains("let screens = currentScreens()") &&
+              !toggleBody.contains("self.screens") &&
+              toggleBody.contains("apply([effect]).first?.succeeded == true") &&
+              toggleBody.contains("preCommitFailureMessage") &&
+              toggleBody.contains("process(.detach(focused)") &&
+              toggleBody.contains("process(.adopt(focused)") &&
+              coordinatorSource.contains("ScreenPicker.bestScreenIndex") &&
+              coordinatorSource.contains("FixedPlacement.center") &&
+              coordinatorSource.contains("case .adopt(let token):") &&
+              coordinatorSource.contains("detachedTokens.remove(token)"),
+              "tiles runtime: the tiled/freeform toggle uses current screens, verifies the safe frame, and clears its marker on adoption")
+    } else {
+        check(false, "tiles runtime: the tiled/freeform toggle uses current screens, verifies the safe frame, and clears its marker on adoption")
+    }
+    check(coordinatorSource.contains("private(set) var runtimePauseMessage: String?") &&
+          coordinatorSource.contains("runtimePauseReason == nil") &&
+          coordinatorSource.contains("transitionRuntimePause(to: nil)") &&
+          coordinatorSource.contains("guard previous != message else { return }") &&
+          coordinatorSource.contains("Zones layout is unavailable for a connected monitor") &&
+          coordinatorSource.contains("Tiles will resume automatically") &&
+          coordinatorSource.contains(".confirmation(\"Tiles resumed\")") &&
+          coordinatorSource.contains("if let runtimePauseMessage {\n            onPresentation?(.failure(runtimePauseMessage))"),
+          "tiles runtime: layout failure pauses once, reports blocked commands, and confirms automatic recovery")
     check(coordinatorSource.contains("removing(identityKey: oldKey)"),
           "tiles runtime: title changes remove the previous journal identity")
     check(coordinatorSource.contains("synchronizeJournalWithSession()") &&
@@ -193,10 +221,31 @@ func runTilesRuntimeTests() throws {
           coordinatorSource.contains("session = committed"),
           "tiles runtime: unresolved compensation keeps recovery intent and removes gone windows")
     check(coordinatorSource.contains("synchronizeJournalWithSession(\n        preserving preservedTokens:") &&
+          coordinatorSource.contains("clearingStageIntentFor clearedTokens:") &&
           coordinatorSource.contains("-> Bool") &&
           coordinatorSource.contains("try persistJournal(updated)\n            journal = updated") &&
           coordinatorSource.contains("completed the action but could not save recovery state"),
           "tiles runtime: post-commit journal failures are surfaced without undoing committed AX work")
+    check(coordinatorSource.contains("let priorStageIntent = previousKey.flatMap") &&
+          coordinatorSource.contains("priorStageIntent && !clearedTokens.contains(managed.token)") &&
+          coordinatorSource.contains("case .setMinimized(let token, false, _) = result.effect") &&
+          coordinatorSource.contains("clearingStageIntentFor: clearedStageIntentTokens"),
+          "tiles runtime: staged recovery intent survives identity changes and clears only after committed deminimize")
+    check(coordinatorSource.contains("let wasStagedByTiles = session.windows[token]?.visibility == .stagedByTiles") &&
+          coordinatorSource.contains("wasStagedByTiles || priorStageIntent") &&
+          !coordinatorSource.contains("priorStageIntent || deminimizesWindow"),
+          "tiles runtime: restoring a user-minimized Cycler target never creates Tiles recovery ownership")
+    check(axSource.contains("for attempt in 0..<3") &&
+          axSource.contains("if bool(element, attribute) == value { return .success }") &&
+          axSource.contains("if attempt < 2 { usleep(40_000) }") &&
+          axSource.contains("return error == .success ? .cannotComplete : error"),
+          "tiles runtime: delayed AX Boolean writes use a bounded observed-postcondition check")
+    check(axSource.contains("var identityChangedPIDs = Set<pid_t>()") &&
+          axSource.components(separatedBy: "identityChangedPIDs.insert(entry.pid)").count - 1 == 2 &&
+          axSource.contains("refreshTrackedIdentity(for: identityChangedPIDs") &&
+          axSource.contains("cancellationGeneration: generation") &&
+          axSource.contains("scanning: pids"),
+          "tiles runtime: verified minimize changes refresh recovery identity once per cancellable batch")
     check(coordinatorSource.contains("guard let self, self.acceptingEvents else { return }") &&
           coordinatorSource.contains("guard self.acceptingEvents else { return }"),
           "tiles runtime: a stopped coordinator cannot complete late startup recovery")
@@ -213,6 +262,11 @@ func runTilesRuntimeTests() throws {
           "tiles runtime: healing work is cancelled on its owning queue")
     check(!coordinatorSource.contains("prefix(7)"),
           "tiles runtime: stack presentation keeps the complete stack")
+    check(coordinatorSource.contains("else if case .moveFocusedWindowToTile = event") &&
+          coordinatorSource.contains("if let preview { return .addedToStack(preview) }") &&
+          toolSource.contains("case addedToStack(TilesStackPreview)") &&
+          toolSource.contains("title: \"Added to stack\""),
+          "tiles runtime: moving into an occupied tile reports the committed stack")
     check(coordinatorSource.contains("func update(settings: TilesSettings)") &&
           coordinatorSource.contains("layouts.gapPoints = effectiveGapPoints") &&
           coordinatorSource.contains("enqueue(.layoutChanged)"),
@@ -256,15 +310,17 @@ func runTilesRuntimeTests() throws {
           paneSource.contains("Focus tile") &&
           paneSource.contains("Move window") &&
           paneSource.contains("Layout") &&
-          paneSource.contains("Numbers switch workspaces") &&
-          paneSource.contains("Shift-Tab reverses"),
+          paneSource.contains("Workspace shortcuts switch workspaces; physical Shift moves the focused window.") &&
+          paneSource.contains("Add physical Shift to the full stack shortcut to cycle in reverse") &&
+          paneSource.contains("Add physical Shift to the full stack shortcut to cycle in reverse."),
           "tiles runtime: shortcuts are grouped and explain workspace reverses")
     check(toolSource.contains("let focus = NSMenuItem(title: \"Focus Tile\"") &&
           toolSource.contains("let moveTile = NSMenuItem(title: \"Move Focused Window\"") &&
           toolSource.contains("Switch Split Direction") &&
           toolSource.contains("Toggle Tiled / Freeform") &&
-          toolSource.contains("item.isEnabled = runtimeReady"),
-          "tiles runtime: menu exposes directional and toggle controls only when runtime is ready")
+          toolSource.contains("item.isEnabled = runtimeUsable") &&
+          toolSource.contains("restore.isEnabled = runtimeReady"),
+          "tiles runtime: menu disables mutations during pause but keeps recovery available")
     check(layoutSource.contains("framesByScreen") &&
           mutationSource.contains("enum ZoneLayoutMutationResult") &&
           mutationSource.contains("toggleParentSplit"),

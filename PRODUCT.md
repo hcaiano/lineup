@@ -48,6 +48,10 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 ## Tiles Product Contract
 
 - Tiles is a separate tool and is off by default.
+- Before its first arrangement, enabling Tiles requires explicit confirmation. Editing Tiles
+  settings before enabling it does not clear that confirmation.
+- An enabled older section without that confirmation waits in Settings after launch. It does not
+  arrange windows or show a launch-time modal.
 - Zones owns layout geometry. Tiles never has a second layout editor.
 - Each Zones leaf is one tile. Each tile can hold an ordered stack of windows.
 - Four fixed workspaces switch as one context across all connected displays.
@@ -55,12 +59,19 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 - Settings exposes the shared global switch, one fixed 8 pt tile-spacing switch, and editable
   shortcuts for workspaces, stacks, spatial focus, spatial movement, and split direction. There
   are no spacing values or layout policies to tune.
-- On first activation or shortcut edit, Tiles materializes an adaptive preset from Hyperkey mode.
-  When Include Shift changes, an untouched preset follows it atomically; customized or legacy
-  shortcuts are never rewritten.
-- In the recommended preset, number shortcuts switch Tiles workspaces and their physical
-  Shift-number counterparts move the focused window; Include Shift leaves those move counterparts
-  unassigned because the masks cannot be distinguished.
+- The four physical Shift-workspace move actions derive from the workspace shortcuts. They
+  are not separate Settings rows. Settings teaches them in one caption and in the menu only when
+  a generated move shortcut is available.
+- When the Tiles settings section is missing, first activation or an explicit shortcut edit
+  materializes an adaptive preset from Hyperkey mode. A pre-enable edit persists that section but
+  does not confirm the first arrangement. When Include Shift changes, an untouched preset follows
+  it atomically; customized or legacy shortcuts are never rewritten.
+- In the recommended preset, `U/I/O/P` switch Tiles Workspaces 1…4. With Include Shift off, their
+  physical Shift counterparts move the focused window to the selected workspace. `W/A/X/D` focus
+  the nearest tile up/left/down/right, and their physical Shift counterparts move the focused
+  window in that direction. Include Shift on keeps the same workspace/focus keys, uses `Y/G/B/H`
+  for distinct movement, and leaves physical Shift counterparts unassigned because the masks
+  cannot be distinguished.
 - A Zones quick action on a managed window snaps it, then temporarily floats/detaches it. Dropping
   it into a zone adopts it again.
 - The Tiles Space shortcut toggles the focused window between its safe freeform frame and the
@@ -68,12 +79,19 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 - Zones quick-action arrows use Hyper+arrows. Fresh defaults follow Hyperkey mode (`6400` when
   Include Shift is off, `6912` when it is on). An untouched adaptive preset follows an explicit
   Include Shift change; customized bindings are never rewritten. A stored legacy Zones section
-  with no shortcut fields keeps its historical full-Hyper defaults. Tiles H/J/K/L navigate focus
-  between tiles.
-- Cycler receives no new app bindings; H/J/K/L remain the recommended Tiles focus letters and
-  existing Cycler rows keep their explicit conflicts. The shared shortcut vocabulary is: numbers
-  for Tiles workspaces, letters for Cycler app groups, H/J/K/L for tile focus, arrows for Zones,
-  and physical Shift for move or reverse actions.
+  with no shortcut fields keeps its historical full-Hyper defaults. Tiles W/A/X/D navigate focus
+  between tiles; Y/G/B/H is the distinct movement diamond when Include Shift is on.
+- Cycler receives no new app bindings. Caps+1…4 and all existing Cycler letter bindings stay
+  unchanged. If a stored Cycler row conflicts with a recommended Tiles key, the conflict remains
+  visible and the user can resolve it by editing the Tiles shortcut; Lineup never rewrites Cycler
+  keys. The shared shortcut vocabulary is: U/I/O/P for Tiles workspaces, W/A/X/D for spatial focus,
+  Y/G/B/H for full-Shift movement, arrows for Zones, and physical Shift for generated moves or
+  reverse actions.
+- While Tiles is active, Cycler uses current-context and freeform windows first. If none are
+  available, it brings forward one managed window from an inactive workspace. If Tiles pauses
+  because a connected monitor has no valid Zones layout, current-context and freeform Cycler
+  actions remain usable. Only an inactive-workspace switch shows blocked feedback. Tiles resumes
+  automatically when the layout becomes valid.
 - The full agreed behavior and safety gates are in `docs/tiles-implementation-plan.md`.
 
 ## Accessibility & Inclusion

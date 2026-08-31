@@ -11,6 +11,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     private let layoutSource: ZoneLayoutSource
     private let placementCenter: WindowPlacementCenter
     private let layoutMutationCenter: ZoneLayoutMutationCenter
+    private let currentScreens: @MainActor () -> [LiveScreen]
     nonisolated(unsafe) private let journalStore: TilesRecoveryJournalStore
     private let runtimeQueue = DispatchQueue(label: "com.caiano.lineup.tiles.coordinator",
                                              qos: .userInitiated)
@@ -28,7 +29,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     /// clears this runtime-only marker.
     nonisolated(unsafe) private var detachedTokens: Set<WindowToken> = []
     nonisolated(unsafe) private var acceptingEvents = false
-    nonisolated(unsafe) private var runtimePaused = false
+    nonisolated(unsafe) private var runtimePauseReason: String?
     private var layoutObservation: ZoneLayoutObservation?
     private var placementObservation: WindowPlacementObservation?
     private var coalescedWork: [String: DispatchWorkItem] = [:]
@@ -37,6 +38,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     private(set) var activeWorkspace = 1
     private(set) var recoveryRequired = false
     private(set) var stackPreview: TilesStackPreview?
+    private(set) var runtimePauseMessage: String?
+    var isCyclerRoutingActive: Bool { acceptingEvents }
     private var settings = TilesSettings()
     var onStateChange: (() -> Void)?
     var onPresentation: ((TilesPresentation) -> Void)?
@@ -45,24 +48,28 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
          placementCenter: WindowPlacementCenter,
          layoutMutationCenter: ZoneLayoutMutationCenter = ZoneLayoutMutationCenter(),
          windowSystem: TilesWindowSystem = AXWindowSystem(),
-         journalStore: TilesRecoveryJournalStore = TilesRecoveryJournalStore()) {
+         journalStore: TilesRecoveryJournalStore = TilesRecoveryJournalStore(),
+         currentScreens: @escaping @MainActor () -> [LiveScreen] = LiveScreen.current) {
         self.windowSystem = windowSystem
         self.layoutSource = PersistedZoneLayoutSource(store: store)
         self.placementCenter = placementCenter
         self.layoutMutationCenter = layoutMutationCenter
         self.journalStore = journalStore
+        self.currentScreens = currentScreens
     }
 
     init(windowSystem: TilesWindowSystem,
          layoutSource: ZoneLayoutSource,
          placementCenter: WindowPlacementCenter,
          journalStore: TilesRecoveryJournalStore,
-         layoutMutationCenter: ZoneLayoutMutationCenter = ZoneLayoutMutationCenter()) {
+         layoutMutationCenter: ZoneLayoutMutationCenter = ZoneLayoutMutationCenter(),
+         currentScreens: @escaping @MainActor () -> [LiveScreen] = LiveScreen.current) {
         self.windowSystem = windowSystem
         self.layoutSource = layoutSource
         self.placementCenter = placementCenter
         self.layoutMutationCenter = layoutMutationCenter
         self.journalStore = journalStore
+        self.currentScreens = currentScreens
     }
 
     func start(settings: TilesSettings) throws {
@@ -70,7 +77,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         try settings.validate()
         self.settings = settings
         let journal = try journalStore.preflight()
-        let screens = LiveScreen.current()
+        let screens = currentScreens()
         var layouts = try layoutSource.snapshot(for: screens)
         layouts.gapPoints = effectiveGapPoints(for: settings)
         guard !layouts.screenKeys.isEmpty else { throw TilesCoordinatorError.noUsableDisplays }
@@ -86,7 +93,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             }
         }
         acceptingEvents = true
-        runtimePaused = false
+        runtimePauseMessage = nil
+        runtimeQueue.sync { runtimePauseReason = nil }
         layoutObservation = layoutSource.observe { [weak self] in self?.layoutChanged() }
         placementObservation = placementCenter.observe { [weak self] in self?.placed($0) }
 
@@ -145,11 +153,13 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             session = .empty
             recordKeys.removeAll()
             detachedTokens.removeAll()
+            runtimePauseReason = nil
         }
         windowSystem.stop()
         activeWorkspace = 1
         recoveryRequired = journal.records.contains(where: \.stageIntent)
         stackPreview = nil
+        runtimePauseMessage = nil
         onPresentation = nil
         onStateChange?()
     }
@@ -161,8 +171,57 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         enqueue(.layoutChanged)
     }
 
+    /// Route one Cycler candidate against Tiles' live ownership. The returned inactive action
+    /// closes over the resolved token, so selecting it does not repeat AX identity lookup.
+    func cyclerWindowRoute(for element: AXUIElement) -> CyclerWindowRoute {
+        guard acceptingEvents, let token = windowSystem.token(for: element) else {
+            return CyclerWindowRoute(context: .unmanaged)
+        }
+        return runtimeQueue.sync {
+            guard acceptingEvents,
+                  !detachedTokens.contains(token),
+                  let managed = session.windows[token] else {
+                return CyclerWindowRoute(context: .unmanaged)
+            }
+            if managed.workspace == session.activeWorkspace {
+                return CyclerWindowRoute(context: .currentContext)
+            }
+            guard runtimePauseReason == nil else {
+                return CyclerWindowRoute(context: .unavailable(
+                    message: "Tiles is paused, so it cannot switch workspaces."))
+            }
+            return CyclerWindowRoute(
+                context: .inactiveWorkspace(workspace: managed.workspace.rawValue,
+                                            focusEpoch: managed.focusEpoch),
+                requestInactiveActivation: { [weak self] in
+                    self?.enqueueCyclerExternalActivation(token)
+                })
+        }
+    }
+
+    /// A frontmost application does not publish NSWorkspace activation when Cycler restores one
+    /// of its inactive windows. Send the same reducer event explicitly and let Tiles own every AX
+    /// effect. The main actor only queues work; snapshot and mutations stay on the runtime worker.
+    private func enqueueCyclerExternalActivation(_ token: WindowToken) {
+        guard acceptingEvents else { return }
+        let layouts = self.layouts
+        runtimeQueue.async { [weak self] in
+            guard let self, self.acceptingEvents,
+                  self.runtimePauseReason == nil,
+                  !self.detachedTokens.contains(token),
+                  let managed = self.session.windows[token],
+                  managed.workspace != self.session.activeWorkspace else { return }
+            let snapshot = self.windowSystem.snapshot(.all)
+            self.process(.externalActivation(token), snapshot: snapshot, layouts: layouts)
+        }
+    }
+
     func perform(_ action: TilesRuntimeAction) {
         guard acceptingEvents else { return }
+        if let runtimePauseMessage {
+            onPresentation?(.failure(runtimePauseMessage))
+            return
+        }
         switch action {
         case .switchWorkspace(let raw):
             guard let id = WorkspaceID.from(raw) else { return }
@@ -237,7 +296,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     private func toggleFocusedTiled() {
         guard acceptingEvents else { return }
         let layouts = self.layouts
-        let screens = self.screens
+        let screens = currentScreens()
         runtimeQueue.async { [weak self] in
             guard let self, self.acceptingEvents else { return }
             let snapshot = self.windowSystem.snapshot(.all)
@@ -392,7 +451,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     }
 
     private func topologySettled() {
-        refreshLayout(screens: LiveScreen.current(), updateWindowSystem: true)
+        refreshLayout(screens: currentScreens(), updateWindowSystem: true)
     }
 
     /// A Zones edit and a settled display change need the same work; only the
@@ -406,11 +465,26 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
             updatedLayouts.gapPoints = effectiveGapPoints(for: settings)
             screens = updatedScreens
             layouts = updatedLayouts
-            runtimeQueue.async { [weak self] in self?.runtimePaused = false }
+            transitionRuntimePause(to: nil)
             if updateWindowSystem { windowSystem.updateScreens(updatedScreens) }
             enqueue(.layoutChanged)
         } catch {
-            runtimeQueue.async { [weak self] in self?.runtimePaused = true }
+            transitionRuntimePause(to:
+                "Tiles paused because the Zones layout is unavailable for a connected monitor. " +
+                "Check Zones and your monitors. Tiles will resume automatically.")
+        }
+    }
+
+    private func transitionRuntimePause(to message: String?) {
+        let previous = runtimePauseMessage
+        guard previous != message else { return }
+        runtimePauseMessage = message
+        runtimeQueue.async { [weak self] in self?.runtimePauseReason = message }
+        onStateChange?()
+        if let message {
+            onPresentation?(.failure(message))
+        } else if previous != nil {
+            onPresentation?(.confirmation("Tiles resumed"))
         }
     }
 
@@ -545,7 +619,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                                      presentationOverride: TilesPresentation? = nil,
                                      preCommit: (() -> Bool)? = nil,
                                      preCommitFailureMessage: String? = nil) {
-        guard acceptingEvents, !runtimePaused else { return }
+        guard acceptingEvents, runtimePauseReason == nil else { return }
         if case .windowClosed(let token) = event {
             // A destroyed detached window has no model plan, but its marker
             // must still be released so a future token cannot inherit it.
@@ -586,18 +660,17 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
                 if case .setMinimized(let effectToken, true, _) = $0 { return effectToken == token }
                 return false
             }
-            let deminimizesWindow = plan.effects.contains {
-                if case .setMinimized(let effectToken, false, _) = $0 { return effectToken == token }
-                return false
-            }
             let priorStageIntent = intendedRecordKeys[token].flatMap { key in
                 intendedJournal.records.first(where: { $0.identityKey == key })?.stageIntent
             } ?? false
+            let wasStagedByTiles = session.windows[token]?.visibility == .stagedByTiles
             // Keep a previously journaled staging intent through the
             // deminimize call. synchronizeJournalWithSession clears it only
-            // after the verified effect has committed.
+            // after the verified effect has committed. A Cycler request can also deminimize a
+            // window that the user minimized. That request must never create Tiles recovery
+            // ownership if it fails before commit.
             let stageIntent = stagesWindow || managed.visibility == .stagedByTiles ||
-                priorStageIntent || deminimizesWindow
+                wasStagedByTiles || priorStageIntent
             if let record = windowSystem.recoveryRecord(for: token, managed: managed,
                                                         stageIntent: stageIntent) {
                 if let oldKey = intendedRecordKeys[token], oldKey != record.identityKey {
@@ -690,7 +763,13 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         default:
             break
         }
-        let journalSaved = synchronizeJournalWithSession()
+        let clearedStageIntentTokens = Set(results.compactMap { result -> WindowToken? in
+            guard result.succeeded,
+                  case .setMinimized(let token, false, _) = result.effect else { return nil }
+            return token
+        })
+        let journalSaved = synchronizeJournalWithSession(
+            clearingStageIntentFor: clearedStageIntentTokens)
         if let destination = workspaceDestination(for: event, from: previousActiveWorkspace),
            session.activeWorkspace != destination {
             publishState(presentation: journalSaved ? nil : .failure(
@@ -702,6 +781,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         }
         let preview: TilesStackPreview?
         if case .cycleFocusedTile = event {
+            preview = currentStackPreview(snapshot: snapshot)
+        } else if case .moveFocusedWindowToTile = event {
             preview = currentStackPreview(snapshot: snapshot)
         } else {
             preview = nil
@@ -719,7 +800,8 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
     /// windows. The stored shape is unchanged: records stay an array.
     @discardableResult
     nonisolated private func synchronizeJournalWithSession(
-        preserving preservedTokens: Set<WindowToken> = []) -> Bool {
+        preserving preservedTokens: Set<WindowToken> = [],
+        clearingStageIntentFor clearedTokens: Set<WindowToken> = []) -> Bool {
         var updatedRecordKeys = recordKeys
         let liveTokens = Set(session.windows.keys)
         var removedKeys: Set<String> = []
@@ -729,14 +811,22 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         }
         var replacements: [String: RecoveryRecord] = [:]
         for managed in session.windows.values where !preservedTokens.contains(managed.token) {
+            let previousKey = updatedRecordKeys[managed.token]
+            let priorStageIntent = previousKey.flatMap { key in
+                journal.records.first(where: { $0.identityKey == key })?.stageIntent
+            } ?? false
+            // Once Tiles has staged a window, keep that recovery ownership through AX identity
+            // changes and reconciliation. Only a verified deminimize in a fully committed plan
+            // may clear it; a failed or delayed minimize must remain recoverable.
+            let stageIntent = managed.visibility == .stagedByTiles ||
+                (priorStageIntent && !clearedTokens.contains(managed.token))
             guard let record = windowSystem.recoveryRecord(
                 for: managed.token, managed: managed,
-                stageIntent: managed.visibility == .stagedByTiles) else { continue }
+                stageIntent: stageIntent) else { continue }
             // Titles and exact-peer ordinals can change while a window is
             // alive. Replace the previous identity instead of leaving an
             // unreachable stale record in the journal.
-            if let previousKey = updatedRecordKeys[managed.token],
-               previousKey != record.identityKey {
+            if let previousKey, previousKey != record.identityKey {
                 removedKeys.insert(previousKey)
             }
             replacements[record.identityKey] = record
@@ -878,6 +968,7 @@ final class TilesCoordinator: TilesCoordinatorProtocol {
         case .moveFocusedWindow(let destination):
             return .movedWindow(destination.rawValue)
         case .moveFocusedWindowToTile(let direction):
+            if let preview { return .addedToStack(preview) }
             return .confirmation("Moved window \(directionName(direction))")
         case .cycleFocusedTile:
             return preview.map(TilesPresentation.stack)

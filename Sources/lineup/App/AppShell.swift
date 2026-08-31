@@ -20,6 +20,10 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private let store = LineupAppConfigStore(url: Product.configURL)
     private let placementCenter = WindowPlacementCenter()
     private let layoutMutationCenter = ZoneLayoutMutationCenter()
+    private lazy var tilesCoordinator = TilesCoordinator(
+        store: store,
+        placementCenter: placementCenter,
+        layoutMutationCenter: layoutMutationCenter)
     private lazy var registry = ToolRegistry(store: store)
     private lazy var statusItem = StatusItemController(registry: registry,
                                                        permissions: PermissionCenter.shared)
@@ -93,7 +97,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
         // simply finds the imported layout where it expects it.
         runLegacyImport()
 
-        PermissionCenter.shared.onChange = { [weak self] in
+        PermissionCenter.shared.onChange = { [weak self] transition in
+            (self?.registry.tool(.tiles) as? TilesTool)?.accessibilityPermissionDidChange(transition)
             self?.statusItem.refresh()
             self?.settings?.refresh()
         }
@@ -113,13 +118,17 @@ final class AppShell: NSObject, NSApplicationDelegate {
             hyperkeyIncludesShift: { [weak self] in
                 self?.currentHyperkeyIncludesShift() ?? HyperKeySettings().includeShift
             }))
-        registry.register(TilesTool(coordinator: TilesCoordinator(
-            store: store, placementCenter: placementCenter,
-            layoutMutationCenter: layoutMutationCenter),
+        registry.register(TilesTool(coordinator: tilesCoordinator,
             hyperkeyIncludesShift: { [weak self] in
                 self?.currentHyperkeyIncludesShift() ?? HyperKeySettings().includeShift
             }))
-        registry.register(CyclerTool())
+        registry.register(CyclerTool(windowRouting: { [weak self] in
+            guard let self, self.tilesCoordinator.isCyclerRoutingActive else { return nil }
+            return CyclerWindowRouting(route: { [weak self] element in
+                self?.tilesCoordinator.cyclerWindowRoute(for: element)
+                    ?? CyclerWindowRoute(context: .unmanaged)
+            })
+        }))
         registry.register(HyperkeyTool(persistIncludeShiftChange: { [unowned self] previous, updated in
             try self.persistHyperkeyIncludeShiftChange(from: previous, to: updated)
         }))
@@ -324,6 +333,19 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 detailLines: ["Your saved layout is waiting for its display. It is imported "
                               + "automatically when that display reconnects."]))
         }
+        if let tiles = registry.tool(.tiles) as? TilesTool,
+           registry.isEnabled(.tiles),
+           !tiles.isRunning,
+           tiles.needsInitialEnableConfirmation {
+            out.append(ToolWarning(
+                id: "shell.tilesAwaitingArrangement",
+                text: "⚠︎ Tiles is waiting to arrange windows",
+                detailLines: ["Open Tiles Settings to review the layout and arrange your windows."],
+                actionTitle: "Open Tiles Settings…",
+                action: { [weak self] in
+                    self?.openSettings(selecting: .tool(.tiles))
+                }))
+        }
         if SingleInstance.standaloneCyclerIsRunning() != nil {
             out.append(ToolWarning(
                 id: "shell.standaloneCycler",
@@ -373,8 +395,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings
 
-    private func openSettings() {
+    private func openSettings(selecting selection: SettingsSection? = nil) {
         if let settings {
+            if let selection { settings.store.selection = selection }
             settings.show()
             return
         }
@@ -384,14 +407,18 @@ final class AppShell: NSObject, NSApplicationDelegate {
             showMenuBarIcon: self.store.config.general.showMenuBarIcon,
             // A dead shell can't have changed anything, so report the value back unchanged.
             onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) ?? show })
-        #if DEBUG
-        // Any tool id, resolved through `ToolID` rather than a per-tool string literal.
-        // `ToolID.init(rawValue:)` never fails, so check membership before selecting a pane.
-        if let raw = ProcessInfo.processInfo.environment["LINEUP_OPEN_SETTINGS_SECTION"],
-           let tool = ToolID.all.first(where: { $0.rawValue == raw }) {
-            store.selection = .tool(tool)
+        if let selection {
+            store.selection = selection
+        } else {
+            #if DEBUG
+            // Any tool id, resolved through `ToolID` rather than a per-tool string literal.
+            // `ToolID.init(rawValue:)` never fails, so check membership before selecting a pane.
+            if let raw = ProcessInfo.processInfo.environment["LINEUP_OPEN_SETTINGS_SECTION"],
+               let tool = ToolID.all.first(where: { $0.rawValue == raw }) {
+                store.selection = .tool(tool)
+            }
+            #endif
         }
-        #endif
         let controller = SettingsWindowController(store: store)
         controller.onClose = { [weak self] in self?.settings = nil }
         settings = controller
