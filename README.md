@@ -30,6 +30,8 @@ Before Tiles arranges windows for the first time, Lineup asks you to confirm. Ed
 shortcuts before enabling it does not skip this confirmation.
 An older enabled setup that has not recorded this choice waits safely in Tiles Settings after an
 update. It does not move windows during launch.
+Tiles workspaces are virtual contexts, not macOS Spaces. Windows in inactive workspaces are
+minimized through Accessibility, so they remain visible in normal macOS window-management views.
 
 ## Recommended keyboard model
 

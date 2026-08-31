@@ -284,9 +284,7 @@ private struct TilesSettingsPaneBody: View {
                                             : "Starting workspace")
 
                         SettingsCaption(
-                            text: model.canUseRuntime
-                                ? "Uses your Zones layouts. Workspaces are separate from macOS Spaces. Press Caps+Space to toggle the focused window between tiled and freeform."
-                                : "Tiles starts in Workspace \(model.activeWorkspace). It uses your Zones layouts when enabled.",
+                            text: workspaceCaption,
                             systemImage: "square.grid.3x3")
                             .padding(.top, 8)
                     }
@@ -372,6 +370,17 @@ private struct TilesSettingsPaneBody: View {
         .frame(minHeight: SettingsMetrics.shortcutRowHeight)
         .padding(.vertical, 3)
         Divider()
+    }
+
+    private var workspaceCaption: String {
+        guard model.canUseRuntime else {
+            return "Tiles starts in Workspace \(model.activeWorkspace). It uses your Zones layouts when enabled."
+        }
+        let shortcut = model.shortcutText(for: TilesTool.Action.toggleTiled.rawValue)
+        let toggleHint = shortcut.isEmpty
+            ? "Set Toggle Tiled / Freeform below to release a focused window."
+            : "Press \(shortcut) to toggle the focused window between tiled and freeform."
+        return "Uses your Zones layouts. Inactive workspace windows are minimized, not moved to macOS Spaces. \(toggleHint)"
     }
 
     @ViewBuilder

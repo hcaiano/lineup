@@ -84,8 +84,8 @@ private struct WhatsNewView: View {
                         .accessibilityHidden(true)
                     Text("What’s New in \(Product.name)")
                         .font(.system(size: 22, weight: .semibold))
-                    Text("Your window snapping is now the Zones tool. Tiles, Cycler and Hyperkey "
-                         + "are available and off by default.")
+                    Text("Tiles now arranges windows into workspaces and stacks. It is off by "
+                         + "default. Window snapping is now Zones, and your shortcuts stay unchanged.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

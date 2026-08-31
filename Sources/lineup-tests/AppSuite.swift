@@ -1436,8 +1436,9 @@ private func runOnboardingTests() throws {
             && onboardingKit.contains("state: \"Off by default\", isOn: false"),
           "onboarding introduces Tiles without enabling it")
     let whatsNew = source("Sources/lineup/App/WhatsNewWindow.swift")
-    check(whatsNew.contains("Your window snapping is now the Zones tool"),
-          "What's New leads with the rename")
+    check(whatsNew.contains("Tiles now arranges windows into workspaces and stacks")
+            && whatsNew.contains("your shortcuts stay unchanged"),
+          "What's New leads with Tiles and preserves existing workflows")
     check(whatsNew.contains("Open Settings") && whatsNew.contains("Not now"),
           "What's New offers Open Settings / Not now")
     let welcome = source("Sources/lineup/App/WelcomeWindow.swift")
@@ -2790,8 +2791,9 @@ private func runTilesShellContractTests() throws {
           "Tiles Settings has Workspace, Behavior and Shortcuts sections")
     check(pane.contains("ForEach(1...4")
             && pane.contains(".pickerStyle(.segmented)")
-            && pane.contains("Uses your Zones layouts. Workspaces are separate from macOS Spaces."),
-          "the pane exposes four segmented workspaces and explains native Spaces")
+            && pane.contains("Inactive workspace windows are minimized, not moved to macOS Spaces.")
+            && pane.contains("model.shortcutText(for: TilesTool.Action.toggleTiled.rawValue)"),
+          "the pane exposes four workspaces, explains their minimize model, and uses the live toggle shortcut")
     check(pane.contains(".accessibilityLabel(\"Workspace \\(workspace)\")"),
           "each workspace segment has an explicit VoiceOver name")
     // The pane renders one row per `TilesTool.Action`, so the labels live on the

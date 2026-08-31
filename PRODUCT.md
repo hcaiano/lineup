@@ -54,11 +54,14 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
   arrange windows or show a launch-time modal.
 - Zones owns layout geometry. Tiles never has a second layout editor.
 - Each Zones leaf is one tile. Each tile can hold an ordered stack of windows.
-- Four fixed workspaces switch as one context across all connected displays.
+- Four fixed workspaces switch as one context across all connected displays. They are not macOS
+  Spaces: inactive-workspace windows are minimized through Accessibility and remain visible to
+  normal macOS window-management surfaces.
 - Tiles uses only public Accessibility operations, never native Space control or off-screen hiding.
-- Settings exposes the shared global switch, one fixed 8 pt tile-spacing switch, and editable
-  shortcuts for workspaces, stacks, spatial focus, spatial movement, and split direction. There
-  are no spacing values or layout policies to tune.
+- Settings exposes the shared global switch, a live Workspace 1…4 picker, one fixed 8 pt
+  tile-spacing switch, and editable shortcuts for workspaces, stacks, spatial focus, spatial
+  movement, split direction, and tiled/freeform mode. There are no spacing values or layout
+  policies to tune.
 - The four physical Shift-workspace move actions derive from the workspace shortcuts. They
   are not separate Settings rows. Settings teaches them in one caption and in the menu only when
   a generated move shortcut is available.
