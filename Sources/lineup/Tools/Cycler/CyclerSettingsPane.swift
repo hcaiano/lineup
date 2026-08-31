@@ -406,7 +406,7 @@ private struct CyclerSettingsPaneBody: View {
                         // it describes instead of floating in a footer bar.
                         SettingsSectionView(
                             "Shortcuts",
-                            caption: "Keep 1–4 and letters for apps. Tiles uses U/I/O/P for workspaces. Add ⇧ to cycle backwards.") {
+                            caption: "Keep 1–4 and letters for apps. Add ⇧ to cycle backwards.") {
                             ForEach(model.rows) { row in
                                 VStack(spacing: 0) {
                                     CyclerBindingRow(row: row, model: model, recorder: recorder)
@@ -710,7 +710,7 @@ private struct CyclerEmptyState: View {
         VStack(spacing: 12) {
             Image(systemName: "command").font(.system(size: 40)).foregroundStyle(.tertiary)
             Text("No shortcuts yet").font(.system(size: 17, weight: .semibold))
-            Text("Add apps to 1–4 or letters. Tiles uses U/I/O/P for workspaces.")
+            Text("Add apps to 1–4 or letters.")
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).frame(maxWidth: 340)
             Button(action: onAdd) { Label("Add Shortcut", systemImage: "plus") }

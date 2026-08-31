@@ -380,13 +380,21 @@ final class AppActivator {
         return windows
             .map { tame($0) }
             .compactMap { window in
+                // Ask Tiles only about windows that can become Cycler candidates. Most AX
+                // applications expose transient menus, sheets and other non-window elements in
+                // AXWindows; routing each one synchronously crossed both the AX and Tiles worker
+                // queues from the main actor before we discarded it below.
+                let standard = isStandardWindow(window)
                 let minimized = isMinimized(window)
-                let route = windowRouting?.route(window)
-                if !isStandardWindow(window) {
-                    guard minimized, hasWindowRole(window),
-                          let route, route.context != .unmanaged else { return nil }
-                }
+                guard standard || (minimized && hasWindowRole(window)) else { return nil }
                 guard includeMinimized || !minimized else { return nil }
+                // Capture the route once with the filtered window snapshot. CandidateSelection
+                // and every later activation reuse this value, so a Cycler press never repeats
+                // the cross-queue lookup for the same AX element.
+                let route = windowRouting?.route(window)
+                if !standard {
+                    guard let route, route.context != .unmanaged else { return nil }
+                }
                 guard let windowID = windowID(of: window) else { return nil }
                 return WindowRecord(app: app, element: window, windowID: windowID,
                                     isMinimized: minimized, route: route)

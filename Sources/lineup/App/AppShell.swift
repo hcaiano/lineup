@@ -333,9 +333,18 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 detailLines: ["Your saved layout is waiting for its display. It is imported "
                               + "automatically when that display reconnects."]))
         }
+        // StatusItemController adds warnings from running tools separately, because runtime
+        // warnings only make sense while a tool owns resources. A rejected section is different:
+        // the tool must stay stopped to remain fail-closed, but its recovery warning must still
+        // be visible. Keep only configuration warnings here so a stopped tool cannot leak stale
+        // runtime state into the menu.
+        for tool in registry.tools where !tool.isRunning {
+            out.append(contentsOf: tool.warnings.filter { $0.id.hasSuffix(".config") })
+        }
         if let tiles = registry.tool(.tiles) as? TilesTool,
            registry.isEnabled(.tiles),
            !tiles.isRunning,
+           tiles.sectionLoadError == nil,
            tiles.needsInitialEnableConfirmation {
             out.append(ToolWarning(
                 id: "shell.tilesAwaitingArrangement",

@@ -2,6 +2,7 @@ import AppKit
 import AppCore
 import SwiftUI
 import TilesCore
+import ZonesCore
 
 /// The small state bridge used by the Tiles pane. It owns no AppKit resources; recording is
 /// delegated to `ShortcutRecorder`, and all runtime actions go back through `TilesTool`.
@@ -25,7 +26,11 @@ final class TilesSettingsModel: ObservableObject {
     @Published private(set) var runtimePauseMessage: String?
     @Published private(set) var shortcutConflictCount = 0
     @Published private(set) var shortcutConflictOwners = Set<ToolID>()
+    /// Explicit bindings that collide with another tool. Generated Shift variants are kept in a
+    /// separate set: the base shortcut remains useful when only its derived action is blocked.
     @Published private(set) var shortcutConflictActions = Set<TilesTool.Action>()
+    @Published private(set) var shortcutConflictDerivedActions = Set<TilesTool.Action>()
+    @Published private(set) var shortcutConflictDerivedOwners = [TilesTool.Action: ToolID]()
     @Published private(set) var recoveryRequired = false
     @Published private(set) var isRestoringWindows = false
     @Published var alert: AlertItem?
@@ -52,7 +57,7 @@ final class TilesSettingsModel: ObservableObject {
             let conflicts = tool.shortcutConflictSummary(boundCombos: snapshot)
             shortcutConflictCount = conflicts?.count ?? 0
             shortcutConflictOwners = conflicts?.owners ?? []
-            shortcutConflictActions = conflicts?.actions ?? []
+            updateShortcutConflictRows(using: snapshot)
         }
         activeWorkspace = tool.activeWorkspace
         tileSpacingEnabled = tool.settings.tileSpacingEnabled
@@ -99,11 +104,69 @@ final class TilesSettingsModel: ObservableObject {
     var shortcutConflictMessage: String? {
         guard shortcutConflictCount > 0 else { return nil }
         let names = shortcutConflictOwners.map(toolDisplayName).sorted().joined(separator: ", ")
-        return "\(shortcutConflictCount) Tiles shortcuts are already used by \(names). Change the affected Tiles shortcuts below; Lineup will not change your other tools."
+        let noun = shortcutConflictCount == 1 ? "shortcut" : "shortcuts"
+        let verb = shortcutConflictCount == 1 ? "is" : "are"
+        return "\(shortcutConflictCount) Tiles \(noun) \(verb) already used by \(names). Change the affected Tiles shortcuts below; Lineup will not change your other tools."
     }
 
     func isShortcutConflicted(_ action: TilesTool.Action) -> Bool {
         shortcutConflictActions.contains(action)
+    }
+
+    /// A generated Shift action can be unavailable while its stored base combo still works. Keep
+    /// that distinction visible beside the row instead of painting the base field as broken.
+    func derivedShortcutConflictMessage(for action: TilesTool.Action) -> String? {
+        guard shortcutConflictDerivedActions.contains(action),
+              let owner = shortcutConflictDerivedOwners[action],
+              let binding = tool?.binding(for: action.rawValue) else { return nil }
+        let modifiers = UInt32(truncatingIfNeeded: binding.modifiers)
+            | UInt32(DragSnapModifierMask.shift)
+        let shortcut = ShortcutKit.display(keyCode: binding.keyCode, modifiers: modifiers)
+        let behavior: String
+        switch action {
+        case .workspace1, .workspace2, .workspace3, .workspace4:
+            behavior = "moves the focused window"
+        case .nextWorkspace:
+            behavior = "switches to the previous workspace"
+        case .nextWindow:
+            behavior = "cycles backwards"
+        case .moveWindowToNextWorkspace:
+            behavior = "moves the focused window to the previous workspace"
+        default:
+            return nil
+        }
+        return "\(shortcut) (\(behavior)) conflicts with \(toolDisplayName(owner))"
+    }
+
+    private func updateShortcutConflictRows(using snapshot: [ToolCombo]) {
+        guard let tool else { return }
+        var explicit = Set<TilesTool.Action>()
+        var derived = Set<TilesTool.Action>()
+        var derivedOwners: [TilesTool.Action: ToolID] = [:]
+
+        for action in TilesTool.Action.registeredCases {
+            guard let binding = tool.binding(for: action.rawValue) else { continue }
+            let modifiers = UInt32(truncatingIfNeeded: binding.modifiers)
+            if snapshot.conflictOwner(keyCode: binding.keyCode,
+                                      modifiers: modifiers,
+                                      excluding: .tiles) != nil {
+                explicit.insert(action)
+            }
+
+            guard (action.hasGeneratedReverse || action.hasGeneratedWorkspaceMove),
+                  modifiers & UInt32(DragSnapModifierMask.shift) == 0 else { continue }
+            let derivedModifiers = modifiers | UInt32(DragSnapModifierMask.shift)
+            if let owner = snapshot.conflictOwner(keyCode: binding.keyCode,
+                                                  modifiers: derivedModifiers,
+                                                  excluding: .tiles) {
+                derived.insert(action)
+                derivedOwners[action] = owner
+            }
+        }
+
+        shortcutConflictActions = explicit
+        shortcutConflictDerivedActions = derived
+        shortcutConflictDerivedOwners = derivedOwners
     }
 
     func prepareForRecording(_ action: String? = nil) {
@@ -342,6 +405,7 @@ private struct TilesSettingsPaneBody: View {
 
     @ViewBuilder
     private func shortcutRow(_ row: TilesTool.Action) -> some View {
+        let derivedConflict = model.derivedShortcutConflictMessage(for: row)
         HStack(spacing: 12) {
             Text(row.title)
             Spacer(minLength: 18)
@@ -350,6 +414,14 @@ private struct TilesSettingsPaneBody: View {
                     .foregroundStyle(.orange)
                     .help("This Tiles shortcut conflicts with another tool")
                     .accessibilityLabel("Shortcut conflict")
+            } else if let derivedConflict {
+                // The base combo is still available. Keep the blocked physical-Shift variant
+                // visible as its own state instead of marking this row as wholly conflicting.
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .help(derivedConflict)
+                    .accessibilityLabel("Derived shortcut conflict")
+                    .accessibilityValue(derivedConflict)
             }
             RecorderButton(
                 text: model.shortcutText(for: row.rawValue),
@@ -360,7 +432,8 @@ private struct TilesSettingsPaneBody: View {
                 rejectionCount: recorder.rejectionCount,
                 action: { record(row.rawValue) })
                 .accessibilityValue(model.isShortcutConflicted(row)
-                                    ? "Conflicts with another tool" : "Available")
+                                    ? "Conflicts with another tool"
+                                    : derivedConflict ?? "Available")
             CircleClearButton(
                 help: "Clear shortcut",
                 accessibilityLabel: "Clear shortcut for \(row.title)",

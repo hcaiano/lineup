@@ -439,9 +439,14 @@ private func runCyclerToolChecks() throws {
             && activator.contains("switch window.route?.context {")
             && !activator.contains("route(window.element)"),
           "routed window context and action are captured once and reused for selection")
-    check(activator.contains("if !isStandardWindow(window) {")
-            && activator.contains("guard minimized, hasWindowRole(window),")
-            && activator.contains("let route, route.context != .unmanaged else { return nil }")
+    let standardFilter = activator.range(of: "guard standard || (minimized && hasWindowRole(window)) else { return nil }")
+    let routeCapture = activator.range(of: "let route = windowRouting?.route(window)")
+    check(activator.contains("let standard = isStandardWindow(window)")
+            && standardFilter != nil
+            && routeCapture != nil
+            && standardFilter!.lowerBound < routeCapture!.lowerBound
+            && activator.contains("if !standard {")
+            && activator.contains("guard let route, route.context != .unmanaged else { return nil }")
             && activator.contains("AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString")
             && activator.contains("return role == kAXWindowRole as String")
             && !activator.contains("kAXDialogSubrole")

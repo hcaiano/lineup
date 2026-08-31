@@ -1419,6 +1419,10 @@ private func runOnboardingTests() throws {
     check(shell.contains("urlForApplication(withBundleIdentifier: SingleInstance.legacyCyclerBundleID)")
           && shell.contains("activateFileViewerSelecting"),
           "Reveal in Finder is offered only when Cycler.app actually resolves")
+    check(shell.contains("for tool in registry.tools where !tool.isRunning")
+            && shell.contains("tool.warnings.filter { $0.id.hasSuffix(\".config\") }")
+            && shell.contains("tiles.sectionLoadError == nil"),
+          "stopped tools surface unreadable config warnings without showing stale runtime warnings")
     check(Onboarding.cyclerUninstallBanner.contains("Quit and remove Cycler.app")
           && Onboarding.cyclerUninstallBanner.contains("win the race"),
           "the uninstall banner keeps the plan's wording")
@@ -1457,7 +1461,7 @@ private func runOnboardingTests() throws {
     check(addButtons == 2,
           "the Cycler pane declares the Add control twice — empty state and list footer — and shows exactly one at a time (got \(addButtons))")
     if let empty = cyclerPane.range(of: "if model.rows.isEmpty {"),
-       let footer = cyclerPane.range(of: "Keep 1–4 and letters for apps. Tiles uses U/I/O/P for workspaces. Add ⇧ to cycle backwards.") {
+       let footer = cyclerPane.range(of: "Keep 1–4 and letters for apps. Add ⇧ to cycle backwards.") {
         check(empty.lowerBound < footer.lowerBound,
               "the list footer is on the non-empty branch, below the empty state")
     } else {
@@ -1467,8 +1471,10 @@ private func runOnboardingTests() throws {
           "the Cycler pane's loose instruction paragraph is gone — the hero summary carries it")
     check(!cyclerPane.contains("Use one app to cycle its windows, or add several apps to cycle between them. Add"),
           "the tripled guidance sentence is not repeated in the pane body")
-    check(cyclerPane.contains("Add apps to 1–4 or letters. Tiles uses U/I/O/P for workspaces."),
-          "the Cycler empty state preserves app keys and teaches the Tiles workspace row")
+    check(cyclerPane.contains("Add apps to 1–4 or letters."),
+          "the Cycler empty state preserves the app shortcut guidance without assuming Tiles defaults")
+    check(!cyclerPane.contains("Tiles uses U/I/O/P"),
+          "the Cycler pane does not promise unconfigured or rebound Tiles defaults")
 
     let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
     check(zonesPane.contains("caption: \"Click a shortcut, then press a key combo."),
@@ -2785,6 +2791,14 @@ private func runTilesShellContractTests() throws {
           "Tiles receives shortcut restore failures for retry")
 
     let pane = source("Sources/lineup/Tools/Tiles/TilesSettingsPane.swift")
+    check(pane.contains("shortcutConflictDerivedActions")
+            && pane.contains("derivedShortcutConflictMessage(for action:")
+            && pane.contains("else if let derivedConflict")
+            && pane.contains("base combo is still available"),
+          "Tiles shows derived Shift conflicts separately without marking the working base combo")
+    check(pane.contains("let noun = shortcutConflictCount == 1 ? \"shortcut\" : \"shortcuts\"")
+            && pane.contains("let verb = shortcutConflictCount == 1 ? \"is\" : \"are\""),
+          "Tiles conflict banner uses singular grammar for one shortcut and plural grammar otherwise")
     check(pane.contains("SettingsSectionView(\"Workspace\")")
             && pane.contains("SettingsSectionView(\"Behavior\")")
             && pane.contains("SettingsSectionView(\"Shortcuts\""),
