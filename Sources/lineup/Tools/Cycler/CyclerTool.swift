@@ -359,7 +359,7 @@ final class CyclerTool: Tool {
         var result: [ToolWarning] = []
         if let sectionLoadError {
             result.append(ToolWarning(
-                id: "cycler.settings",
+                id: "cycler.config",
                 text: "⚠︎ Cycler shortcuts couldn’t be loaded",
                 detailLines: [sectionLoadError, "Editing is disabled until you reset them."],
                 actionTitle: "Reset Cycler shortcuts…",

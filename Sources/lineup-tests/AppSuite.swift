@@ -1423,6 +1423,9 @@ private func runOnboardingTests() throws {
             && shell.contains("tool.warnings.filter { $0.id.hasSuffix(\".config\") }")
             && shell.contains("tiles.sectionLoadError == nil"),
           "stopped tools surface unreadable config warnings without showing stale runtime warnings")
+    check(source("Sources/lineup/Tools/Cycler/CyclerTool.swift").contains("id: \"cycler.config\"")
+            && !source("Sources/lineup/Tools/Cycler/CyclerTool.swift").contains("id: \"cycler.settings\""),
+          "Cycler's unreadable-section warning follows the shared config-warning classification")
     check(Onboarding.cyclerUninstallBanner.contains("Quit and remove Cycler.app")
           && Onboarding.cyclerUninstallBanner.contains("win the race"),
           "the uninstall banner keeps the plan's wording")
