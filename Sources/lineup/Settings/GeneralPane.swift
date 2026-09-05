@@ -4,7 +4,7 @@ import SwiftUI
 /// General: Startup · Menu bar · Permissions · Updates.
 ///
 /// Built on the shared `SettingsSectionView` / `SettingsRow` pair rather than a pane-local card
-/// style, so General, Zones, Cycler and Hyperkey all line up on the same content column and the
+/// style, so General, Zones, Cycler, Hyperkey and Hints all line up on the same content column and the
 /// same row rhythm — whichever tool drew the pane. (This resolves Phase 7a's open question: the
 /// card helper that lived here is gone; there is exactly one section style in the window.)
 struct GeneralPane: View {
@@ -73,7 +73,7 @@ struct GeneralPane: View {
     /// One permission: status dot + word, the tools that need it, and the way to go grant it.
     ///
     /// The "Required by" line is computed from every registered tool's `requiredPermissions`, so
-    /// it stays honest as tools are added — nothing here names Zones, Cycler or Hyperkey.
+    /// it stays honest as tools are added — nothing here names Zones, Cycler, Hyperkey or Hints.
     @ViewBuilder
     private func permissionRow(_ permission: Permission, neededBy tools: [String]) -> some View {
         let granted = permission == .accessibility

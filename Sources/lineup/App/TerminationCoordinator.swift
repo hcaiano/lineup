@@ -13,8 +13,8 @@ import os
 /// the owner never comes back at all.
 ///
 /// Standalone Cycler installed its own SIGINT/SIGTERM/SIGHUP handler that stopped the hyper-key
-/// controller and then `exit(128+sig)`'d — which, in a three-tool app, would skip Zones' and
-/// Cycler's cleanups entirely. Ownership therefore moves here: tools register a cleanup block
+/// controller and then `exit(128+sig)`'d — which, in the merged multi-tool app, would skip Zones'
+/// and Cycler's cleanups entirely. Ownership therefore moves here: tools register a cleanup block
 /// and the shell fans out in reverse registration order.
 ///
 /// `HyperKeyController`'s static `atexit` drain is still kept (Phase 6): it covers exit while a

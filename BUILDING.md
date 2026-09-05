@@ -54,7 +54,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup 2.0 is one app shell hosting three independent tools, on top of four pure ("core") modules
+Lineup 2.0 is one app shell hosting four independent tools, on top of five pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -71,12 +71,14 @@ Sources/CyclerCore/         Pure, tested core for the Cycler tool
 Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   TriggerKey.swift          Trigger key enum + display names
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
+Sources/HintsCore/          Pure, tested core for the Hints tool (Foundation only)
+  See docs/hints.md         Eligibility, labels, filter/search, session state, geometry, budgets
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
   Product.swift             Identity constants (name, bundle ID, paths, update feed)
   LineupAppConfig.swift     ~/.config/lineup/config.json envelope schema
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
-Sources/lineup/              AppKit agent (the app shell + the three tools)
+Sources/lineup/              AppKit agent (the app shell + the four tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -84,26 +86,29 @@ Sources/lineup/              AppKit agent (the app shell + the three tools)
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
   Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
+  Tools/Hints/                 AX scanning, per-display hint overlays, panel input, settings pane
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
-  main.swift                  Orchestrates the four suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / AppSuite.swift
+  main.swift                  Orchestrates the five suites below
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / HintsSuite.swift / AppSuite.swift
+Tests/                        macOS-only adapter XTests (not run by the dependency-free runner)
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
-four suites.
+five suites.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
-launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
+(`zones`/`cycler`/`hyperkey`/`hints`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on
+first launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to
+it**. Hints keeps only its activation shortcut and label alphabet in its section.
 
 ### Downgrading from 2.0 to 1.9.x
 
 Because 2.0 never touches `zones.json`, rolling back to a 1.9.x build (or older) just works: 1.9.x
 reads `zones.json` exactly as 2.0 left it, since 2.0 never wrote to it in the first place. Anything
-edited only in 2.0 — Zones changes made after the one-time import, plus all Cycler and Hyperkey
-settings — lives in `config.json` and does **not** carry back to 1.9.x; that data simply sits unread
+edited only in 2.0 — Zones changes made after the one-time import, plus all Cycler, Hyperkey, and
+Hints settings — lives in `config.json` and does **not** carry back to 1.9.x; that data simply sits unread
 until (if ever) 2.0 is reinstalled.
 
 ## Notarized release (Developer ID)

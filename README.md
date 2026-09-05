@@ -13,12 +13,16 @@
 
 ![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup combines three tools. Enable only the tools you need:
+Lineup combines four tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
+- **Hints:** Press your own global shortcut to label the controls of the frontmost app and activate
+  one from the keyboard. Disabled by default; you assign the activation shortcut. Covers
+  Accessibility-exposed controls, best effort in Safari, Chromium, and Electron. See
+  [docs/hints.md](docs/hints.md).
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
@@ -26,9 +30,10 @@ Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
 1. Download the current version from [lineup.caiano.com](https://lineup.caiano.com).
 2. Move Lineup to Applications and open it.
-3. Allow Accessibility access when macOS asks. Lineup needs it to inspect and move windows.
-4. If you enable Hyperkey, allow Input Monitoring when macOS asks. The other tools do not request
-   this permission.
+3. Allow Accessibility access when macOS asks. Zones, Cycler, and Hints use it to inspect windows
+   and controls; Hyperkey does not.
+4. If you enable Hyperkey, allow Input Monitoring when macOS asks. It is the only tool that needs
+   this permission; Hints does not require it.
 
 ## Build from source
 

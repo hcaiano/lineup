@@ -193,7 +193,7 @@ final class HyperkeyTool: Tool {
     }
 
     /// Start/stop path only. Writing `config.json` on every launch just to restate a flag nothing
-    /// reads would be pure churn (and pointless risk on a file three tools share), so this writes
+    /// reads would be pure churn (and pointless risk on a file all four tools share), so this writes
     /// only when the blob actually disagrees with the authoritative tool flag.
     ///
     /// Failures are logged, not surfaced: this runs on start/stop, where there is no edit the user

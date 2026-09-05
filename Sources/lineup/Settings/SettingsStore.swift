@@ -2,7 +2,7 @@ import AppKit
 import AppCore
 import SwiftUI
 
-/// Sidebar destinations, in fixed order: General / Zones / Cycler / Hyperkey / About.
+/// Sidebar destinations, in fixed order: General / Zones / Cycler / Hyperkey / Hints / About.
 enum SettingsSection: Hashable {
     case general
     case tool(ToolID)
@@ -23,7 +23,7 @@ struct ToolRow: Identifiable, Equatable {
 ///
 /// Every recorder in every pane routes through `beginRecording(_:cancel:)` / `endRecording(_:)`
 /// — in practice through `ShortcutRecorder`, which wraps them — and those suspend and resume the
-/// whole Carbon registry. That is what makes shortcut recording safe across three tools: while a
+/// whole Carbon registry. That is what makes shortcut recording safe across all four tools: while a
 /// recorder is live, no tool's hotkey can fire, and an already-bound combo can be re-recorded.
 /// Ref-counted in `HotkeyManager`, so overlapping recorders can't leave the registry suspended.
 /// Panes must never call `HotkeyManager.suspendAll()` themselves.

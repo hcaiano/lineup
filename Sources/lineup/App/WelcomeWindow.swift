@@ -8,7 +8,8 @@ import SwiftUI
 /// why it needs permission, instead of being dropped cold into an OS dialog for an app whose
 /// window they never saw — Lineup is a menu-bar agent with no window of its own.
 ///
-/// Rewritten for 2.0: the product is now three tools, so the window has to say what each one does
+/// Rewritten for 2.0: the window introduces the three tools shown in its tile row (Hints is off
+/// by default and stays out of the noiseless first-run pitch), saying what each one does
 /// and which of them are off by default, and it must be explicit that Input Monitoring is NOT
 /// being asked for here. An existing 1.x user never sees this window (they see What's New).
 @MainActor

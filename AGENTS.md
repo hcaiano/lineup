@@ -1,11 +1,14 @@
 # Lineup
 
-Lineup is a native macOS 13+ menu-bar suite. It combines three tools that users can enable
+Lineup is a native macOS 13+ menu-bar suite. It combines four tools that users can enable
 independently:
 
 - **Zones** arranges windows in per-screen layouts.
 - **Cycler** moves through apps and windows with global shortcuts.
 - **Hyperkey** maps one physical key to Control + Option + Shift + Command.
+- **Hints** labels Accessibility-exposed controls in the frontmost app so they can be activated
+  from the keyboard. It is disabled by default and used through an assigned global shortcut. See
+  [docs/hints.md](docs/hints.md) for its support contract, permission use, and clean-room record.
 
 Read [PRODUCT.md](PRODUCT.md) before changing user-visible behavior or design. Read
 [BUILDING.md](BUILDING.md) for build, package, and architecture details. Read
@@ -54,12 +57,14 @@ State which paths do not apply when their omission is not obvious.
 
 ## Where code lives
 
-- `Sources/ZonesCore`, `Sources/CyclerCore`, and `Sources/HyperkeyCore` contain testable tool logic.
+- `Sources/ZonesCore`, `Sources/CyclerCore`, `Sources/HyperkeyCore`, and `Sources/HintsCore`
+  contain testable tool logic.
 - `Sources/AppCore` owns product identity, shared configuration, migration, and tool metadata.
 - `Sources/lineup/App` contains the app shell and shared macOS services.
 - `Sources/lineup/Settings` contains the SwiftUI settings interface.
 - `Sources/lineup/Tools` contains each tool's AppKit and SwiftUI integration.
-- `Sources/lineup-tests` is the dependency-free test runner.
+- `Sources/lineup-tests` is the dependency-free test runner; macOS-only adapter XTests live in
+  `Tests/`.
 - `Scripts` contains local build and maintainer release tools.
 - `web` contains the static site, update feed, release notes, and hosted downloads.
 

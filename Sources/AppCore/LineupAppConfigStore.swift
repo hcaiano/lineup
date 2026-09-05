@@ -16,7 +16,7 @@ public enum LineupAppConfigError: Error, Equatable {
 /// - a reset preserves the rejected bytes FIRST and aborts if preservation fails
 /// - writes are atomic and stably formatted (`.prettyPrinted, .sortedKeys`)
 ///
-/// All three tools mutate through this one object (`update`/`setSettings`), so a save of one
+/// All four tools mutate through this one object (`update`/`setSettings`), so a save of one
 /// section can never drop a sibling's — there is no second, stale envelope anywhere.
 public final class LineupAppConfigStore {
     public enum State: Equatable {
@@ -91,7 +91,7 @@ public final class LineupAppConfigStore {
         try body(&copy)
         // A mutation that changes nothing writes nothing. Without this, everything that "saves
         // the current state" — a display change while an import is deferred, a status refresh —
-        // rewrites the file three tools share for no reason.
+        // rewrites the file all four tools share for no reason.
         guard copy != config else { return }
         try write(copy)
         config = copy

@@ -9,7 +9,7 @@ import SwiftUI
 // Two deliberate differences from the 1.x original:
 //   * every hyper-key member is gone — Hyperkey is its own tool with its own section (plan §2.2);
 //   * the model no longer owns an `NSEvent` monitor. Capture is `ShortcutRecorder`'s job, because
-//     it is what routes through `SettingsStore` and therefore suspends ALL THREE tools' hotkeys
+//     it is what routes through `SettingsStore` and therefore suspends ALL FOUR tools' hotkeys
 //     while a combo is being recorded. What is kept from the old `handle()` is exactly the part
 //     that is Cycler's: merge-on-duplicate-combo, the reverse-collision warning, and `apply()`.
 

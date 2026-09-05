@@ -4,9 +4,8 @@ import os
 
 /// Owns the tool list, their enabled state, and their lifecycles.
 ///
-/// Phase 3 deliberately ships with ZERO tools registered: the shell (menu bar, Settings, Sparkle,
-/// permissions, launch at login) must stand on its own before Zones, Cycler and Hyperkey are
-/// built against it in parallel.
+/// The registry stays tool-agnostic: the shell decides which tools to register and in what
+/// order, and each tool brings only its own runtime.
 @MainActor
 final class ToolRegistry {
     private(set) var tools: [any Tool] = []

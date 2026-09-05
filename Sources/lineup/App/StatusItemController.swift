@@ -13,6 +13,7 @@ import Sparkle
 /// Zones      ▸  Edit Layout… · ⇧-drag to snap ✓
 /// Cycler     ▸  Reload bindings
 /// Hyperkey   ▸  (status only, or nothing)
+/// Hints (Off)…               (when disabled; opens Hints Settings)
 /// ──────────
 /// Settings…                 ⌘,
 /// Launch at login           ✓
@@ -33,6 +34,7 @@ final class StatusItemController: NSObject {
     var shellWarnings: () -> [ToolWarning] = { [] }
     var showMenuBarIcon: () -> Bool = { true }
     var onOpenSettings: () -> Void = {}
+    var onOpenToolSettings: (ToolID) -> Void = { _ in }
     var onShowAbout: () -> Void = {}
 
     init(registry: ToolRegistry, permissions: PermissionCenter) {
@@ -52,7 +54,7 @@ final class StatusItemController: NSObject {
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.image = Brand.menuBarLogo()
-            item.button?.toolTip = "\(Product.name): window snapping, app cycling, hyper key"
+            item.button?.toolTip = "\(Product.name): window snapping, app cycling, hyper key, on-screen hints"
             statusItem = item
         }
         statusItem?.menu = buildMenu()
@@ -102,6 +104,15 @@ final class StatusItemController: NSObject {
                 parent.submenu = submenu
                 menu.addItem(parent)
             }
+        }
+        // Hints is intentionally off for new and upgrading users, so it cannot rely on a running
+        // tool row for discovery. This opens its existing Settings pane; the pane header remains
+        // the sole enable control and the title states the persisted off state directly.
+        if let hints = registry.tool(.hints), !registry.isEnabled(.hints) {
+            addedToolSection = true
+            menu.addItem(actionItem("Hints (Off)…", symbol: hints.iconSymbol) { [weak self] in
+                self?.onOpenToolSettings(.hints)
+            })
         }
         if addedToolSection { menu.addItem(.separator()) }
 

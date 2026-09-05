@@ -3,9 +3,9 @@ import SwiftUI
 /// Shared layout constants so every pane's content column lines up, whichever tool drew it.
 /// Carried over from Lineup 1.x's Settings window.
 ///
-/// These are the ONLY numbers a pane should use for its outer rhythm. Three panes written by three
-/// people otherwise each pick their own column width and their own gap between sections, and the
-/// window reads as three windows — which is exactly what the 2.0 design review measured.
+/// These are the ONLY numbers a pane should use for its outer rhythm. Multiple panes written
+/// independently would otherwise each pick their own column width and gap between sections, making
+/// the window read as several windows, which is exactly what the 2.0 design review measured.
 enum SettingsMetrics {
     /// Width of a pane's content column inside the detail area. A `width`, never a `maxWidth`:
     /// a pane that only caps its width centres its content on a different gutter than its
@@ -67,7 +67,7 @@ struct SettingsSectionView<Content: View>: View {
             // Every `SettingsRow` draws a trailing hairline, which left a rule hanging under the
             // last row of every section with nothing below it to separate. Shrinking the box by
             // exactly one divider and clipping is what drops that last one without making each
-            // row know whether it is the last: the rows are built by `ForEach` in three panes.
+            // row know whether it is the last: the rows are built by `ForEach` in four panes.
             //
             // Order matters. The trim has to happen while the divider is still the bottom-most
             // pixel of the box; with the 2pt breathing room applied first it ate the padding and

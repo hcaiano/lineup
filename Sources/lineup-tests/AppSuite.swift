@@ -5,7 +5,7 @@ import HyperkeyCore
 import ZonesCore
 
 // Shell-level checks: the config envelope, its write discipline, the legacy import/split, and
-// source-scan invariants that keep the three tools from stepping on each other.
+// source-scan invariants that keep the tools from stepping on each other.
 
 // A scratch directory that is removed when the closure returns. Named per-case so a failure
 // leaves a readable trail in /tmp.
@@ -313,6 +313,8 @@ private func runLegacyImportTests() throws {
         check(cfg.isEnabled(.zones) == true, "fresh install: Zones is on")
         check(cfg.isEnabled(.cycler) == nil, "fresh install: no cycler section is invented")
         check(cfg.isEnabled(.hyperkey) == nil, "fresh install: no hyperkey section is invented")
+        check(cfg.isEnabled(.hints) == nil, "fresh install: no hints section is invented")
+        check(cfg.section(for: .hints) == nil, "fresh install: the hints section is absent entirely")
         check(cfg.general.didImportLegacyZones && cfg.general.didImportLegacyCycler,
               "fresh install marks both imports done so they never run again")
         check(try cfg.settings(LineupConfig.self, for: .zones) == LineupConfig(),
@@ -336,6 +338,7 @@ private func runLegacyImportTests() throws {
         check(imported?.schemaVersion == 3, "the zones section keeps LineupConfig schema 3")
         check(cfg.general.didImportLegacyZones, "didImportLegacyZones is set")
         check(cfg.isEnabled(.cycler) == nil, "a zones-only import creates no cycler section")
+        check(cfg.section(for: .hints) == nil, "a zones-only import creates no hints section")
 
         check(try Data(contentsOf: url) == before, "zones.json is byte-identical after import")
         let afterMtime = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
@@ -558,7 +561,8 @@ private func runLegacyImportTests() throws {
         check(cfg.isEnabled(.zones) == true, "both: Zones on")
         check(cfg.isEnabled(.cycler) == true, "both: Cycler on")
         check(cfg.isEnabled(.hyperkey) == true, "both: Hyperkey on")
-        check(cfg.tools.count == 3, "both: exactly three sections are created")
+        check(cfg.tools.count == 3, "both: exactly three sections are created (Hints is never invented)")
+        check(cfg.isEnabled(.hints) == nil, "both: no hints section is invented")
     }
 }
 
@@ -638,6 +642,14 @@ private func runIdentityTests() throws {
     check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
 
     check(plistString("CFBundleShortVersionString") == "2.0.1", "Info.plist ships 2.0.1")
+
+    // ---- ToolID: the stable tool identity ----
+    check(ToolID.all == [.zones, .cycler, .hyperkey, .hints],
+          "ToolID.all is the fixed order Zones, Cycler, Hyperkey, Hints")
+    check(ToolID.hints.rawValue == "hints", "ToolID.hints has the raw value hints")
+    check(Set(ToolID.all).count == ToolID.all.count, "ToolID.all carries no duplicate ids")
+    check(ToolID.all.count == 4, "ToolID.all is complete: four tools")
+
     // Sparkle offers an update only when the appcast's sparkle:version (CFBundleVersion) sorts
     // ABOVE the running app's. 2.0.0 shipped as build 18, so a 2.0.1 that reused 18 would be
     // invisible to every existing user. The build number must stay strictly monotonic.
@@ -731,7 +743,7 @@ private func runShellSourceScanTests() throws {
 
     // SettingsStore is the SOLE route to the global recording suspension. A pane that reached for
     // HotkeyManager itself would bypass the ref count and the cancel-on-blur/close path, and
-    // could strand all three tools' hotkeys unregistered.
+    // could strand every tool's hotkeys unregistered.
     let suspendFiles = files.filter {
         $0.text.contains("HotkeyManager.shared.suspendAll") || $0.text.contains("HotkeyManager.shared.resumeAll")
     }.map(\.path)
@@ -817,6 +829,26 @@ private func runSettingsWindowTests() throws {
           && icon.contains("\"lineup_lineup.bundle\"")
           && icon.contains("\"cycler-icon\""),
           "Cycler's icon is loaded safely from the app's packaged resource bundle")
+    check(icon.contains("case .hints: return \"keyboard\""),
+          "Hints uses its keyboard fallback symbol")
+    let brand = source("Sources/lineup/App/Brand.swift")
+    check(brand.contains("case .hints: return blue"),
+          "Hints reuses the app accent instead of adding a fourth brand colour")
+    let statusMenu = source("Sources/lineup/App/StatusItemController.swift")
+    let settingsRoute = source("Sources/lineup/App/AppShell.swift")
+    check(statusMenu.contains("if let hints = registry.tool(.hints), !registry.isEnabled(.hints)"),
+          "the menu discovers Hints from its persisted off state, not only its running state")
+    check(statusMenu.contains("actionItem(\"Hints (Off)…\", symbol: hints.iconSymbol)")
+          && statusMenu.contains("onOpenToolSettings(.hints)"),
+          "the off-state Hints row is actionable, truthful, and routes to Hints Settings")
+    check(!statusMenu.contains("registry.setEnabled"),
+          "the menu does not become a second owner of the Hints enable switch")
+    check(settingsRoute.contains("statusItem.onOpenToolSettings =")
+          && settingsRoute.contains("openSettings(tool: toolID)"),
+          "AppShell connects the menu's generic tool-Settings route")
+    check(settingsRoute.contains("private func openSettings(tool: ToolID? = nil)")
+          && settingsRoute.contains("store.selection = .tool(tool)"),
+          "opening tool Settings directly selects the requested tool pane")
     let paths = Set(files.map(\.path))
     check(!paths.contains("Sources/lineup/App/ZZPreviewTools.swift"),
           "the temporary preview-tool scaffold is not committed")
@@ -1017,10 +1049,38 @@ private func runIntegrationTests() throws {
           "the Tool contract has an attach step")
     for path in ["Sources/lineup/Tools/Zones/ZonesTool.swift",
                  "Sources/lineup/Tools/Cycler/CyclerTool.swift",
-                 "Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift"] {
+                 "Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift",
+                 "Sources/lineup/Tools/Hints/HintsTool.swift"] {
         check(source(path).contains("func attach(_ services: ToolServices)"),
               "\(path) takes its services at registration, so its pane works while the tool is off")
     }
+
+    // ---- Hints: fourth in the fixed registration order, before any tool starts ----
+    let shell = source("Sources/lineup/App/AppShell.swift")
+    let hintsTool = source("Sources/lineup/Tools/Hints/HintsTool.swift")
+    if let zones = shell.range(of: "registry.register(ZonesTool())"),
+       let cycler = shell.range(of: "registry.register(CyclerTool())"),
+       let hyperkey = shell.range(of: "registry.register(HyperkeyTool())"),
+       let hints = shell.range(of: "registry.register(HintsTool())"),
+       let start = shell.range(of: "registry.startEnabledTools()") {
+        check(zones.lowerBound < cycler.lowerBound && cycler.lowerBound < hyperkey.lowerBound
+                && hyperkey.lowerBound < hints.lowerBound && hints.lowerBound < start.lowerBound,
+              "registration order is fixed: Zones, Cycler, Hyperkey, Hints, all before startEnabledTools")
+    } else {
+        check(false, "AppShell registers the four tools in order before startEnabledTools()")
+    }
+    check(shell.components(separatedBy: "registry.register(").count - 1 == 4,
+          "AppShell registers exactly four tools, each once")
+    check(!hintsTool.contains("localID"),
+          "HintsTool carries no Phase-3 local identity; it uses the shared ToolID.hints")
+    check(hintsTool.contains("let defaultEnabled = false"),
+          "Hints ships disabled (a silent auto-update must never start reading window trees)")
+    check(hintsTool.contains("let requiredPermissions: Set<Permission> = [.accessibility]"),
+          "Accessibility is Hints' only required permission")
+    check(hintsTool.contains("let iconSymbol = \"keyboard\""),
+          "Hints' icon symbol is keyboard")
+    check(hintsTool.contains("let id = ToolID.hints"),
+          "HintsTool identifies itself with the shared ToolID.hints constant")
     // The workaround attach() replaces.
     check(!source("Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift").contains("pendingSettings"),
           "HyperkeyTool no longer defers edits made while it has never started")
@@ -1279,13 +1339,26 @@ private func runOnboardingTests() throws {
     for path in ["Sources/lineup/App/AppShell.swift",
                  "Sources/lineup/App/WelcomeWindow.swift",
                  "Sources/lineup/App/WhatsNewWindow.swift",
-                 "Sources/lineup/App/OnboardingKit.swift"] {
+                 "Sources/lineup/App/OnboardingKit.swift",
+                 // Hints is Accessibility-only: its whole tool and pane source must never call
+                 // into the Input Monitoring or one-shot Accessibility prompt APIs directly.
+                 "Sources/lineup/Tools/Hints/HintsTool.swift",
+                 "Sources/lineup/Tools/Hints/HintsSettingsPane.swift"] {
         let text = source(path)
         check(!text.contains("CGRequestListenEventAccess") && !text.contains("requestInputMonitoring"),
               "\(path) never requests Input Monitoring")
         check(!text.contains("CGPreflightListenEventAccess"),
               "\(path) does not even preflight Input Monitoring")
     }
+    // The Accessibility PROMPT (one-shot system dialog) belongs to PermissionCenter alone. A
+    // tool's own path opens System Settings instead.
+    let axPromptFiles = files.filter { $0.text.contains("AXIsProcessTrustedWithOptions") }.map(\.path)
+    check(axPromptFiles == ["Sources/lineup/App/PermissionCenter.swift"],
+          "the one-shot Accessibility prompt is requested only by PermissionCenter (got \(axPromptFiles))")
+    // The global allowlist covers the whole tree; keep the Hints names explicit so a change to
+    // Hints' permission surface cannot land unnoticed.
+    check(!source("Sources/lineup/Tools/Hints/HintsTool.swift").contains("AXIsProcessTrustedWithOptions"),
+          "HintsTool opens System Settings rather than the one-shot prompt")
     // Accessibility is requested from exactly one place: the Welcome window's Grant button.
     let axRequestFiles = files.filter { $0.text.contains("PermissionCenter.shared.requestAccessibility()") }
         .map(\.path)
@@ -1348,14 +1421,23 @@ private func runOnboardingTests() throws {
           && Onboarding.cyclerUninstallBanner.contains("win the race"),
           "the uninstall banner keeps the plan's wording")
 
-    // The onboarding windows sell the suite with the shared tool tiles.
+    // The onboarding windows sell the suite with the shared tool tiles. They stay exactly THREE
+    // (Zones, Cycler, Hyperkey): Hints is disabled by default and is deliberately not on the
+    // first-run pitch, so neither window may reference ToolID.hints.
     for path in ["Sources/lineup/App/WelcomeWindow.swift",
                  "Sources/lineup/App/WhatsNewWindow.swift"] {
         check(source(path).contains("ToolTileRow()"),
               "\(path) shows the three tool tiles")
+        check(!source(path).contains(".hints"),
+              "\(path) never references ToolID.hints")
     }
-    check(source("Sources/lineup/App/OnboardingKit.swift").contains("ToolIcon(id: tool.id"),
+    let onboardingKit = source("Sources/lineup/App/OnboardingKit.swift")
+    check(onboardingKit.contains("ToolIcon(id: tool.id"),
           "the tiles reuse the Settings ToolIcon rather than inventing a second icon set")
+    check(onboardingKit.components(separatedBy: "OnboardingTool(id:").count - 1 == 3,
+          "OnboardingKit declares exactly three onboarding tiles (got \(onboardingKit.components(separatedBy: "OnboardingTool(id:").count - 1))")
+    check(!onboardingKit.contains(".hints"),
+          "OnboardingKit never references ToolID.hints")
     let whatsNew = source("Sources/lineup/App/WhatsNewWindow.swift")
     check(whatsNew.contains("Your window snapping is now the Zones tool"),
           "What's New leads with the rename")
@@ -1746,7 +1828,7 @@ private func runConfigCorrectnessTests() throws {
         try marker.write(to: url)
         try store.update { $0.general.showMenuBarIcon = true }
         check(try Data(contentsOf: url) == marker,
-              "an update that changes nothing does not rewrite the file three tools share")
+              "an update that changes nothing does not rewrite the file the tools share")
         try store.update { $0.general.showMenuBarIcon = false }
         check(try Data(contentsOf: url) != marker, "a change that IS a change still writes")
     }
@@ -2160,6 +2242,14 @@ private func runVisualDesignTests() throws {
         check(text.contains("PinnedBannerStrip {") && text.contains("BlockedBanner("),
               "\(path) shows the blocked state through the shared pinned banner")
     }
+    // HintsSettingsPane uses the shared banner strip too, but its banners are status/setup
+    // rows (store blocked, section unreadable, Accessibility setup) with no self-reset: Hints
+    // deliberately has no section-reset path, so it is checked for the strip, not for a reset
+    // action.
+    let hintsBannerPath = "Sources/lineup/Tools/Hints/HintsSettingsPane.swift"
+    let hintsBanner = source(hintsBannerPath)
+    check(hintsBanner.contains("PinnedBannerStrip {") && hintsBanner.contains("BlockedBanner("),
+          "\(hintsBannerPath) shows its blocked states through the shared pinned banner")
     for path in bannerUsers.dropLast() { // ToolPane's banner explains a switch, not a section
         check(source(path).contains("actionTitle: \"Reset"),
               "\(path)'s banner offers its tool's reset")
@@ -2235,7 +2325,8 @@ private func runVisualDesignTests() throws {
     let panes = ["Sources/lineup/Settings/GeneralPane.swift",
                  "Sources/lineup/Tools/Zones/ZonesSettingsPane.swift",
                  "Sources/lineup/Tools/Cycler/CyclerSettingsPane.swift",
-                 "Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift"]
+                 "Sources/lineup/Tools/Hyperkey/HyperkeySettingsPane.swift",
+                 "Sources/lineup/Tools/Hints/HintsSettingsPane.swift"]
     for path in panes {
         let text = source(path)
         check(text.contains(".frame(width: SettingsMetrics.contentWidth"),

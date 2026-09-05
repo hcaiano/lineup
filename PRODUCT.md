@@ -8,9 +8,9 @@ product
 
 Mac users who want their windows arranged without thinking about it. Two groups: Henrique (power
 user, ultrawide monitor, keyboard-driven) and his non-technical friends (first macOS utility they
-install by hand; they will not read documentation). Context: the app runs all day in the menu bar;
-the only UI most users ever see is the on-screen layout editor (once) and the drag-snap highlight
-(daily).
+install by hand; they will not read documentation). Context: the app runs all day in the menu bar.
+Most users see the on-screen layout editor once and the drag-snap highlight daily; users who enable
+Hints also see its transient keyboard labels.
 
 ## Product Purpose
 
@@ -18,6 +18,17 @@ Lineup snaps windows into per-screen zones the user draws themselves. It replace
 with something you can shape: recursive zone layouts per display, snapping by shift-drag or global
 shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
 instructions, and the app then disappears into muscle memory.
+
+## Hints
+
+Hints extends the same keyboard-first idea to the rest of the interface. It is disabled by default;
+the user enables it and assigns a global activation shortcut. Pressing the shortcut labels the
+eligible controls that the frontmost app exposes through Accessibility, and typing a label or
+searching accessible names selects a control to activate without reaching for the mouse. Keyboard
+activation is best effort: Hints covers what Accessibility exposes, works best in native apps, is
+best effort in Safari, Chromium, and Electron, and cancels rather than guessing on unsupported
+surfaces. See [docs/hints.md](docs/hints.md) for the exact support contract, permissions, and
+privacy rules.
 
 ## Brand Personality
 

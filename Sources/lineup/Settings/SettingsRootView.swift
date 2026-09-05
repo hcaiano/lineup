@@ -4,8 +4,8 @@ import SwiftUI
 /// The Settings window's content: a fixed-order sidebar with a per-tool on/off switch, and the
 /// selected pane on the right.
 ///
-/// Order is fixed — General, then the tools in registry order (Zones, Cycler, Hyperkey), then
-/// About — so the window never reshuffles under a user who has learned where things are.
+/// Order is fixed — General, then the tools in registry order (Zones, Cycler, Hyperkey, Hints),
+/// then About — so the window never reshuffles under a user who has learned where things are.
 ///
 /// The sidebar is a plain navigator: icon + name, nothing to hit by accident. The enable switch
 /// lives at the top right of each tool's pane (`ToolPane`), where the user is already looking
@@ -32,7 +32,7 @@ struct SettingsRootView: View {
                 }
 
                 // Its own (unlabelled) section purely for the gap: butted straight against the
-                // tool rows, About reads as a fourth tool that is missing its switch.
+                // tool rows, About would read as one more tool that is missing its switch.
                 Section {
                     Label("About", systemImage: "info.circle")
                         .tag(SettingsSection.about)
@@ -72,8 +72,8 @@ private struct HiddenSidebarToggle: ViewModifier {
 /// One tool in the sidebar: its app icon and its name.
 ///
 /// The icon is the real artwork (Lineup's own for Zones, Cycler's for Cycler, a drawn tile for
-/// Hyperkey) rather than an SF Symbol, so the Tools group reads as a list of small apps — the
-/// tools ARE three former apps. General and About keep plain symbols: they are parts of this
+/// the others) rather than an SF Symbol, so the Tools group reads as a list of small apps — the
+/// tools ARE former apps. General and About keep plain symbols: they are parts of this
 /// window, not products.
 ///
 /// A tool that is switched off is muted — partly desaturated, not greyscale, so it reads as

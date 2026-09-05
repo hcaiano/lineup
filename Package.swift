@@ -10,7 +10,7 @@ let package = Package(
     ],
     targets: [
         // Pure, testable layout + coordinate math for the Zones tool (the zones.json schema-3
-        // model). Was `LineupCore` in 1.x; renamed in 2.0 because Lineup is now three tools.
+        // model). Was `LineupCore` in 1.x; renamed in 2.0 because Lineup is now four tools.
         // No AppKit-only state here so it runs cleanly under `swift run lineup-tests`.
         .target(name: "ZonesCore"),
         // Pure Hyper-key persisted settings (TriggerKey + HyperKeySettings). Split out of
@@ -20,10 +20,15 @@ let package = Package(
         // Depends on HyperkeyCore only to re-export TriggerKey/HyperKeySettings for that
         // legacy file shape (see Sources/CyclerCore/Bindings.swift).
         .target(name: "CyclerCore", dependencies: ["HyperkeyCore"]),
+        // Foundation-only deterministic Hints logic: settings, candidate/action policy,
+        // labels/filter/search, session reducer, overlay geometry, and scan budgets.
+        // No dependencies by design; must never depend on AppKit, ApplicationServices,
+        // Carbon, ZonesCore, or AppCore.
+        .target(name: "HintsCore"),
         // Product identity, tool identity, and the unified ~/.config/lineup/config.json
-        // envelope + legacy import. Needs all three tool models to do the import.
+        // envelope + legacy import. Needs only the three legacy tool models to do the import.
         .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore"]),
-        // Thin executable: AppKit agent shell + the three tools. AX window writes,
+        // Thin executable: AppKit agent shell + the four tools. AX window writes,
         // Carbon hotkeys, CGEventTap.
         .executableTarget(
             name: "lineup",
@@ -32,6 +37,7 @@ let package = Package(
                 "ZonesCore",
                 "CyclerCore",
                 "HyperkeyCore",
+                "HintsCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             // Per-tool app icons for the Settings sidebar and pane headers. `.copy` (not
@@ -49,7 +55,17 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "HintsCore"]
+        ),
+        // macOS-only XCTest target for the Hints AX adapter seam (Gate 3 evidence), with
+        // `@testable import lineup`. Run with `swift test` on a real Mac only — build-app
+        // and the CLT-only `swift run lineup-tests` loop are unaffected because `swift
+        // build` does not build test targets. This NEVER pulls AppKit into
+        // `Sources/lineup-tests`.
+        .testTarget(
+            name: "HintsAdapterTests",
+            dependencies: ["lineup", "HintsCore"],
+            path: "Tests/HintsAdapterTests"
         ),
     ]
 )

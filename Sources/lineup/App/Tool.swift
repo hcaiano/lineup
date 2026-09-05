@@ -4,8 +4,9 @@ import Carbon.HIToolbox
 import SwiftUI
 import os
 
-// The Tool contract. FROZEN at the end of Phase 3 — Zones, Cycler and Hyperkey are all built
-// against exactly this surface, in parallel. Changing anything here needs a coordination round.
+// The Tool contract. FROZEN at the end of Phase 3; Zones, Cycler, Hyperkey and Hints are all
+// built against exactly this surface (Zones/Cycler/Hyperkey in parallel during Phase 3, Hints
+// on top of it since). Changing anything here still needs a coordination round.
 
 /// A system permission a tool needs to do its job. Surfaced in General › Permissions with a
 /// "required by: …" hint derived from every registered tool's `requiredPermissions`.
@@ -164,7 +165,7 @@ final class ToolServices {
     }
 }
 
-/// One of Lineup's three tools. A tool owns its hotkeys, taps, monitors, timers and observers,
+/// One of Lineup's tools. A tool owns its hotkeys, taps, monitors, timers and observers,
 /// and must be able to give every one of them back.
 @MainActor
 protocol Tool: AnyObject {
@@ -173,8 +174,9 @@ protocol Tool: AnyObject {
     var summary: String { get }
     var iconSymbol: String { get }
     var requiredPermissions: Set<Permission> { get }
-    /// Zones: true (1.x users already have it). Cycler/Hyperkey: false — a silent auto-update
-    /// must never spontaneously start an event tap or grab Caps Lock.
+    /// Zones: true (1.x users already have it). Cycler, Hyperkey, and Hints: false. A silent
+    /// auto-update must never spontaneously start an event tap, grab Caps Lock, or begin
+    /// Accessibility-driven control discovery.
     var defaultEnabled: Bool { get }
 
     var isRunning: Bool { get }

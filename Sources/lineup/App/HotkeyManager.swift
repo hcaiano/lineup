@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 /// Global hotkeys via Carbon `RegisterEventHotKey`. Zero deps, no event tap / Input Monitoring.
 /// Registers with raw Carbon modifier masks (not NSEvent flags).
 ///
-/// One registry for all three tools. Every row records its owning `ToolID`, which buys three
+/// One registry for every tool. Each row records its owning `ToolID`, which buys three
 /// things the two 1.x managers couldn't do:
 /// - `unregisterAll(owner:)`, so a tool's `stop()` can't take a sibling's hotkeys down with it;
 /// - a pre-Carbon duplicate check, so a Zones/Cycler collision reports `.ownedByTool` instead of

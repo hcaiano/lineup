@@ -11,8 +11,9 @@ import ZonesCore
 /// Settings, Sparkle, permissions, launch at login, activation policy and termination. Tools own
 /// their hotkeys, taps, monitors, timers and observers, and nothing else.
 ///
-/// Phase 3 registers ZERO tools on purpose — the shell has to stand up by itself before Zones,
-/// Cycler and Hyperkey are built against it in parallel.
+/// The shell registers the four tools (Zones, Cycler, Hyperkey, Hints) in the fixed menu order;
+/// each tool brings only its own runtime, never a second config, hotkey, permission, updater or
+/// activation owner.
 @MainActor
 final class AppShell: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: Product.logSubsystem, category: "shell")
@@ -100,12 +101,14 @@ final class AppShell: NSObject, NSApplicationDelegate {
         statusItem.shellWarnings = { [weak self] in self?.shellWarnings() ?? [] }
         statusItem.showMenuBarIcon = { [weak self] in self?.store.config.general.showMenuBarIcon ?? true }
         statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
+        statusItem.onOpenToolSettings = { [weak self] toolID in self?.openSettings(tool: toolID) }
         statusItem.onShowAbout = { AboutWindowController.show() }
 
-        // Tools are registered here in phases 4-6. Order is the menu and sidebar order.
+        // Registered in the fixed menu/sidebar order: Zones, Cycler, Hyperkey, Hints.
         registry.register(ZonesTool())
         registry.register(CyclerTool())
         registry.register(HyperkeyTool())
+        registry.register(HintsTool())
         registry.startEnabledTools()
         statusItem.refresh()
 
@@ -304,8 +307,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings
 
-    private func openSettings() {
+    private func openSettings(tool: ToolID? = nil) {
         if let settings {
+            if let tool { settings.store.selection = .tool(tool) }
             settings.show()
             return
         }
@@ -318,6 +322,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         let controller = SettingsWindowController(store: store)
         controller.onClose = { [weak self] in self?.settings = nil }
         settings = controller
+        if let tool { store.selection = .tool(tool) }
         controller.show()
     }
 

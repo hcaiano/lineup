@@ -4,7 +4,7 @@ import SwiftUI
 /// The shell's frame around a tool's own settings: the hero header (icon, name, one-line
 /// summary) and the enable switch, with `tool.makeSettingsPane()` below it.
 ///
-/// The header is drawn HERE, not by the tools. Three tools written by three people would
+/// The header is drawn HERE, not by the tools. Multiple tools written independently would
 /// otherwise each invent their own title treatment, and the enable switch — which is shell
 /// state, not tool state — would have to be threaded into every pane. Tools keep supplying only
 /// their own controls.
