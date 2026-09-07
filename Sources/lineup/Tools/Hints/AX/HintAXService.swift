@@ -573,7 +573,9 @@ public final class HintAXService {
         let application = backend.applicationElement(pid: targetPid)
         // The service-limit wall clock and boundary begin BEFORE the first
         // application-element AX message (the pid read below) and are checked around it.
-        let deadlineMs = clock.nowMs() + limits.wallClockMs
+        // `wallClockMs` is a clamped positive Int (≤ the frozen ceiling), so the Int64
+        // widening is exact and the budget is unchanged.
+        let deadlineMs = clock.nowMs() + Int64(limits.wallClockMs)
         let boundary: HintAXBoundary = { !self.registry.isStopped && self.clock.nowMs() < deadlineMs }
         guard boundary() else {
             logger.error("capture aborted: cancelled or deadline before the application pid read")
@@ -764,8 +766,8 @@ public final class HintAXService {
         }
 
         // Bounded validation: frozen service-limit wall clock + cancellation boundaries
-        // around every AX message.
-        let deadlineMs = clock.nowMs() + limits.wallClockMs
+        // around every AX message. Int64 widening of the clamped positive budget is exact.
+        let deadlineMs = clock.nowMs() + Int64(limits.wallClockMs)
         let boundary: HintAXBoundary = {
             !self.registry.isStopped
                 && !self.registry.isPendingDiscarded(id)
@@ -904,8 +906,9 @@ public final class HintAXService {
         }
 
         // ABSOLUTE scan wall clock: begins BEFORE any preflight AX message below and is
-        // shared with the traversal (never reset after preflight).
-        let wallDeadlineMs = clock.nowMs() + limits.wallClockMs
+        // shared with the traversal (never reset after preflight). Int64 widening of the
+        // clamped positive budget is exact.
+        let wallDeadlineMs = clock.nowMs() + Int64(limits.wallClockMs)
         func crossed() -> Bool { clock.nowMs() >= wallDeadlineMs }
 
         // 3) THE bounded fresh generation validation/classification (shared with
@@ -1023,7 +1026,7 @@ public final class HintAXService {
         action: HintInvocationAction,
         key: HintSessionKey
     ) -> HintInvocationOutcome {
-        let invocationDeadlineMs = clock.nowMs() + limits.wallClockMs
+        let invocationDeadlineMs = clock.nowMs() + Int64(limits.wallClockMs)
         let mutationBoundary: HintAXBoundary = {
             !self.registry.isCancelled(key) && self.clock.nowMs() < invocationDeadlineMs
         }
@@ -1046,9 +1049,14 @@ public final class HintAXService {
         )
         // Every backend message below is a checked message: checked BEFORE it runs, so a
         // failed boundary issues NO further AX message anywhere on the mutation path.
-        guard let elementPid = checkedMessage(mutationBoundary, label: "invoke element pid") {
+        // (The trailing-closure checked call stays OUTSIDE the guard: a trailing closure
+        // is not parseable inside a `guard` condition-list, and hoisting it keeps the
+        // boundary check immediately before the single pid message — same contract.)
+        let elementPidRead = checkedMessage(mutationBoundary, label: "invoke element pid") {
             backend.pid(of: element)
-        }, elementPid == session.targetPid, elementPid != lineupPid else {
+        }
+        guard let elementPid = elementPidRead,
+              elementPid == session.targetPid, elementPid != lineupPid else {
             logger.error("invoke rejected: element pid differs from the captured target or is Lineup-owned")
             return failInvocationLocked(key: key)
         }
@@ -1232,7 +1240,7 @@ public final class HintAXService {
         operation: HintScrollOperation,
         key: HintSessionKey
     ) -> HintMutationOutcome {
-        let scrollDeadlineMs = clock.nowMs() + limits.wallClockMs
+        let scrollDeadlineMs = clock.nowMs() + Int64(limits.wallClockMs)
         let mutationBoundary: HintAXBoundary = {
             !self.registry.isCancelled(key) && self.clock.nowMs() < scrollDeadlineMs
         }
@@ -1254,9 +1262,13 @@ public final class HintAXService {
         )
         // Every backend message below is a checked message: checked BEFORE it runs, so a
         // failed boundary issues NO further AX message anywhere on the mutation path.
-        guard let elementPid = checkedMessage(mutationBoundary, label: "scroll element pid") {
+        // (The trailing-closure checked call stays OUTSIDE the guard for parseability —
+        // same contract: boundary immediately before the single pid message.)
+        let elementPidRead = checkedMessage(mutationBoundary, label: "scroll element pid") {
             backend.pid(of: element)
-        }, elementPid == session.targetPid, elementPid != lineupPid else {
+        }
+        guard let elementPid = elementPidRead,
+              elementPid == session.targetPid, elementPid != lineupPid else {
             logger.error("scroll rejected: element pid mismatch or Lineup-owned")
             return .failed
         }

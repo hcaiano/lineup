@@ -55,6 +55,13 @@ public enum HintScrollOperation: Hashable, Sendable, CaseIterable {
 /// action set exactly per the matrix. Pure with respect to the injected backend.
 enum HintAXCandidateFactory {
 
+    /// The public AX role value for link elements. The macOS SDK defines role constants
+    /// in HIServices' AXRoleConstants.h but ships NO `kAXLinkRole` constant there (or
+    /// anywhere in the public SDK), so the frozen public role value — the one AppKit and
+    /// WebKit actually report for links — is spelled here exactly once. No other raw
+    /// role/subrole string exists in this file.
+    static let linkRole = "AXLink"
+
     /// Per-element classification input gathered by the traversal.
     struct Probe {
         let role: String?
@@ -91,7 +98,7 @@ enum HintAXCandidateFactory {
         switch role {
         case kAXButtonRole as String?:
             return .button
-        case kAXLinkRole as String?:
+        case Self.linkRole as String?:
             return .link
         case kAXCheckBoxRole as String?:
             return .checkbox

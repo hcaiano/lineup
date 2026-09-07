@@ -410,7 +410,7 @@ private struct HintsSettingsAlphabetEditor: View {
                     .disabled(!model.canEdit)
                     .help("Use unique letters A through Z")
                     .accessibilityLabel("Hint label alphabet")
-                    .accessibilityHelp("Use one or more unique letters A through Z.")
+                    .accessibilityHint("Use one or more unique letters A through Z.")
                     .onSubmit {
                         cancelRecording()
                         model.saveAlphabet()

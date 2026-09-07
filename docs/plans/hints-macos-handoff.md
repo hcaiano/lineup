@@ -1,7 +1,7 @@
 # Hints macOS Handoff
 
-Status: implementation-ready after Gate 5; transfer reference and Phase 5 evidence remain pending
-Date: 2026-09-04
+Status: Phase 5 automated macOS stabilization passed on the current OS; signed manual evidence and macOS 13 remain blocked
+Date: 2026-09-06
 Companion plan: [hints-integration.md](hints-integration.md)
 Target: macOS 13 and the current supported macOS
 
@@ -343,6 +343,107 @@ Append dated entries here as work happens.
   in the prompt below with that resulting reference.
 - No session-only `.slim`, `.ignore`, or `.gitignore` change remains in the transfer.
 
+### 2026-09-06 - Phase 5 macOS compile stabilization and automated evidence
+
+- Transfer preflight passed on branch `gustavocaiano/hints` at commit `5e035a8`: the working tree
+  was clean before Phase 5 remediation, the expected Hints source/test/doc inventory was present,
+  and protected identity and release paths were unchanged.
+- Environment: macOS 26.5.2 (build 25F84), arm64, Command Line Tools at
+  `/Library/Developer/CommandLineTools`, Apple Swift 6.3.2. No full Xcode installation is present.
+- `swift run lineup-tests` passed **1,650 checks** before the first app-target compile.
+- The first `swift build` found deferred macOS compiler failures in the AX, Input, and Hints
+  Settings owning scopes. Focused remediation kept the panel-only, Accessibility-only,
+  at-most-once, and fail-closed contracts unchanged: AX Core Foundation payloads are now
+  type-proven before conversion, missing `HintsCore` imports and integer widening were corrected,
+  the public `AXLink` role value replaced a nonexistent SDK constant, the input controller now
+  derives from `NSObject` for its AppKit delegate conformance, and the Settings accessibility help
+  modifier uses the macOS 13-compatible hint API.
+- After remediation, `swift build` passed and `swift run lineup-tests` again passed **1,650
+  checks**. The build still reports pre-existing Swift 6 language-mode warnings; the package's
+  current language mode accepts them.
+- `swift test` is **blocked** on this machine because Command Line Tools do not provide the
+  `XCTest` module and no full Xcode installation is present. The 70 macOS adapter test methods
+  therefore remain unexecuted here; this is an environment block, not a passing result.
+- `UNIVERSAL=0 ./Scripts/build-app.sh` passed with the explicit temporary output
+  `/var/folders/wc/klrm9xnd0fn17xqp95c5dxnr0000gn/T/opencode/lineup-hints-phase5-current`.
+  The produced bundle is ad-hoc signed because no stable identity is configured, so it is
+  exploratory only and cannot satisfy TCC or final-gate evidence. It was not launched and the
+  temporary output was discarded with `trash` after the stop decision below.
+- Stable-signing setup has not been authorized in this session. The signed manual matrix, external
+  visual evidence, disposable-account persistence matrix, and macOS 13 repetition have not begun;
+  no release-readiness claim is made.
+
+### 2026-09-06 - Manual matrix stop decision and blocked result set
+
+- The user chose to stop before manual QA rather than create a local self-signed identity or change
+  this Mac's login Keychain. No Lineup bundle was launched and no live user configuration,
+  Accessibility grant, hotkey, input state, or external evidence location was touched.
+- A dedicated disposable local macOS account was not prepared. A macOS 13 environment is not
+  available. The final Phase 5 gate is therefore blocked regardless of the current-OS automated
+  passes.
+- The following shared result fields apply independently to every unconditional scenario named
+  below and to both required environment cells:
+  - `environment`: macOS 26.5.2 (build 25F84), arm64, current machine; macOS 13, unavailable.
+  - `result`: blocked.
+  - `evidence`: none; the app was not launched and review-only media was not collected.
+  - `notes`: the current-OS cell is blocked by the explicit stop-before-manual-QA decision, absent
+    stable-signing authorization, and (for persistence) no disposable account; the macOS 13 cell is
+    blocked because no macOS 13 environment is available.
+  - `remediation_owner`: Phase 5 validation lane after the maintainer supplies the required
+    authorization, disposable account, environments, and external evidence location.
+- `scenario` values covered by that shared blocked record:
+  - Permission: Accessibility denied before enable; Accessibility granted after denial;
+    Accessibility revoked mid-session; shortcut conflict with another tool.
+  - Panels and Carbon: nonactivating key-capable panel capture with the target app frontmost; exact
+    target-app context restoration; Carbon activation from Login items, Spotlight, Launchpad, and a
+    fullscreen Space; no fallback or secondary input path; no automatic or hidden fallback.
+  - Secure Input: active at invocation; activated mid-session; system Secure Input state remains
+    unblocked after cancellation.
+  - AX actions and staleness: stale-element revalidation; at-most-once action/focus dispatch with no
+    retry after `kAXErrorCannotComplete`; no remembered-coordinate click or pointer synthesis;
+    candidate/action matrix coverage; bounded menu/popover rescan; typed individual reads within
+    frozen budgets; complete retained-element release on every cancellation path.
+  - Displays and Spaces: one display; two displays; negative-origin secondary display; Retina
+    scaling; display attach/remove during a session; fullscreen Space; straddling window; notched
+    and differently sized displays.
+  - Cross-tool interaction: Hyperkey on/off and composed trigger; Zones drag-snap/layout editor;
+    Cycler HUD; Settings shortcut-recorder exclusion.
+  - Persistence: legacy-source checksums unchanged; fresh config; current config; malformed
+    `tools.hints`; newer schema; legacy imports; failed-load write block and atomic writes; reset
+    handling. Hints has no tool-local reset path; the store-level recovery owner preserves rejected
+    bytes.
+  - Performance: activation/scanning/labels/large-surface timings; filter/search and overlay redraw;
+    idle cost; truncation under the scan deadline.
+  - Visual evidence: native-app and browser activation; label and accessible-name filtering; press
+    and menu invocation/rescan; nested scroll navigation; cancellation; failure/partial-result
+    state; light/dark, increased contrast, Reduce Motion, dense overlap, and clamping.
+- The two conditional Input Monitoring scenarios were not opened and are excluded from the counts:
+  the frozen implementation has no approved event tap or Input Monitoring path, and the automated
+  source scans passed.
+- Manual matrix cell summary: **0 passed, 0 failed, 100 blocked, 0 partial, 0 open code repairs**.
+  Open environment/authorization blockers: current-OS signed manual execution, a disposable local
+  account for persistence, and the complete macOS 13 run.
+
+### 2026-09-06 - Later ad-hoc current-account smoke attempt
+
+- This entry supersedes only the earlier statement that no bundle was launched. The user later
+  explicitly authorized a current-account exploratory run; it does not change any signed-matrix
+  result or the blocked-cell counts above.
+- An ad-hoc host build at `/Users/Shared/lineup-dev/Lineup.app` launched successfully after an
+  already-running `/Applications/Lineup.app` instance was quit. LaunchServices later reopened the
+  installed app once; the installed instance was quit again and the development executable path
+  was verified before the retry.
+- The Hints menu and Settings pane appeared. Hints persisted as enabled with a recorded shortcut.
+  Hyperkey was temporarily disabled because the ad-hoc build did not inherit its Input Monitoring
+  grant and repeatedly showed its unavailable warning.
+- The first Hints invocation produced no visible labels. Read-only inspection confirmed the dev
+  executable, enabled Hints settings, disabled Hyperkey settings, and recorded shortcut. Recent
+  unified-log filtering returned no relevant Hints event. Accessibility settings were opened so the
+  exact ad-hoc development bundle could be added, but no post-grant retry result was reported; the
+  smoke outcome is therefore inconclusive and supplies no qualifying evidence.
+- The development instance was quit and `/Applications/Lineup.app` was restored. Hyperkey remains
+  disabled in the live config until the user re-enables it through the installed app's Settings.
+
 ## New chat resumption prompt
 
 Use this as the opening message in a fresh macOS chat:
@@ -350,11 +451,12 @@ Use this as the opening message in a fresh macOS chat:
 ```text
 Repo: git@github.com:hcaiano/lineup.git
 Branch/worktree: gustavocaiano/hints
-Transfer ref: <commit containing the complete Hints working tree, or verified full-worktree copy>
+Transfer ref: 5e035a8 contains the Linux-authored handoff; also transfer the current Phase 5
+working-tree fixes and progress-log changes, or create and verify a new commit/ref first.
 
-Do not check out base commit 9093a1db3ccd6752fe077bc57b1e5eb8c3a55293 by itself: the Linux-authored
-Hints implementation was still uncommitted when this handoff was finalized. Confirm every expected
-file in the transfer checklist before running validation.
+Do not check out base commit 9093a1db3ccd6752fe077bc57b1e5eb8c3a55293 or transfer commit 5e035a8 by
+itself if the current Phase 5 fixes are still uncommitted. Confirm every expected file in the
+transfer checklist before continuing validation.
 
 Read these, in order: AGENTS.md, PRODUCT.md, docs/plans/hints-integration.md,
 docs/plans/hints-macos-handoff.md (this handoff governs your work), BUILDING.md,

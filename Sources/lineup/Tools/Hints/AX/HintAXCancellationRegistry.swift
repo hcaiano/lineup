@@ -1,4 +1,5 @@
 import Foundation
+import HintsCore
 
 // Lock-protected cancellation registry for the Hints AX lane.
 //

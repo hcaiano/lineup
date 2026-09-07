@@ -33,8 +33,13 @@ protocol HintInputControllerDelegate: AnyObject {
 /// Input Monitoring permission requests, global/local `NSEvent` monitors, event posting
 /// (`CGEvent.post`), and timers/polling. Carbon is imported only for Secure Input checking;
 /// modifier state goes through `NSEvent.ModifierFlags`.
+///
+/// Invariant: this class derives from `NSObject` because `NSTextViewDelegate` inherits
+/// `NSObjectProtocol`, which a pure Swift class cannot conform to (Swift 6 compile error) and
+/// which AppKit could not dispatch through anyway. `NSObject` brings no behavior here — no
+/// observers, KVO, or timers are used — and every member stays `@MainActor`-isolated.
 @MainActor
-final class HintInputController {
+final class HintInputController: NSObject {
 
     // MARK: Phase 5 injection seams
 
@@ -76,9 +81,12 @@ final class HintInputController {
         self.secureInputProvider = secureInputProvider
         self.modifierFlagsProvider = modifierFlagsProvider
         let view = HintInputResponderView()
+        self.responderView = view
+        // NSObject superclass chain completes first; `self` is only handed to the view's weak
+        // seams after full initialization, per Swift's two-phase initialization rules.
+        super.init()
         view.eventSink = self
         view.delegate = self
-        self.responderView = view
     }
 
     // MARK: Capture seam (Presentation → Input)

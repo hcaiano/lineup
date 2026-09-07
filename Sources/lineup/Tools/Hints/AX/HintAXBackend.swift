@@ -225,7 +225,9 @@ public final class SystemHintAXBackend: HintAXBackend {
         guard AXUIElementCopyAttributeValue(
             element, attribute as CFString, &value
         ) == .success else { return .unknown }
-        guard let typed = decode(value) else { return .unknown }
+        // A success answer with no payload is a value-shape failure, not a value: unknown.
+        guard let raw = value else { return .unknown }
+        guard let typed = decode(raw) else { return .unknown }
         return .value(typed)
     }
 
@@ -238,7 +240,8 @@ public final class SystemHintAXBackend: HintAXBackend {
         switch error {
         case .success:
             // A mismatched decode is a value-shape failure, not absence: unknown.
-            guard let typed = decode(value) else { return .unknown }
+            guard let raw = value else { return .unknown }
+            guard let typed = decode(raw) else { return .unknown }
             return .value(typed)
         case .attributeUnsupported, .noValue:
             return .value(nil)
@@ -253,9 +256,26 @@ public final class SystemHintAXBackend: HintAXBackend {
         if let number = ref as? NSNumber { return number.boolValue }
         return nil
     }
-    private static func decodeElement(_ ref: CFTypeRef) -> AXUIElement? { ref as? AXUIElement }
+    // CF casts to CoreFoundation types are UNCHECKED by the Swift runtime ("always
+    // succeed" per the compiler), so every CF decode below proves the payload's CFTypeID
+    // first and only then reinterprets the reference; a wrong-typed payload decodes to
+    // nil (an honest unknown), never to a bogus value.
+    private static func decodeElement(_ ref: CFTypeRef) -> AXUIElement? {
+        guard CFGetTypeID(ref) == AXUIElementGetTypeID() else { return nil }
+        return unsafeBitCast(ref, to: AXUIElement.self)
+    }
     private static func decodeChildArray(_ ref: CFTypeRef) -> [AXUIElement]? {
-        (ref as? [AXUIElement]) ?? ((ref as? [AnyObject]) as? [AXUIElement])
+        guard CFGetTypeID(ref) == CFArrayGetTypeID() else { return nil }
+        guard let contents = ref as? [AnyObject] else { return nil }
+        var elements: [AXUIElement] = []
+        elements.reserveCapacity(contents.count)
+        // Every slot is independently type-proven: one malformed entry makes the whole
+        // read unknown (fail closed), never a silently truncated/poisoned list.
+        for entry in contents {
+            guard CFGetTypeID(entry) == AXUIElementGetTypeID() else { return nil }
+            elements.append(unsafeBitCast(entry, to: AXUIElement.self))
+        }
+        return elements
     }
 
     /// Scalar decode for scrollbar `AXValue`/`AXMinValue`/`AXMaxValue` payloads: public
@@ -394,8 +414,12 @@ public final class SystemHintAXBackend: HintAXBackend {
         var positionRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXPositionAttribute as CFString, &positionRef
-        ) == .success, let positionValue = positionRef as? AXValue,
-            AXValueGetType(positionValue) == .cgPoint else { return .unknown }
+        ) == .success else { return .unknown }
+        // A non-AXValue position payload is a failure, never a zero point.
+        guard let positionRaw = positionRef,
+              CFGetTypeID(positionRaw) == AXValueGetTypeID() else { return .unknown }
+        let positionValue = unsafeBitCast(positionRaw, to: AXValue.self)
+        guard AXValueGetType(positionValue) == .cgPoint else { return .unknown }
         var point = CGPoint.zero
         guard AXValueGetValue(positionValue, .cgPoint, &point) else {
             return .unknown // malformed position payload is a failure, not a zero frame
@@ -407,8 +431,11 @@ public final class SystemHintAXBackend: HintAXBackend {
         var sizeRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXSizeAttribute as CFString, &sizeRef
-        ) == .success, let sizeValue = sizeRef as? AXValue,
-            AXValueGetType(sizeValue) == .cgSize else { return .unknown }
+        ) == .success else { return .unknown }
+        guard let sizeRaw = sizeRef,
+              CFGetTypeID(sizeRaw) == AXValueGetTypeID() else { return .unknown }
+        let sizeValue = unsafeBitCast(sizeRaw, to: AXValue.self)
+        guard AXValueGetType(sizeValue) == .cgSize else { return .unknown }
         var size = CGSize.zero
         guard AXValueGetValue(sizeValue, .cgSize, &size) else {
             return .unknown // malformed size payload is a failure, not a zero frame

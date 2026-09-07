@@ -1,5 +1,6 @@
 import ApplicationServices
 import Foundation
+import HintsCore
 
 // Per-generation target repository for the Hints AX lane.
 //
