@@ -1238,15 +1238,15 @@ func runZonesTests() throws {
 
         let fixed = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-D", "uuid-B"])
         // Valid unique persisted orders are KEPT (A=2). For the duplicate 1, the screen
-        // earlier in priority wins: D is CONNECTED (visited before disconnected C, even
-        // though C's label sorts first), so D keeps 1 and C is repaired.
+        // earlier in priority wins: D is CONNECTED (visited before disconnected C), so D
+        // keeps 1 and C is repaired.
         check(fixed.screens["uuid-A"]?.shortcutOrder == 2, "repair: A keeps valid 2")
         check(fixed.screens["uuid-D"]?.shortcutOrder == 1, "repair: duplicate 1 kept by connected D")
-        // B (connected, no order), C (duplicate), and E (negative) take the lowest free
-        // numbers in priority order (B, then C, then E by label fallback).
+        // B (connected, no order), E (negative), and C (duplicate) take the lowest free
+        // numbers in priority order (B, then E, then C by label fallback).
         check(fixed.screens["uuid-B"]?.shortcutOrder == 3, "repair: missing B -> lowest free (3)")
-        check(fixed.screens["uuid-C"]?.shortcutOrder == 4, "repair: duplicate C -> next free (4)")
-        check(fixed.screens["uuid-E"]?.shortcutOrder == 5, "repair: negative E -> next free (5)")
+        check(fixed.screens["uuid-E"]?.shortcutOrder == 4, "repair: negative E -> next free (4)")
+        check(fixed.screens["uuid-C"]?.shortcutOrder == 5, "repair: duplicate C -> next free (5)")
         check(Set(fixed.screens.values.compactMap(\.shortcutOrder)).count == 5,
               "repair: all orders unique after normalization")
         // Idempotent: normalizing the fixed config (any connected order) changes nothing.
