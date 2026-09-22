@@ -41,10 +41,17 @@ enum ScreenIdentity {
         return "frame:\(x),\(y)"
     }
 
-    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+    /// The `CGDirectDisplayID` backing a live screen, or nil when the device description
+    /// lacks one. Small helper so runtime code can match an `NSScreen` back to a key it
+    /// resolved earlier without re-deriving the full identity.
+    static func displayIdentifier(for screen: NSScreen) -> CGDirectDisplayID? {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         guard let num = screen.deviceDescription[key] as? NSNumber else { return nil }
         return CGDirectDisplayID(num.uint32Value)
+    }
+
+    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        displayIdentifier(for: screen)
     }
 
     private static func uuidString(for displayID: CGDirectDisplayID) -> String? {

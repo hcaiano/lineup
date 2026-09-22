@@ -83,14 +83,24 @@ public struct ScreenLayout: Codable, Equatable {
     public var keyIsStable: Bool
     public var lastSeenAt: String?
     public var layout: Node
+    /// 1-based position of this display in the GLOBAL zone-numbering sequence. Optional and
+    /// backward-compatible: a schema-3 file written before numbering existed decodes with
+    /// this absent (nil), and `ZoneOrderNormalizer` assigns/repairs it deterministically.
+    /// Once set, the value is preserved across re-saves so the display's SLOT in the
+    /// global numbering sequence stays stable as displays connect, disconnect, or
+    /// rearrange. Note the limit of that guarantee: stability is of the display's ORDER,
+    /// not of absolute global zone numbers — if an EARLIER display's zone count changes
+    /// (e.g. its layout is edited), every later display's global range shifts with it.
+    public var shortcutOrder: Int?
 
-    public init(label: String, pixelsWide: Int, pixelsHigh: Int, keyIsStable: Bool, lastSeenAt: String?, layout: Node) {
+    public init(label: String, pixelsWide: Int, pixelsHigh: Int, keyIsStable: Bool, lastSeenAt: String?, layout: Node, shortcutOrder: Int? = nil) {
         self.label = label
         self.pixelsWide = pixelsWide
         self.pixelsHigh = pixelsHigh
         self.keyIsStable = keyIsStable
         self.lastSeenAt = lastSeenAt
         self.layout = layout
+        self.shortcutOrder = shortcutOrder
     }
 }
 
@@ -150,12 +160,17 @@ public struct LineupConfig: Codable, Equatable {
         for layout in screens.values.map(\.layout) { try layout.validate() }
     }
 
-    /// Return a copy with `screen`'s layout set/updated (keeps metadata fresh).
+    /// Return a copy with `screen`'s layout set/updated (keeps metadata fresh). The
+    /// screen's persisted `shortcutOrder` is carried over — and every OTHER screen's
+    /// entry is left untouched — so a layout change never renumbers the global zone
+    /// shortcuts. (A layout change on an earlier display still shifts later displays'
+    /// absolute global ranges, by zone count; only the ORDER is frozen here.)
     public func setting(layout: Node, for screen: ScreenInfo, now: String?) -> LineupConfig {
         var copy = self
         copy.screens[screen.key] = ScreenLayout(
             label: screen.label, pixelsWide: screen.pixelsWide, pixelsHigh: screen.pixelsHigh,
-            keyIsStable: screen.keyIsStable, lastSeenAt: now, layout: layout)
+            keyIsStable: screen.keyIsStable, lastSeenAt: now, layout: layout,
+            shortcutOrder: copy.screens[screen.key]?.shortcutOrder)
         return copy
     }
 

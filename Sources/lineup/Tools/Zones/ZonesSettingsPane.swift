@@ -111,9 +111,18 @@ private struct ZonesSettingsPaneBody: View {
 
                     SettingsSectionView(
                         "Zone shortcuts",
-                        caption: "One shortcut per zone in the current layout, in visual order.") {
-                        ForEach(model.zoneShortcutRows) { row in
-                            shortcutRow(row)
+                        caption: "Saved zones are numbered across displays.") {
+                        if model.zoneShortcutGroups.isEmpty {
+                            Text("Open the layout editor to create zones, then assign shortcuts here.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
+                        } else {
+                            ForEach(model.zoneShortcutGroups) { group in
+                                zoneShortcutGroup(group)
+                            }
                         }
                     }
                 }
@@ -124,6 +133,16 @@ private struct ZonesSettingsPaneBody: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // VIEW-scoped display-change refresh: while this pane is visible, its connected/
+        // disconnected group statuses stay live even when the Zones TOOL is disabled —
+        // refresh() is a read-only projection through the Context; it never starts tool
+        // resources, grabs hotkeys, monitors drags, or writes/creates config. The running
+        // tool's own observer remains the single owner of reconciliation and open-editor
+        // refreshes; this is deliberately a second, write-free subscriber.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            model.refresh()
+        }
         .navigationTitle("Zones")
         .onAppear {
             model.refresh()
@@ -152,37 +171,58 @@ private struct ZonesSettingsPaneBody: View {
 
     // MARK: - Rows
 
+    private func zoneShortcutGroup(_ group: ZonesSettingsModel.ZoneShortcutGroup) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(group.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 12)
+                if let rangeLabel = group.rangeLabel {
+                    Text(rangeLabel)
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Text(group.status.label)
+                    .font(.caption)
+                    .foregroundStyle(group.status == .connected
+                                     ? Color(nsColor: Brand.blue)
+                                     : Color(nsColor: .secondaryLabelColor))
+            }
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+            .accessibilityElement(children: .combine)
+
+            ForEach(group.rows) { row in
+                shortcutRow(row)
+            }
+        }
+    }
+
     @ViewBuilder
     private func shortcutRow(_ row: ZonesSettingsModel.ShortcutRow) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text(row.label)
-                // A binding survives a layout change, so a Zone 7 row on a three-zone layout is
-                // not junk to be hidden — it is a shortcut that does nothing UNTIL the layout
-                // grows. Say so instead of leaving the user to press it and wonder.
-                if row.isBeyondLayout {
-                    Text("(not in current layout)")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
+                    .accessibilityLabel(row.labelAccessibilityLabel)
                 Spacer(minLength: 24)
                 RecorderButton(
                     text: model.shortcutDisplay(for: row.id),
                     emptyText: "Click to set",
                     isRecording: recorder.isRecording(row.id),
                     enabled: model.canWrite,
-                    accessibilityLabel: "\(row.label) shortcut",
+                    accessibilityLabel: row.recorderAccessibilityLabel,
                     rejectionCount: recorder.rejectionCount,
                     action: { record(row.id) })
 
                 CircleClearButton(
                     help: "Clear shortcut",
-                    accessibilityLabel: "Clear shortcut for \(row.label)",
+                    accessibilityLabel: row.clearAccessibilityLabel,
                     disabled: !model.canWrite || model.shortcutDisplay(for: row.id).isEmpty,
                     action: { model.clearShortcut(row.id) })
             }
-            // Denser than a stock SettingsRow: sixteen of these stack up (7 quick actions + 9
-            // zones), and at the default row height the list stops fitting in one look.
+            // Shortcut rows stay denser than a stock SettingsRow. Large saved layouts can expose
+            // many zones, so the recorder list needs to remain easy to scan while it scrolls.
             .frame(minHeight: SettingsMetrics.shortcutRowHeight)
             .padding(.vertical, 3)
 
@@ -236,9 +276,10 @@ final class ZonesSettingsModel: ObservableObject {
         /// True only while Zones is actually running — the overlay is one of the resources
         /// `ZonesTool.stop()` gives back, so it cannot be opened on a stopped tool.
         var isRunning: () -> Bool
-        /// How many zones the layout on the main display actually has, so the rows past it can
-        /// say so.
-        var zoneCount: () -> Int
+        /// Globally numbered saved zones, grouped by their owning display. `ZonesTool` chooses
+        /// the candidate or committed numbering snapshot so presentation matches write/routing
+        /// safety rather than reconstructing that policy in the view model.
+        var zoneShortcutGroups: () -> [ZoneShortcutGroup]
         /// Every combo any registered tool has bound, running or not (§5.6 cross-tool collisions).
         var boundCombos: () -> [ToolCombo]
     }
@@ -246,9 +287,45 @@ final class ZonesSettingsModel: ObservableObject {
     struct ShortcutRow: Identifiable {
         var id: String
         var label: String
-        /// A zone row past the end of the saved layout. The binding is kept and shown — it starts
-        /// working again the moment the layout grows — but the row says it does nothing today.
-        var isBeyondLayout = false
+        /// Display and availability context for VoiceOver. Visible grouping carries the same
+        /// information without repeating it in every compact row.
+        var accessibilityContext: String?
+
+        var recorderAccessibilityLabel: String {
+            ["\(label) shortcut", accessibilityContext].compactMap { $0 }.joined(separator: ", ")
+        }
+
+        var labelAccessibilityLabel: String {
+            [label, accessibilityContext].compactMap { $0 }.joined(separator: ", ")
+        }
+
+        var clearAccessibilityLabel: String {
+            ["Clear shortcut for \(label)", accessibilityContext].compactMap { $0 }.joined(separator: ", ")
+        }
+    }
+
+    struct ZoneShortcutGroup: Identifiable {
+        enum Status: Equatable {
+            case connected
+            case notConnected
+            case notInSavedLayout
+
+            var label: String {
+                switch self {
+                case .connected: return "Connected"
+                case .notConnected: return "Not connected"
+                case .notInSavedLayout: return "Not in a saved layout"
+                }
+            }
+
+            var accessibilityDescription: String { label.lowercased() }
+        }
+
+        var id: String
+        var title: String
+        var rangeLabel: String?
+        var status: Status
+        var rows: [ShortcutRow]
     }
 
     @Published private(set) var canWrite = true
@@ -258,7 +335,7 @@ final class ZonesSettingsModel: ObservableObject {
     @Published private(set) var dragSnapOn = true
     @Published private(set) var dragTrigger = DragSnapTrigger.default
     @Published private(set) var isRunning = false
-    @Published private(set) var zoneCount = 0
+    @Published private(set) var zoneShortcutGroups: [ZoneShortcutGroup] = []
 
     private let ctx: Context
     /// Snapshot of every tool's bound combos, taken when a capture STARTS. Rebuilding it decodes
@@ -280,14 +357,7 @@ final class ZonesSettingsModel: ObservableObject {
     }
 
     var quickShortcutRows: [ShortcutRow] {
-        ShortcutKit.quickActions.map { ShortcutRow(id: $0.id, label: $0.label) }
-    }
-
-    var zoneShortcutRows: [ShortcutRow] {
-        (1...ShortcutKit.zoneRows).map {
-            ShortcutRow(id: ZoneAction.id($0), label: "Zone \($0)",
-                        isBeyondLayout: zoneCount > 0 && $0 > zoneCount)
-        }
+        ShortcutKit.quickActions.map { ShortcutRow(id: $0.id, label: $0.label, accessibilityContext: nil) }
     }
 
     var dragTriggerDisplay: String {
@@ -312,7 +382,7 @@ final class ZonesSettingsModel: ObservableObject {
         dragSnapOn = ctx.isDragSnapOn()
         dragTrigger = ctx.dragTrigger()
         isRunning = ctx.isRunning()
-        zoneCount = ctx.zoneCount()
+        zoneShortcutGroups = ctx.zoneShortcutGroups()
     }
 
     /// Preserve the unreadable section and start again from defaults. Offered by the pane's
