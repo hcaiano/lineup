@@ -16,6 +16,12 @@
 Lineup combines three tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
+  Zone shortcuts are numbered across ALL your displays: each display's Settings group shows its
+  global zone range, and `zone:N` moves the focused window to that global zone on its owning
+  display — even across displays. Numbers belong to saved displays, so unplugging one keeps its
+  range reserved (those shortcuts wait safely instead of moving a different display's windows).
+  Note that adding or removing zones on an earlier display shifts the numbering of every later
+  display, since each display's range follows the one before it.
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.

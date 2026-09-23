@@ -52,6 +52,18 @@ release that non-technical friends can install and "get" in under a minute.
   this replaces and rarely collide.
 - **Zone shortcuts (Zone 1…N) default to UNASSIGNED.** Users opt in via the recorder.
 - The Shortcuts UI should make "unassigned" obviously fine, not an error.
+- **Zone numbers are GLOBAL and stable across displays.** `zone:N` addresses the Nth zone of a
+  global sequence spanning every saved display, so a display's zones keep the same numbers across
+  reconnects and reordering; the persisted per-display order never shifts an already-saved
+  display's range. Numbers owned by a currently DISCONNECTED saved display stay reserved (their
+  shortcuts are safe no-ops — they never retarget another display), and a move can carry a window
+  across displays onto the owning display's zone. Settings shows one group per display (with its
+  zone range and connected status) plus an "Unavailable zones" group for shortcuts bound past the
+  saved layouts. Limit to know: changing an EARLIER display's zone count shifts every LATER
+  display's range, because each display's numbering follows the one before it. The layout editor
+  shares this numbering: it rebases onto display changes while open (drafts preserved per
+  display) and requires an explicit Save on the updated numbers, so what you see is what gets
+  committed.
 
 ### Menu-bar dropdown (minimal)
 Show, in order: **Edit Layout…**, **Settings…**, separator, **Shift-drag to snap** (toggle),

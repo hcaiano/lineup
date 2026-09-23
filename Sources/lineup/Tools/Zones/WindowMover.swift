@@ -193,21 +193,33 @@ enum WindowMover {
         return nil
     }
 
-    /// Snap the focused window into positional Zone `index` (0-based) of its screen's
-    /// layout. No-op if that zone doesn't exist on this screen (out-of-range binding).
+    /// Snap the focused window into positional Zone `index` (0-based) of an EXPLICIT target
+    /// display — the global-numbered-zone path. The caller (ZonesTool) resolved the global
+    /// zone number through the stable `ZoneNumbering` snapshot to `(configKey, index)` and
+    /// hands over the NSScreen that config key is connected to, so a window starting on
+    /// another monitor is moved across displays onto the owning display's zone.
+    ///
+    /// Geometry comes from the TARGET screen (frame/visibleFrame/pixels), never from the
+    /// window's current screen. Same AX trust/focused-window checks, same
+    /// size->position->size cross-display dance, same SnapMemory seeding from the window's
+    /// ORIGINAL frame as every other snap path.
     @discardableResult
-    static func snapFocusedWindow(toZoneIndex index: Int, config: LineupConfig) -> Bool {
+    static func snapFocusedWindow(toZoneIndex index: Int,
+                                  on target: NSScreen,
+                                  configKey: String,
+                                  config: LineupConfig) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let window = focusedWindow() else { return false }
         guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
-        guard let screen = screen(for: currentCocoa) else { return false }
-        let info = ScreenIdentity.info(for: screen)
-        let root = config.layout(forKey: info.key)
-        guard let target = Layout.zoneRect(
+        let info = ScreenIdentity.info(for: target)
+        // Resolve through the CONFIG KEY the numbering map used — after durable
+        // preparation it is always the owning screen's exact key.
+        let root = config.layout(forKey: configKey)
+        guard let targetRect = Layout.zoneRect(
             index: index, root: root,
-            frame: screen.frame, visibleFrame: screen.visibleFrame,
+            frame: target.frame, visibleFrame: target.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
-        let landed = setFrame(target, of: window)
+        let landed = setFrame(targetRect, of: window)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }

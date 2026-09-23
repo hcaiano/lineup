@@ -1142,6 +1142,607 @@ func runZonesTests() throws {
         check(bundleIDInScript("Scripts/setup-signing.sh") == plistID, "bundle-id consistency: setup-signing.sh matches the plist (stable designated requirement)")
     }
 
+    // ---- P6: stable global zone numbering ----
+    let screenA = ScreenInfo(key: "uuid-A", label: "Alpha", pixelsWide: 5120, pixelsHigh: 1440, keyIsStable: true)
+    let screenB = ScreenInfo(key: "uuid-B", label: "Beta", pixelsWide: 3456, pixelsHigh: 2234, keyIsStable: true)
+    let screenC = ScreenInfo(key: "uuid-C", label: "Gamma", pixelsWide: 1920, pixelsHigh: 1080, keyIsStable: true)
+
+    do { // 3 zones on A + 2 on B map to global 1...5; B starts at 4
+        var cfg = LineupConfig()
+        cfg = cfg.setting(layout: .thirds, for: screenA, now: nil)  // 3 zones
+        cfg = cfg.setting(layout: .halves, for: screenB, now: nil)  // 2 zones
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-B"])
+        let map = ZoneNumbering(config: cfg)
+        check(map.totalZones == 5, "numbering: 3+2 zones -> total 5")
+        check(map.displays.map(\.key) == ["uuid-A", "uuid-B"], "numbering: sorted by persisted order")
+        check(map.displays[0].order == 1, "numbering: A order 1")
+        check(map.displays[1].order == 2, "numbering: B order 2")
+        check(map.displays[1].firstZoneNumber == 4, "numbering: B starts at global 4")
+        for n in 1...3 { check(map.resolve(globalNumber: n)?.key == "uuid-A", "numbering: global \(n) on A") }
+        check(map.resolve(globalNumber: 1)?.zoneIndex == 0, "numbering: global 1 -> local 0")
+        check(map.resolve(globalNumber: 3)?.zoneIndex == 2, "numbering: global 3 -> local 2")
+        let b4 = map.resolve(globalNumber: 4)
+        check(b4?.key == "uuid-B" && b4?.zoneIndex == 0, "numbering: global 4 -> B local 0")
+        let b5 = map.resolve(globalNumber: 5)
+        check(b5?.key == "uuid-B" && b5?.zoneIndex == 1, "numbering: global 5 -> B local 1")
+    }
+
+    do { // disconnected saved displays reserve their ranges (mapping spans ALL saved layouts)
+        var cfg = LineupConfig()
+        cfg = cfg.setting(layout: .thirds, for: screenA, now: nil)          // connected
+        cfg = cfg.setting(layout: .halves, for: screenB, now: nil)          // disconnected (not in connectedKeys)
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A"])
+        check(cfg.screens["uuid-A"]?.shortcutOrder == 1, "disconnected: A keeps order 1")
+        check(cfg.screens["uuid-B"]?.shortcutOrder == 2, "disconnected: B still gets order 2")
+        let map = ZoneNumbering(config: cfg)
+        check(map.totalZones == 5, "disconnected: total includes saved-but-absent B")
+        let reserved4 = map.resolve(globalNumber: 4)
+        check(reserved4?.key == "uuid-B" && reserved4?.zoneIndex == 0,
+              "disconnected: B's range 4-5 stays reserved")
+        // A NEWLY seen connected display appends after all reserved ranges.
+        cfg = cfg.setting(layout: .leaf, for: screenC, now: nil)
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-C"])
+        check(cfg.screens["uuid-B"]?.shortcutOrder == 2, "disconnected: B order untouched by new display")
+        check(cfg.screens["uuid-C"]?.shortcutOrder == 3, "disconnected: C appends after reserved range")
+        let c6 = ZoneNumbering(config: cfg).resolve(globalNumber: 6)
+        check(c6?.key == "uuid-C" && c6?.zoneIndex == 0,
+              "disconnected: new display's zones start after the reserved ranges")
+    }
+
+    do { // empty config / zero-zone layouts / global 0 and out-of-range
+        let emptyMap = ZoneNumbering(config: LineupConfig())
+        check(emptyMap.displays.isEmpty, "numbering: empty config -> empty map")
+        check(emptyMap.totalZones == 0, "numbering: empty config -> 0 zones")
+        check(emptyMap.resolve(globalNumber: 1) == nil, "numbering: empty config -> nothing resolves")
+        check(emptyMap.resolve(globalNumber: 0) == nil, "numbering: global 0 invalid")
+
+        var cfg = LineupConfig()
+        cfg = cfg.setting(layout: .leaf, for: screenA, now: nil)
+        // A structurally-empty split (hand-edited config) has ZERO leaf zones: it must
+        // consume no global numbers.
+        cfg.screens["uuid-A"]!.layout = .split(axis: .vertical, dividers: [], children: [])
+        var zeroCfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A"])
+        check(zeroCfg.screens["uuid-A"]?.shortcutOrder == 1, "zero-zone: order still assigned")
+        let zeroMap = ZoneNumbering(config: zeroCfg)
+        check(zeroMap.displays.count == 1 && zeroMap.displays[0].zoneCount == 0,
+              "zero-zone: layout present with zoneCount 0")
+        check(zeroMap.displays[0].firstZoneNumber == nil, "zero-zone: no firstZoneNumber")
+        check(zeroMap.totalZones == 0, "zero-zone: consumes no numbers")
+        check(zeroMap.resolve(globalNumber: 1) == nil, "zero-zone: global 1 -> nil")
+
+        // A zero-zone display in the middle doesn't shift later ranges (counter advances by 0).
+        zeroCfg = zeroCfg.setting(layout: .thirds, for: screenB, now: nil)
+        zeroCfg = ZoneOrderNormalizer.normalizeOrders(in: zeroCfg, connectedKeys: ["uuid-A", "uuid-B"])
+        let midMap = ZoneNumbering(config: zeroCfg)
+        check(midMap.displays[1].firstZoneNumber == 1, "zero-zone: next display's range unaffected (starts at 1)")
+        let b3 = midMap.resolve(globalNumber: 3)
+        check(b3?.key == "uuid-B" && b3?.zoneIndex == 2, "zero-zone: 3 zones on B resolve 1...3")
+
+        // Out-of-range / non-positive numbers resolve to nil.
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: LineupConfig().setting(layout: .thirds, for: screenA, now: nil),
+                                                  connectedKeys: ["uuid-A"])
+        let threeMap = ZoneNumbering(config: cfg)
+        check(threeMap.resolve(globalNumber: 0) == nil, "numbering: global 0 -> nil")
+        check(threeMap.resolve(globalNumber: 4) == nil, "numbering: past total -> nil")
+        check(threeMap.resolve(globalNumber: -1) == nil, "numbering: negative -> nil")
+    }
+
+    do { // missing / duplicate / invalid order repair is deterministic and idempotent
+        // Hand-edited schema-3 config: B missing, C and D duplicate order 1, E negative.
+        var cfg = LineupConfig()
+        cfg.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .thirds, shortcutOrder: 2)
+        cfg.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves)
+        cfg.screens["uuid-C"] = ScreenLayout(label: "Gamma", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: 1)
+        cfg.screens["uuid-D"] = ScreenLayout(label: "Delta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: 1)
+        cfg.screens["uuid-E"] = ScreenLayout(label: "Epsilon", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: -3)
+
+        let fixed = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-D", "uuid-B"])
+        // Valid unique persisted orders are KEPT (A=2). For the duplicate 1, the screen
+        // earlier in priority wins: D is CONNECTED (visited before disconnected C), so D
+        // keeps 1 and C is repaired.
+        check(fixed.screens["uuid-A"]?.shortcutOrder == 2, "repair: A keeps valid 2")
+        check(fixed.screens["uuid-D"]?.shortcutOrder == 1, "repair: duplicate 1 kept by connected D")
+        // B (connected, no order), E (negative), and C (duplicate) take the lowest free
+        // numbers in priority order (B, then E, then C by label fallback).
+        check(fixed.screens["uuid-B"]?.shortcutOrder == 3, "repair: missing B -> lowest free (3)")
+        check(fixed.screens["uuid-E"]?.shortcutOrder == 4, "repair: negative E -> next free (4)")
+        check(fixed.screens["uuid-C"]?.shortcutOrder == 5, "repair: duplicate C -> next free (5)")
+        check(Set(fixed.screens.values.compactMap(\.shortcutOrder)).count == 5,
+              "repair: all orders unique after normalization")
+        // Idempotent: normalizing the fixed config (any connected order) changes nothing.
+        let again = ZoneOrderNormalizer.normalizeOrders(in: fixed, connectedKeys: ["uuid-E", "uuid-A", "uuid-D", "uuid-B", "uuid-C"])
+        check(again == fixed, "repair: idempotent (rearranged connected order, no change)")
+
+        // Empty config normalizes to empty.
+        check(ZoneOrderNormalizer.normalizeOrders(in: LineupConfig(), connectedKeys: []).screens.isEmpty,
+              "repair: empty config -> empty")
+        // A connected key that isn't saved is simply ignored.
+        let unsaved = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-UNKNOWN"])
+        check(Set(unsaved.screens.values.compactMap(\.shortcutOrder)).count == 5,
+              "repair: unsaved connected key ignored, still all unique")
+    }
+
+    do { // schema-3 JSON without the shortcutOrder key decodes; re-encode keeps current shape
+        // Hand-write a v3 doc with NO shortcutOrder keys (as older builds persisted them).
+        let json = """
+        {"schemaVersion":3,"screens":{"uuid-A":{"label":"Alpha","pixelsWide":5120,"pixelsHigh":1440,"keyIsStable":true,"lastSeenAt":null,"layout":{"type":"leaf"}},"uuid-B":{"label":"Beta","pixelsWide":3456,"pixelsHigh":2234,"keyIsStable":true,"lastSeenAt":null,"layout":{"type":"split","axis":"vertical","dividers":[{"value":0.5,"unit":"fraction"}],"children":[{"type":"leaf"},{"type":"leaf"}]}}},"defaultLayout":{"type":"leaf"}}
+        """
+        let cfg = try JSONDecoder().decode(LineupConfig.self, from: Data(json.utf8))
+        check(cfg.schemaVersion == 3, "v3-no-order: decodes as schema 3")
+        check(cfg.screens["uuid-A"]?.shortcutOrder == nil, "v3-no-order: order absent -> nil")
+        check(cfg.screens["uuid-B"]?.layout == .columns([Boundary(0.5, .fraction)]),
+              "v3-no-order: layouts decode intact (no loss)")
+        // Migrate (assign orders) + re-encode: the field appears and round-trips.
+        var fixed = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-B"])
+        fixed.schemaVersion = LineupConfig.currentSchema
+        let data = try JSONEncoder().encode(fixed)
+        let back = try JSONDecoder().decode(LineupConfig.self, from: data)
+        check(back == fixed, "v3-no-order: re-encoded config round-trips with orders")
+        check(back.screens["uuid-A"]?.shortcutOrder == 1 && back.screens["uuid-B"]?.shortcutOrder == 2,
+              "v3-no-order: re-encode carries the assigned orders")
+        // Orders explicitly present in JSON decode too.
+        let withOrder = try JSONDecoder().decode(LineupConfig.self, from: try JSONEncoder().encode(fixed))
+        check(withOrder.screens["uuid-A"]?.shortcutOrder == 1, "v3-no-order: explicit order decodes")
+    }
+
+    do { // persisted order stays stable when the connected-screen order changes
+        var cfg = LineupConfig()
+        cfg = cfg.setting(layout: .thirds, for: screenA, now: nil)
+        cfg = cfg.setting(layout: .halves, for: screenB, now: nil)
+        cfg = cfg.setting(layout: .leaf, for: screenC, now: nil)
+        // First pass: A connected first.
+        let first = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-B", "uuid-C"])
+        check(first.screens["uuid-A"]?.shortcutOrder == 1, "stability: initial A=1")
+        check(first.screens["uuid-B"]?.shortcutOrder == 2, "stability: initial B=2")
+        check(first.screens["uuid-C"]?.shortcutOrder == 3, "stability: initial C=3")
+        // Later: user rearranges the display order in System Settings. Valid unique orders
+        // are preserved — no renumbering.
+        let shuffled = ZoneOrderNormalizer.normalizeOrders(in: first, connectedKeys: ["uuid-C", "uuid-A", "uuid-B"])
+        check(shuffled == first, "stability: connected rearrangement renumbers nothing")
+        // Disconnect/reconnect stability: normalizing the ALREADY-normalized set with a
+        // different connected order keeps every persisted order.
+        let reconnected = ZoneOrderNormalizer.normalizeOrders(in: shuffled, connectedKeys: ["uuid-C"])
+        check(reconnected == first, "stability: disconnect/reconnect keeps the persisted orders")
+    }
+
+    do { // SEPARATE partial-order fixture: a sparse retained order is never filled in
+         // (repair APPENDS after all retained displays; it never inserts into a gap).
+        var cfg = LineupConfig()
+        cfg.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .thirds, shortcutOrder: 2)
+        cfg.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves)
+        cfg.screens["uuid-C"] = ScreenLayout(label: "Gamma", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf)
+        let fixed = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-C"])
+        check(fixed.screens["uuid-A"]?.shortcutOrder == 2, "sparse: retained 2 kept")
+        // Repairs follow priority order: connected C appends FIRST (3), then disconnected
+        // B by the label fallback (4).
+        check(fixed.screens["uuid-C"]?.shortcutOrder == 3 && fixed.screens["uuid-B"]?.shortcutOrder == 4,
+              "sparse: repaired entries append AFTER retained orders (connected C first), gap at 1 stays open")
+    }
+
+    do { // sparse valid orders + a disconnected saved display: adding a new connected
+         // display must append AFTER all retained orders and never retarget existing
+         // global zone shortcuts. (Regression: the old lowest-free-hole repair would have
+         // inserted the new display at the gap 2, shifting B's range 3-4 -> 4-5.)
+        var cfg = LineupConfig()
+        cfg = cfg.setting(layout: .thirds, for: screenA, now: nil) // 3 zones
+        cfg = cfg.setting(layout: .halves, for: screenB, now: nil) // 2 zones
+        cfg.screens["uuid-A"]!.shortcutOrder = 1
+        cfg.screens["uuid-B"]!.shortcutOrder = 3 // sparse: gap at 2
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A"])
+        check(cfg.screens["uuid-A"]?.shortcutOrder == 1 && cfg.screens["uuid-B"]?.shortcutOrder == 3,
+              "sparse+disconnected: retained sparse orders 1 and 3 kept, gap unfilled")
+        let before = ZoneNumbering(config: cfg)
+        let b4 = before.resolve(globalNumber: 4)
+        let b5 = before.resolve(globalNumber: 5)
+        check(b4?.key == "uuid-B" && b4?.zoneIndex == 0 && b5?.key == "uuid-B" && b5?.zoneIndex == 1,
+              "sparse+disconnected: B targets global 4-5 before the new display")
+
+        // A NEW unordered connected display joins.
+        cfg = cfg.setting(layout: .leaf, for: screenC, now: nil)
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-C"])
+        check(cfg.screens["uuid-A"]?.shortcutOrder == 1, "sparse+disconnected: A unchanged")
+        check(cfg.screens["uuid-B"]?.shortcutOrder == 3, "sparse+disconnected: disconnected B unchanged")
+        check(cfg.screens["uuid-C"]?.shortcutOrder == 4, "sparse+disconnected: C appends after retained max (not into the gap)")
+        let after = ZoneNumbering(config: cfg)
+        let afterB4 = after.resolve(globalNumber: 4)
+        let afterB5 = after.resolve(globalNumber: 5)
+        check(afterB4?.key == "uuid-B" && afterB4?.zoneIndex == 0
+              && afterB5?.key == "uuid-B" && afterB5?.zoneIndex == 1,
+              "sparse+disconnected: B's pre-existing global targets unchanged after C joins")
+        let afterC6 = after.resolve(globalNumber: 6)
+        check(afterC6?.key == "uuid-C" && afterC6?.zoneIndex == 0,
+              "sparse+disconnected: C resolves after the retained displays")
+        check(after.totalZones == 6, "sparse+disconnected: total counts all three layouts")
+    }
+
+    do { // Int.max overflow fallback (hand-edited config): retained winners rebase to
+         // contiguous 1...N in their existing sorted display order, preserving their
+         // relative global target ordering; repaired entries append after N.
+        var cfg = LineupConfig()
+        cfg.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves, shortcutOrder: Int.max)  // 2 zones
+        cfg.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .thirds, shortcutOrder: 5)          // 3 zones
+        cfg.screens["uuid-C"] = ScreenLayout(label: "Gamma", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf)                              // 1 zone, unordered
+
+        let fixed = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-C"])
+        // Rebase keeps the DISPLAY ORDER (B before A, since 5 < Int.max) — so B keeps the
+        // earlier global range — but the raw values become contiguous.
+        check(fixed.screens["uuid-B"]?.shortcutOrder == 1, "Int.max: earlier retained order 5 rebases to 1")
+        check(fixed.screens["uuid-A"]?.shortcutOrder == 2, "Int.max: Int.max retained rebases to 2 (keeps its slot after B)")
+        check(fixed.screens["uuid-C"]?.shortcutOrder == 3, "Int.max: repaired entry appends after rebased winners")
+        let map = ZoneNumbering(config: fixed)
+        let rebased1 = map.resolve(globalNumber: 1)
+        let rebased4 = map.resolve(globalNumber: 4)
+        check(rebased1?.key == "uuid-B" && rebased1?.zoneIndex == 0
+              && rebased4?.key == "uuid-A" && rebased4?.zoneIndex == 0,
+              "Int.max: B-before-A global ordering preserved across the rebase")
+        check(map.totalZones == 6, "Int.max: all zones accounted for")
+        check(ZoneOrderNormalizer.normalizeOrders(in: fixed, connectedKeys: ["uuid-A", "uuid-C"]) == fixed,
+              "Int.max: rebased result is idempotent (no repeated rebase)")
+
+        // Single winner at Int.max, nothing repaired yet beyond one entry: still rebases.
+        var solo = LineupConfig()
+        solo.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: Int.max)
+        solo.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf)
+        let soloFixed = ZoneOrderNormalizer.normalizeOrders(in: solo, connectedKeys: ["uuid-A", "uuid-B"])
+        check(soloFixed.screens["uuid-A"]?.shortcutOrder == 1 && soloFixed.screens["uuid-B"]?.shortcutOrder == 2,
+              "Int.max: lone Int.max winner rebases to 1, new display appends at 2 (no Int.max+1 overflow)")
+
+        // (a) A fully VALID config retaining order Int.max, with NOTHING to repair, must
+        // come back unchanged — no append arithmetic, no Int.max+1 overflow, no rebase.
+        var validMax = LineupConfig()
+        validMax.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: Int.max)
+        validMax.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: 1)
+        check(ZoneOrderNormalizer.normalizeOrders(in: validMax, connectedKeys: ["uuid-A", "uuid-B"]) == validMax,
+              "Int.max: valid unique config with an Int.max order returns unchanged (no overflow)")
+        check(ZoneNumbering(config: validMax).displays.map(\.order) == [1, Int.max],
+              "Int.max: numbering map sorts the retained orders without overflow")
+    }
+
+    do { // (b) EXACT-FIT append: retained Int.max - 1 plus one missing entry appends at
+         // exactly Int.max; a second normalization is a no-op (no past-Int.max pass).
+        var cfg = LineupConfig()
+        cfg.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: Int.max - 1)
+        cfg.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf)
+        let fixed = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-B"])
+        check(fixed.screens["uuid-A"]?.shortcutOrder == Int.max - 1, "exact-fit: retained Int.max-1 kept")
+        check(fixed.screens["uuid-B"]?.shortcutOrder == Int.max, "exact-fit: repair appends at exactly Int.max")
+        check(ZoneOrderNormalizer.normalizeOrders(in: fixed, connectedKeys: ["uuid-A", "uuid-B"]) == fixed,
+              "exact-fit: second normalization unchanged (append path skipped, no overflow)")
+        let map = ZoneNumbering(config: fixed)
+        check(map.displays.map(\.order) == [Int.max - 1, Int.max], "exact-fit: map orders both displays")
+    }
+
+    do { // (c) Retained near-max orders with MULTIPLE repairs exceeding capacity trigger
+         // the documented rebase; the rebased result is idempotent.
+        var cfg = LineupConfig()
+        cfg.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: Int.max)
+        cfg.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf, shortcutOrder: Int.max - 1)
+        cfg.screens["uuid-C"] = ScreenLayout(label: "Gamma", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf)
+        cfg.screens["uuid-D"] = ScreenLayout(label: "Delta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf)
+        cfg.screens["uuid-E"] = ScreenLayout(label: "Epsilon", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .leaf)
+        let fixed = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-C", "uuid-D", "uuid-E"])
+        // Capacity: maxRetained Int.max > Int.max - 3 -> rebase winners to 1...2 in their
+        // existing sorted display order (B = Int.max-1 first, then A = Int.max).
+        check(fixed.screens["uuid-B"]?.shortcutOrder == 1 && fixed.screens["uuid-A"]?.shortcutOrder == 2,
+              "capacity: rebase keeps B-before-A display order, values become contiguous")
+        check(fixed.screens["uuid-C"]?.shortcutOrder == 3 && fixed.screens["uuid-D"]?.shortcutOrder == 4
+              && fixed.screens["uuid-E"]?.shortcutOrder == 5,
+              "capacity: repaired entries append contiguously after the rebased winners")
+        check(ZoneOrderNormalizer.normalizeOrders(in: fixed, connectedKeys: ["uuid-C", "uuid-D", "uuid-E"]) == fixed,
+              "capacity: rebased result is idempotent")
+    }
+
+    do { // setting(layout:for:now:) preserves the screen's own order and every OTHER
+         // screen's order untouched
+        var cfg = LineupConfig()
+        cfg.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .thirds, shortcutOrder: 2)
+        cfg.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves, shortcutOrder: 3)
+        let edited = cfg.setting(layout: .leaf, for: screenA, now: "T")
+        check(edited.screens["uuid-A"]?.shortcutOrder == 2, "setting: ordered screen keeps its shortcutOrder")
+        check(edited.screens["uuid-A"]?.layout == .leaf, "setting: layout actually updated")
+        check(edited.screens["uuid-B"] == cfg.screens["uuid-B"], "setting: other screens' entries (incl. order) unchanged")
+    }
+
+    do { // ZoneAction ids stay "zone:N" and parse as before (binding compatibility)
+        check(ZoneAction.id(12) == "zone:12", "zone action: id format unchanged")
+        check(ZoneAction.zeroBasedIndex(from: ZoneAction.id(1)) == 0, "zone action: zone:1 -> 0-based 0")
+        var sc = Shortcuts()
+        sc = sc.setting(action: ZoneAction.id(4), keyCode: 21, modifiers: 0x1B00)
+        check(sc.binding(for: "zone:4")?.keyCode == 21, "zone action: binding keyed by literal zone:4")
+        check(sc.binding(for: ZoneAction.id(4)) != nil, "zone action: lookup via ZoneAction.id works")
+        // A global zone number resolves to a display+local index; the runtime composes
+        // zone:N at that target. (Pure check of the mapping used for that composition.)
+        var cfg = LineupConfig()
+        cfg = cfg.setting(layout: .thirds, for: screenA, now: nil)
+        cfg = cfg.setting(layout: .halves, for: screenB, now: nil)
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A", "uuid-B"])
+        let map = ZoneNumbering(config: cfg)
+        let hit = map.resolve(globalNumber: 5)!
+        check(ZoneAction.zeroBasedIndex(from: ZoneAction.id(hit.zoneIndex + 1)) == hit.zoneIndex,
+              "zone action: global hit composes a valid zone:N action id")
+    }
+
+    // ---- Phase 2 core: durable connected-screen preparation (pure) ----
+    // Synthetic fallback keys are produced by ScreenKey.fallback so the alias relations
+    // under test are the real ones.
+    func fbKey(_ tie: String?) -> String {
+        ScreenKey.fallback(vendor: 1552, model: 42, serial: 7, width: 1920, height: 1080, name: "Mon", tieBreaker: tie)
+    }
+    func scrInfo(_ key: String, _ label: String) -> ScreenInfo {
+        ScreenInfo(key: key, label: label, pixelsWide: 1920, pixelsHigh: 1080, keyIsStable: false)
+    }
+    func savedLayout(_ label: String, _ layout: Node, _ order: Int?) -> ScreenLayout {
+        ScreenLayout(label: label, pixelsWide: 1920, pixelsHigh: 1080, keyIsStable: false, lastSeenAt: "T0", layout: layout, shortcutOrder: order)
+    }
+    let liveA = fbKey("unit:3")       // display A's current salted key
+    let aliasBare = fbKey("3")        // old bare-unit key (alias of liveA)
+    let aliasUnsalted = fbKey(nil)    // oldest unsalted key (alias of liveA AND liveB)
+    // A TRUE lookalike of A: same hardware fields, different tieBreaker, so the two share
+    // exactly the unsalted alias — the ambiguous-ownership shape the runtime must survive.
+    let liveB = fbKey("unit:4")
+
+    // The persisted result of a COMMITTED adoption (legacy alias U=aliasBare moved onto
+    // exact A), produced by running the REAL preparation + normalization — later passes
+    // feed this in rather than hand-constructing unrelated entries.
+    let adoptedPersisted: LineupConfig = {
+        var base = LineupConfig()
+        base.screens[aliasBare] = savedLayout("Mon", .thirds, 2)
+        let prep = ZoneScreenPreparation.prepare(config: base, screens: [scrInfo(liveA, "Mon")])
+        return ZoneOrderNormalizer.normalizeOrders(in: prep.config, connectedKeys: prep.connectedKeys)
+    }()
+
+    do { // 1) unique adoption: alias U moves to the exact live key, fully preserved
+        var base = LineupConfig()
+        let entry = savedLayout("Mon", .thirds, 2)
+        base.screens[aliasBare] = entry
+        let prep = ZoneScreenPreparation.prepare(config: base, screens: [scrInfo(liveA, "Mon")])
+        check(prep.connectedKeys == [liveA], "adopt: connected key is the EXACT live key")
+        check(prep.config.screens[aliasBare] == nil, "adopt: old alias key removed (moved, not copied)")
+        check(prep.config.screens[liveA] == entry, "adopt: entire ScreenLayout (layout, metadata, shortcutOrder) preserved")
+        let norm = ZoneOrderNormalizer.normalizeOrders(in: prep.config, connectedKeys: prep.connectedKeys)
+        check(norm.screens[liveA]?.shortcutOrder == 2, "adopt: retained order survives normalization")
+        check(ZoneNumbering(config: norm).displays.map(\.key) == [liveA], "adopt: numbering map is keyed by the exact live key")
+    }
+
+    do { // 2) after adoption is committed, lookalike B connects EARLIER: A keeps ownership
+        check(adoptedPersisted.screens[liveA]?.shortcutOrder == 2 && adoptedPersisted.screens[aliasBare] == nil,
+              "own: the chained committed config carries A's adopted exact entry, alias removed")
+        let prep = ZoneScreenPreparation.prepare(config: adoptedPersisted, screens: [scrInfo(liveB, "Mon 2"), scrInfo(liveA, "Mon")])
+        check(prep.connectedKeys == [liveB, liveA], "own: supplied order kept, exact keys for both")
+        check(prep.config.screens[liveB]?.shortcutOrder == nil, "own: lookalike B materialized unordered (A's committed entry is not an alias of B)")
+        check(prep.config.screens[liveA]?.shortcutOrder == 2 && prep.config.screens[liveB] != nil,
+              "own: A's exact entry and order untouched by B's arrival")
+        let norm = ZoneOrderNormalizer.normalizeOrders(in: prep.config, connectedKeys: prep.connectedKeys)
+        check(norm.screens[liveA]?.shortcutOrder == 2 && norm.screens[liveB]?.shortcutOrder == 3,
+              "own: B appends AFTER A's retained order — it never steals A's numbering")
+        let map = ZoneNumbering(config: norm)
+        let z1 = map.resolve(globalNumber: 1)
+        let z4 = map.resolve(globalNumber: 4)
+        check(z1?.key == liveA && z1?.zoneIndex == 0, "own: A keeps global zones 1-3 (order 2, 3 zones)")
+        check(z4?.key == liveB && z4?.zoneIndex == 0, "own: B's zones start at global 4")
+        let rearranged = ZoneOrderNormalizer.normalizeOrders(in: norm, connectedKeys: [liveA, liveB])
+        check(rearranged == norm, "own: rearranging B/A does not transfer ownership or renumber")
+    }
+
+    do { // 3) A disconnects while lookalike B remains: A stays reserved, B cannot inherit
+         // A's order, and B's committed exact entry is never re-migrated via A's old alias
+        let prepAB = ZoneScreenPreparation.prepare(config: adoptedPersisted, screens: [scrInfo(liveB, "Mon 2"), scrInfo(liveA, "Mon")])
+        let committedAB = ZoneOrderNormalizer.normalizeOrders(in: prepAB.config, connectedKeys: prepAB.connectedKeys)
+        let prep = ZoneScreenPreparation.prepare(config: committedAB, screens: [scrInfo(liveB, "Mon 2")])
+        check(prep.connectedKeys == [liveB], "disconnect: only B is connected")
+        check(prep.config.screens[liveA]?.shortcutOrder == 2, "disconnect: A's exact entry stays reserved with its order")
+        let norm = ZoneOrderNormalizer.normalizeOrders(in: prep.config, connectedKeys: prep.connectedKeys)
+        check(norm.screens[liveA]?.shortcutOrder == 2 && norm.screens[liveB]?.shortcutOrder == 3,
+              "disconnect: B keeps its OWN order, never inherits A's")
+        let map = ZoneNumbering(config: norm)
+        let z1 = map.resolve(globalNumber: 1)
+        check(z1?.key == liveA && z1?.zoneIndex == 0, "disconnect: A's global range stays reserved while disconnected")
+    }
+
+    do { // 4) two lookalike screens claim the same alias U: ambiguous, U stays reserved
+        var base = LineupConfig()
+        base.screens[aliasUnsalted] = savedLayout("Mon", .halves, 1)
+        let prep = ZoneScreenPreparation.prepare(config: base, screens: [scrInfo(liveA, "Mon A"), scrInfo(liveB, "Mon B")])
+        check(prep.config.screens[aliasUnsalted]?.shortcutOrder == 1,
+              "ambiguous: alias U remains a disconnected/reserved entry")
+        check(prep.config.screens[liveA]?.shortcutOrder == nil && prep.config.screens[liveB]?.shortcutOrder == nil,
+              "ambiguous: neither claiming screen inherits U's order")
+        let norm = ZoneOrderNormalizer.normalizeOrders(in: prep.config, connectedKeys: prep.connectedKeys)
+        check(norm.screens[aliasUnsalted]?.shortcutOrder == 1
+              && norm.screens[liveA]?.shortcutOrder == 2 && norm.screens[liveB]?.shortcutOrder == 3,
+              "ambiguous: A/B materialized separately and append after U's retained order")
+        let map = ZoneNumbering(config: norm)
+        let z1 = map.resolve(globalNumber: 1)
+        check(z1?.key == aliasUnsalted && z1?.zoneIndex == 0, "ambiguous: U's global zone stays reserved (disconnected -> no-op)")
+    }
+
+    do { // 5) one screen with several saved aliases: conservative, none adopted
+        var base = LineupConfig()
+        base.screens[aliasBare] = savedLayout("Mon", .thirds, 1)
+        base.screens[aliasUnsalted] = savedLayout("Mon", .thirds, 2)
+        let prep = ZoneScreenPreparation.prepare(config: base, screens: [scrInfo(liveA, "Mon")])
+        check(prep.config.screens[aliasBare]?.shortcutOrder == 1 && prep.config.screens[aliasUnsalted]?.shortcutOrder == 2,
+              "multi-alias: both saved aliases stay reserved (ambiguous ownership)")
+        check(prep.config.screens[liveA]?.shortcutOrder == nil, "multi-alias: the screen is materialized unordered")
+        let norm = ZoneOrderNormalizer.normalizeOrders(in: prep.config, connectedKeys: prep.connectedKeys)
+        check(norm.screens[liveA]?.shortcutOrder == 3, "multi-alias: appends after both retained aliases")
+    }
+
+    do { // 6) exact entries always win and are untouched
+        var base = LineupConfig()
+        base.screens[liveA] = savedLayout("Mon", .halves, 7)
+        base.screens[aliasBare] = savedLayout("Old", .thirds, 1)
+        let prep = ZoneScreenPreparation.prepare(config: base, screens: [scrInfo(liveA, "Mon")])
+        check(prep.config == base, "exact wins: nothing changed when the exact entry exists")
+        check(prep.config.screens[liveA]?.shortcutOrder == 7 && prep.config.screens[liveA]?.layout == .halves,
+              "exact wins: exact entry keeps its layout and order despite a saved alias")
+    }
+
+    do { // 7) an intended-owner layout update addresses exact A without touching B/U
+         // Chained from the ambiguous lookalike state: U reserved, A/B materialized + normalized.
+        var base = LineupConfig()
+        base.screens[aliasUnsalted] = savedLayout("Mon", .halves, 1)
+        let prep = ZoneScreenPreparation.prepare(config: base, screens: [scrInfo(liveA, "Mon"), scrInfo(liveB, "Mon B")])
+        check(prep.config.screens[liveA] != nil && prep.config.screens[liveB] != nil,
+              "layout write: exact entries exist for both connected lookalikes")
+        let norm = ZoneOrderNormalizer.normalizeOrders(in: prep.config, connectedKeys: prep.connectedKeys)
+        let edited = norm.setting(layout: .leaf, for: scrInfo(liveA, "Mon"), now: "T2")
+        check(edited.screens[liveA]?.layout == .leaf && edited.screens[liveA]?.shortcutOrder == 2,
+              "layout write: addresses exact A, order preserved")
+        check(edited.screens[liveB] == norm.screens[liveB]
+              && edited.screens[aliasUnsalted] == norm.screens[aliasUnsalted],
+              "layout write: lookalike B and the reserved alias U are untouched")
+    }
+
+    do { // 8) COMMITTED routing across a failed save: U never retargets a lookalike
+        // Pure state-transition model (no app injection): configs are immutable values;
+        // "save" is modeled by WHICH config the committed state holds.
+        var source = LineupConfig()
+        source.screens[aliasUnsalted] = savedLayout("Mon", .halves, 1) // legacy alias U, ordered, no exact owner
+
+        // The candidate pass WOULD adopt: sole connected lookalike A moves U onto exact A.
+        let candidate = ZoneScreenPreparation.prepare(config: source, screens: [scrInfo(liveA, "Mon")])
+        check(candidate.config.screens[liveA]?.shortcutOrder == 1 && candidate.config.screens[aliasUnsalted] == nil,
+              "transition: the candidate preparation would move U onto exact A")
+
+        // ... but the save FAILS: the committed config remains the ORIGINAL source.
+        var committed = source
+        var connected = [liveA]
+
+        // A global number is routable only when its owner is a CONNECTED EXACT key.
+        func routable(_ map: ZoneNumbering, _ n: Int, _ keys: [String]) -> (key: String, zoneIndex: Int)? {
+            guard let hit = map.resolve(globalNumber: n), keys.contains(hit.key) else { return nil }
+            return hit
+        }
+
+        let mapU = ZoneNumbering(config: committed)
+        check(mapU.resolve(globalNumber: 1)?.key == aliasUnsalted,
+              "transition: U stays in the committed numbering map (its range is reserved)")
+        check(routable(mapU, 1, connected) == nil,
+              "transition: U's first zone is a NO-OP while adoption is uncommitted (A is not the owner yet)")
+        check(routable(mapU, 2, connected) == nil,
+              "transition: U's second zone is also a no-op (no silent promotion of A)")
+
+        // Topology change to the OTHER lookalike: unchanged committed config, still no-op.
+        connected = [liveB]
+        check(routable(mapU, 1, connected) == nil,
+              "transition: after the topology change U is STILL a no-op — never retargeted to lookalike B")
+        check(routable(mapU, 2, connected) == nil,
+              "transition: U's second zone stays a no-op for B as well")
+
+        // Successful persistence: the prepared + normalized A config becomes committed.
+        let normalized = ZoneOrderNormalizer.normalizeOrders(in: candidate.config, connectedKeys: candidate.connectedKeys)
+        committed = normalized
+        let mapA = ZoneNumbering(config: committed)
+        let hit = routable(mapA, 1, [liveA])
+        check(hit != nil && hit?.key == liveA && hit?.zoneIndex == 0,
+              "transition: after a successful save the SAME global number routes to exact A")
+        check(routable(mapA, 1, [liveB]) == nil,
+              "transition: the committed adoption never routes to B (owner is exact A)")
+    }
+
+    // ---- Phase 4 core: the editor's pure session/proposal transaction ----
+    do { // a) displayed (number, key, index) tuples EQUAL the proposed config's tuples,
+         // across draft edits, rearranges, and rebases
+        var base = LineupConfig()
+        base.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .thirds, shortcutOrder: 1)
+        base.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves, shortcutOrder: 2)
+        var session = ZoneEditorSession(base: base, screens: [scrInfo("uuid-A", "Alpha"), scrInfo("uuid-B", "Beta")])
+        let draftA = Node.split(axis: .vertical, dividers: [Boundary(0.5, .fraction)], children: [.leaf, .leaf])
+        _ = session.setDraft(draftA, for: scrInfo("uuid-A", "Alpha"))
+        func tuple(_ map: ZoneNumbering, _ n: Int) -> (key: String, zoneIndex: Int)? { map.resolve(globalNumber: n) }
+        check(session.numbering == ZoneNumbering(config: session.proposal),
+              "editor session: the displayed numbering IS the proposed config's numbering (never a divergent candidate)")
+        let t1 = tuple(session.numbering, 1)
+        let t2 = tuple(session.numbering, 2)
+        let t3 = tuple(session.numbering, 3)
+        check(t1?.key == "uuid-A" && t1?.zoneIndex == 0, "editor session: A's drafted zones open the global range")
+        check(t2?.key == "uuid-A" && t2?.zoneIndex == 1, "editor session: A's second draft zone is global 2")
+        check(t3?.key == "uuid-B" && t3?.zoneIndex == 0, "editor session: B's zones start right after A's")
+        // Rearrange B before A: retained orders do not move, so no tuple shifts.
+        _ = session.rebase(base: base, screens: [scrInfo("uuid-B", "Beta"), scrInfo("uuid-A", "Alpha")])
+        check(tuple(session.numbering, 1)?.key == "uuid-A" && tuple(session.numbering, 3)?.key == "uuid-B",
+              "editor session: rearranging displays does not shift the global tuples")
+        check(session.numbering == ZoneNumbering(config: session.proposal),
+              "editor session: displayed/proposed agreement survives the rearrange")
+        // The original using-defaults failure shape: a DIFFERENT fresh candidate flips the
+        // persisted orders (B now 1, A now 2) while B is spatially first. The draft survives,
+        // and the displayed tuples must match the rebased candidate exactly.
+        var fresh = LineupConfig()
+        fresh.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .thirds, shortcutOrder: 2)
+        fresh.screens["uuid-B"] = ScreenLayout(label: "Beta", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves, shortcutOrder: 1)
+        _ = session.rebase(base: fresh, screens: [scrInfo("uuid-B", "Beta"), scrInfo("uuid-A", "Alpha")])
+        check(session.draft(for: "uuid-A") == draftA,
+              "editor session: A's draft survives the rebase onto a DIFFERENT candidate")
+        let r1 = tuple(session.numbering, 1)
+        let r2 = tuple(session.numbering, 2)
+        let r3 = tuple(session.numbering, 3)
+        let r4 = tuple(session.numbering, 4)
+        check(r1?.key == "uuid-B" && r1?.zoneIndex == 0, "editor session: after the rebase B owns global 1 (order 1)")
+        check(r2?.key == "uuid-B" && r2?.zoneIndex == 1, "editor session: B owns global 2")
+        check(r3?.key == "uuid-A" && r3?.zoneIndex == 0, "editor session: A's drafted zones start at global 3 (order 2)")
+        check(r4?.key == "uuid-A" && r4?.zoneIndex == 1, "editor session: A's second drafted zone is global 4")
+        check(session.numbering == ZoneNumbering(config: session.proposal),
+              "editor session: displayed/proposed agreement survives the candidate rebase")
+    }
+
+    do { // b) with NO tree draft, the proposal still differs from committed when the
+         // candidate carries order normalization/adoption — Save must write
+        var committed = LineupConfig()
+        committed.screens[aliasUnsalted] = savedLayout("Mon", .halves, 1) // legacy alias U
+        let prep = ZoneScreenPreparation.prepare(config: committed, screens: [scrInfo(liveA, "Mon")])
+        let session = ZoneEditorSession(base: prep.config, screens: [scrInfo(liveA, "Mon")])
+        check(session.draft(for: liveA) == nil, "no-tree save: the session has no draft at all")
+        check(session.proposal != committed,
+              "no-tree save: candidate-only adoption/normalization makes the proposal differ — Save persists it")
+    }
+
+    do { // c) genuine proposed == committed is the no-write success path
+        var committed = LineupConfig()
+        committed.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves, shortcutOrder: 1)
+        let session = ZoneEditorSession(base: committed, screens: [scrInfo("uuid-A", "Alpha")])
+        check(session.proposal == committed,
+              "no-op save: an untouched session over the committed base proposes exactly the committed config (no disk write)")
+    }
+
+    do { // d) an exact-key draft survives its screen's disconnect, is included in the
+         // proposal, and never migrates to an ambiguous lookalike
+        var committed = LineupConfig()
+        committed.screens[aliasUnsalted] = savedLayout("Mon", .halves, 1) // legacy alias U
+        let prepA = ZoneScreenPreparation.prepare(config: committed, screens: [scrInfo(liveA, "Mon")])
+        var session = ZoneEditorSession(base: prepA.config, screens: [scrInfo(liveA, "Mon")])
+        // The draft must be VISIBLY different from the .halves base it would otherwise be
+        // confused with (U was adopted onto A with a .halves layout).
+        let draftA = Node.thirds
+        _ = session.setDraft(draftA, for: scrInfo(liveA, "Mon"))
+        // A disconnects; the fresh candidate for the lookalike B adopts U (unambiguous now).
+        let prepB = ZoneScreenPreparation.prepare(config: committed, screens: [scrInfo(liveB, "Mon 2")])
+        _ = session.rebase(base: prepB.config, screens: [scrInfo(liveB, "Mon 2")])
+        check(session.proposal.screens[liveA]?.layout == Node.thirds,
+              "disconnect: A's exact-key .thirds draft survives the rebase and stays in the proposed config")
+        check(session.proposal.screens[liveB]?.layout == prepB.config.screens[liveB]?.layout
+              && session.proposal.screens[liveB]?.layout != Node.thirds
+              && session.draft(for: liveB) == nil,
+              "disconnect: the ambiguous lookalike B never inherits A's .thirds draft (drafts are keyed, never migrated)")
+    }
+
+    do { // orphan zone actions: actions bound past the committed total are the unavailable rows
+        var cfg = LineupConfig()
+        cfg.screens["uuid-A"] = ScreenLayout(label: "Alpha", pixelsWide: 1, pixelsHigh: 1, keyIsStable: true, lastSeenAt: nil, layout: .halves, shortcutOrder: 1)
+        cfg = ZoneOrderNormalizer.normalizeOrders(in: cfg, connectedKeys: ["uuid-A"])
+        let map = ZoneNumbering(config: cfg)
+        check(map.totalZones == 2, "orphans: the committed map totals every saved zone")
+        var sc = Shortcuts()
+        sc = sc.setting(action: ZoneAction.id(1), keyCode: 18, modifiers: 0)
+        sc = sc.setting(action: ZoneAction.id(map.totalZones + 2), keyCode: 20, modifiers: 0)
+        let orphans = sc.bindings.compactMap { binding -> Int? in
+            guard let index = ZoneAction.zeroBasedIndex(from: binding.action), index + 1 > map.totalZones else { return nil }
+            return index + 1
+        }
+        check(orphans == [map.totalZones + 2],
+              "orphans: exactly the actions bound past the total range are the 'Unavailable zones' rows")
+    }
+
     try runZonesToolTests()
 }
 
@@ -1205,8 +1806,8 @@ private func runZonesToolTests() throws {
     check(mover.contains("func reset()"), "SnapMemory gains reset() so stop() can drop retained AXUIElements")
     check(editor.contains("func forceClose()"), "the layout editor gains forceClose()")
     if let forceClose = zonesFuncBody("forceClose()", in: editor) {
-        check(!forceClose.contains("commit("),
-              "forceClose() dismisses WITHOUT committing an unconfirmed draft")
+        check(forceClose.contains("close()") && !forceClose.contains("save(") && !forceClose.contains("doneTapped"),
+              "forceClose() dismisses WITHOUT running the save path (an unconfirmed draft is never persisted)")
     } else {
         check(false, "forceClose() body is readable")
     }
@@ -1230,7 +1831,7 @@ private func runZonesToolTests() throws {
           "start() is the only place the screen observer is installed")
 
     // ---- Persistence: write FIRST, assign only on success, and always behind canWrite ----
-    for persist in ["applyLayouts", "applyShortcuts", "persistDragSnapEnabled", "applyDragSnapTrigger"] {
+    for persist in ["applyShortcuts", "persistDragSnapEnabled", "applyDragSnapTrigger"] {
         guard let body = zonesFuncBody("\(persist)(", in: tool) else {
             check(false, "\(persist) body is readable")
             continue
@@ -1329,4 +1930,326 @@ private func runZonesToolTests() throws {
     }
     check(tool.contains("func persistedCombos()") && tool.contains("services.config.load(LineupConfig.self)"),
           "Zones reports its persisted combos from the config store, so a stopped Zones still owns them")
+
+    // ---- Phase 2: stable global numbered zones ----
+    //
+    // Source-structure checks (AppKit runtime can't run here): the global zone:N path must
+    // resolve through the COMMITTED numbering snapshot BEFORE moving, never retarget a
+    // disconnected display's reserved range, never route tentative (candidate) adoption,
+    // and persist display orders only through the standard canWrite / save-before-assign /
+    // no-auto-create discipline (reconciliation and user writes stay on the candidate path).
+
+    routing: do { // global zone:N routes through the numbering snapshot, resolved before the move
+        check(tool.contains("moveFocusedWindowToGlobalZone(globalNumber: zoneIndex + 1)"),
+              "zone:N treats N as a GLOBAL number (zeroBasedIndex + 1), not a per-screen index")
+        guard let body = zonesFuncBody("moveFocusedWindowToGlobalZone(", in: tool) else {
+            check(false, "moveFocusedWindowToGlobalZone body is readable")
+            break routing
+        }
+        let resolve = body.range(of: "snapshot.numbering.resolve(globalNumber:")
+        let move = body.range(of: "WindowMover.snapFocusedWindow(")
+        check(resolve != nil && move != nil && resolve!.lowerBound < move!.lowerBound,
+              "global zone: the numbering map resolves the owning display BEFORE any move")
+        check(body.contains("let snapshot = committedNumberingSnapshot()"),
+              "global zone routes through the COMMITTED snapshot (last loaded/saved state), never a candidate")
+        check(!body.contains("runtimeNumberingSnapshot("),
+              "global zone routing NEVER consults the candidate/prepared snapshot (uncommitted adoption must not route)")
+        check(body.contains("guard snapshot.isConnected(configKey: hit.key)"),
+              "global zone: a disconnected/reserved owning display is refused (never retargeted)")
+        check(body.contains("return false // disconnected/reserved"),
+              "global zone: disconnected ownership is a safe no-op, not a fallback to another screen")
+        check(body.contains("config: snapshot.config"),
+              "global zone: the move runs against the committed snapshot's config")
+    }
+
+    moverBlock: do { // WindowMover: ONLY the explicit-target numbered-zone overload remains
+        check(mover.components(separatedBy: "static func snapFocusedWindow(toZoneIndex").count - 1 == 1,
+              "the old per-screen numbered-zone overload is removed (global numbering is the only path)")
+        guard let start = mover.range(of: "on target: NSScreen") else {
+            check(false, "WindowMover has the explicit target-screen overload")
+            break moverBlock
+        }
+        // Bound the slice at the next section (the cycle path) so we read only this overload.
+        let end = mover.range(of: "/// Advance the left/right/center cycle")
+        let body = String(mover[start.lowerBound..<(end?.lowerBound ?? mover.endIndex)])
+        check(body.contains("configKey: String") && body.contains("config: LineupConfig"),
+              "explicit-target snap takes the config key the numbering map used (always the screen's EXACT key)")
+        check(body.contains("config.layout(forKey: configKey)"),
+              "explicit-target snap resolves the layout through the snapshot's config key")
+        check(body.contains("frame: target.frame, visibleFrame: target.visibleFrame"),
+              "explicit-target snap computes the zone rect from the TARGET screen's geometry")
+        check(body.contains("pixelsWide: info.pixelsWide") && body.contains("ScreenIdentity.info(for: target)"),
+              "explicit-target snap uses the TARGET screen's pixels for divider resolution")
+        check(body.contains("AXIsProcessTrusted()") && body.contains("focusedWindow()"),
+              "explicit-target snap keeps the AX trust + focused-window checks")
+        check(body.contains("SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)"),
+              "explicit-target snap seeds SnapMemory restore from the window's ORIGINAL frame")
+        check(body.contains("setFrame(targetRect, of: window)"),
+              "explicit-target snap reuses the shared size->position->size AX dance")
+    }
+
+    snapshotBlock: do { // runtime snapshot: @MainActor, pure preparation helper, exact keys
+        check(tool.contains("@MainActor\n    private struct ZoneRuntimeSnapshot"),
+              "the runtime snapshot type is explicitly @MainActor (synchronous ScreenIdentity/NSScreen calls)")
+        check(tool.contains("func runtimeNumberingSnapshot() -> ZoneRuntimeSnapshot"),
+              "a runtime numbering snapshot is built on demand from config + NSScreens")
+        check(tool.contains("static func spatiallyOrdered(_ screens: [NSScreen])"),
+              "snapshot defines the connected initial order")
+        check(tool.contains("a.frame.minX < b.frame.minX")
+              && tool.contains("a.frame.minY > b.frame.minY")
+              && tool.contains("ScreenIdentity.info(for: a).key < ScreenIdentity.info(for: b).key"),
+              "initial order: spatial left-to-right, top-to-bottom tie-break, stable key last")
+        // Durable ownership lives in the pure helper, not in the tool.
+        check(tool.contains("ZoneScreenPreparation.prepare(config: base, screens: spatial.map { $0.info })"),
+              "the candidate snapshot delegates connected-screen preparation to the pure ZonesCore helper")
+        check(tool.contains("func currentSpatialScreens() -> [(screen: NSScreen, info: ScreenInfo)]")
+              && tool.contains("ZoneRuntimeSnapshot.spatiallyOrdered(NSScreen.screens).map { ($0, ScreenIdentity.info(for: $0)) }"),
+              "one shared helper collects the spatial screen+info pairs for BOTH snapshot flavors (no ownership decisions there)")
+        check(tool.contains("connectedKeys: prepared.connectedKeys"),
+              "normalization uses the helper's EXACT connected keys (no live display bound to an alias)")
+        check(!tool.contains("resolvedConfigKey"),
+              "the dynamic alias-resolution helper is gone from the tool (durable adoption in core instead)")
+        check(!tool.contains("fallbackAliases(for: info.key)"),
+              "the tool no longer adopts aliases by spatial order or reuses them dynamically")
+        check(!tool.contains("ordered.contains(where: { $0.configKey == key }) { key = info.key }"),
+              "the spatial collision branch is gone (dedup/ambiguity handled purely in core)")
+        check(tool.contains("runtimeNumberingSnapshot(base: config)"),
+              "the no-argument snapshot call uses the live config as its base")
+        check(tool.contains("ZoneOrderNormalizer.normalizeOrders("),
+              "the candidate snapshot normalizes the prepared config")
+        check(tool.contains("ZoneNumbering(config: normalized)"),
+              "the candidate snapshot maps global numbers over ALL saved layouts (disconnected ranges reserved)")
+        check(tool.contains("let liveKey: String") && tool.contains("liveKey: info.key")
+              && tool.contains("configKey: info.key"),
+              "connected entries carry the exact key as BOTH the map key and the UUID-less live identity")
+        // The COMMITTED routing snapshot: direct config use, zero preparation/normalization.
+        check(tool.contains("@MainActor\n    private struct CommittedZoneSnapshot")
+              && tool.contains("func committedNumberingSnapshot() -> CommittedZoneSnapshot"),
+              "a separate, clearly named COMMITTED routing snapshot type + builder exists")
+        if let committed = zonesFuncBody("committedNumberingSnapshot(", in: tool) {
+            check(committed.contains("ZoneNumbering(config: config)"),
+                  "committed numbering is constructed DIRECTLY from the live config (no tentative pass in between)")
+            check(committed.contains("configKey: info.key") && committed.contains("liveKey: info.key"),
+                  "committed targets are the connected screens' EXACT current keys")
+            check(!committed.contains("ZoneScreenPreparation") && !committed.contains("ZoneOrderNormalizer"),
+                  "the committed builder performs NO preparation, adoption, or normalization")
+        } else {
+            check(false, "committedNumberingSnapshot body is readable")
+        }
+        if let s = tool.range(of: "static func liveScreen(for entry: ConnectedScreen) -> NSScreen?") {
+            let tail = tool[s.lowerBound...]
+            let end = tail.range(of: "\n        }")
+            let body = end != nil ? String(tail[..<end!.lowerBound]) : ""
+            check(body.contains("ScreenIdentity.displayIdentifier(for: $0) == id"),
+                  "move-time lookup re-reads live NSScreens and prefers display-id matching")
+            check(body.contains("ScreenIdentity.info(for: $0).key == entry.liveKey"),
+                  "UUID-less displays match at move time by the stored live identity key")
+        } else {
+            check(false, "liveScreen body is readable")
+        }
+        check(tool.components(separatedBy: "ZoneRuntimeSnapshot.liveScreen(for: entry)").count - 1 == 2,
+              "BOTH snapshot flavors (candidate and committed) share one move-time screen lookup implementation")
+    }
+
+    reconcileBlock: do { // persistence: reconcile discipline + no auto-create while usingDefaults
+        guard let body = zonesFuncBody("reconcileDisplayOrders(", in: tool) else {
+            check(false, "reconcileDisplayOrders body is readable")
+            break reconcileBlock
+        }
+        check(body.contains("guard canWrite, !usingDefaults"),
+              "reconciliation is gated on canWrite AND never auto-creates a section while usingDefaults")
+        check(body.contains("runtimeNumberingSnapshot()"),
+              "reconciliation reconciles through the runtime snapshot")
+        check(body.contains("try updated.validate()"), "reconciliation validates before writing")
+        let save = body.range(of: "try services.config.save(updated)")
+        let assign = body.range(of: "config = updated")
+        check(save != nil && assign != nil && save!.lowerBound < assign!.lowerBound,
+              "reconciliation saves BEFORE assigning live config (failed save keeps last known-good)")
+        check(body.contains("guard updated != config else { return }"),
+              "reconciliation is a no-op when the snapshot matches the held config")
+        check(!body.contains("committedNumberingSnapshot"),
+              "reconciliation uses the CANDIDATE snapshot (it is the write that commits adoption)")
+    }
+    do {
+        let screens = zonesFuncBody("screensChanged(", in: tool)
+        check(screens?.contains("reconcileDisplayOrders()") == true,
+              "display changes trigger order reconciliation")
+        check(screens?.contains("if usingDefaults { reloadConfig() }") == true,
+              "display changes still reload/adopt a deferred legacy import")
+        check(screens?.contains("registerHotkeys") != true,
+              "display changes need no hotkey re-registration (actions stay strings)")
+        let start = zonesFuncBody("start(", in: tool)
+        let attach = zonesFuncBody("attach(", in: tool)
+        check(start?.contains("reconcileDisplayOrders()") == true
+              && attach?.contains("reconcileDisplayOrders()") == true,
+              "attach/start reload is followed by reconciliation")
+    }
+    writesBlock: do { // explicit user writes start from the prepared (normalized) config
+        guard let prepStart = tool.range(of: "var preparedConfigForUserWrite") else {
+            check(false, "preparedConfigForUserWrite exists")
+            break writesBlock
+        }
+        let prepBody = String(tool[prepStart.lowerBound...].prefix(600))
+        check(prepBody.contains("guard canWrite else { return config }"),
+              "prepared config is gated ONLY on canWrite: an explicit user save normalizes even while usingDefaults")
+        check(!prepBody.contains("!usingDefaults"),
+              "the no-auto-create rule applies to automatic reconciliation, never to an explicit user write")
+        check(prepBody.contains("runtimeNumberingSnapshot().config"),
+              "prepared config is the CANDIDATE snapshot's normalized config (the write that commits it)")
+        check(!prepBody.contains("committedNumberingSnapshot"),
+              "explicit user writes never route through the committed snapshot")
+        for persist in ["applyShortcuts", "persistDragSnapEnabled", "applyDragSnapTrigger"] {
+            guard let body = zonesFuncBody("\(persist)(", in: tool) else {
+                check(false, "\(persist) body is readable")
+                continue
+            }
+            check(body.contains("preparedConfigForUserWrite"),
+                  "\(persist) starts from the prepared normalized config")
+        }
+        if let reset = zonesFuncBody("resetSection(", in: tool) {
+            check(reset.contains("runtimeNumberingSnapshot(base: LineupConfig())"),
+                  "reset normalizes a snapshot from a FRESH base (never the unreadable live section)")
+            check(!reset.contains("committedNumberingSnapshot"),
+                  "reset prepares a candidate from a fresh base; committed routing plays no part in it")
+            check(reset.contains("try fresh.validate()"), "reset validates before writing")
+            check(reset.components(separatedBy: "services.config.save").count - 1 == 1,
+                  "reset performs exactly one save (no extra order-reconciliation write)")
+            let save = reset.range(of: "try services.config.save(fresh)")
+            let assign = reset.range(of: "config = fresh")
+            check(save != nil && assign != nil && save!.lowerBound < assign!.lowerBound,
+                  "reset saves BEFORE assigning live config")
+        }
+    }
+
+    // ---- Phase 3: dynamic Settings zone groups + global-numbered editor canvases ----
+    //
+    // Source-structure checks: Settings presents zone shortcuts as dynamic per-display
+    // groups driven by the committed routing map (candidate only for untouched defaults),
+    // the editor canvases number badges from a global first-zone offset recomputed over
+    // base config + drafts, and a successful editor save refreshes Settings at once.
+
+    let overlay = zonesFile("Sources/lineup/Tools/Zones/LayoutEditorOverlay.swift") ?? ""
+
+    groupsBlock: do { // Settings groups: committed-first, orphans from real bindings only
+        guard let start = tool.range(of: "private var zoneShortcutGroupsForSettings") else {
+            check(false, "zoneShortcutGroupsForSettings exists")
+            break groupsBlock
+        }
+        let tail = tool[start.lowerBound...]
+        let end = tail.range(of: "\n    }")
+        let body = end != nil ? String(tail[..<end!.lowerBound]) : ""
+        check(body.contains("if usingDefaults {") && body.contains("runtimeNumberingSnapshot()")
+              && body.contains("committedNumberingSnapshot()"),
+              "zone groups use the candidate map ONLY for untouched defaults; loaded/saved sections show the committed routing map")
+        // Branch placement, not mere presence: the candidate map may only number the
+        // untouched-defaults branch; the committed map must follow its else.
+        let defaults = body.range(of: "if usingDefaults {")
+        let candidate = body.range(of: "let snapshot = runtimeNumberingSnapshot()")
+        let elseBranch = body.range(of: "} else {")
+        let committed = body.range(of: "let snapshot = committedNumberingSnapshot()")
+        check(defaults != nil && candidate != nil && elseBranch != nil && committed != nil
+              && defaults!.lowerBound < candidate!.lowerBound
+              && candidate!.lowerBound < elseBranch!.lowerBound
+              && elseBranch!.lowerBound < committed!.lowerBound,
+              "the candidate map numbers ONLY the usingDefaults branch; the committed map follows its else (loaded/saved state)")
+        check(body.contains("firstZoneNumber") && body.contains("rangeLabel"),
+              "each group carries its display's global first-zone number and range label")
+        check(body.contains("Status = connectedKeys.contains(display.key)")
+              || body.contains("connectedKeys.contains(display.key)"),
+              "group status derives from connected exact keys (disconnected saved groups stay visible)")
+        check(body.contains("\"Unavailable zones\"") && body.contains("shortcuts.bindings.compactMap"),
+              "the 'Unavailable zones' group contains ONLY actually bound orphan zone:N actions (never invented rows)")
+    }
+
+    editorBlock: do { // editor: pure session transaction, candidate seeding, committed Save
+        guard let body = zonesFuncBody("openEditor(", in: tool) else {
+            check(false, "openEditor body is readable")
+            break editorBlock
+        }
+        check(body.contains("candidate: { [weak self] in self?.runtimeNumberingSnapshot().config }"),
+              "the editor seeds its pure session from the CANDIDATE config (exact keys + orders match what Save will commit)")
+        check(!body.contains("committedNumberingSnapshot"),
+              "opening the editor never changes committed routing state")
+        check(body.contains("save: { [weak self] proposal in self?.applyEditorProposal(proposal) ?? false }"),
+              "Save persists the COMPLETE proposed config through one atomic write path")
+        check(overlay.contains("private var session: ZoneEditorSession"),
+              "drafts and numbering live in the pure ZonesCore session (displayed == proposed by construction)")
+        check(overlay.contains("private func updateCanvasNumbering()"),
+              "the editor recomputes every canvas's numbering after layout edits")
+        if let n = zonesFuncBody("updateCanvasNumbering(", in: overlay) {
+            check(n.contains("let numbering = session.numbering"),
+                  "canvas numbering comes from the session's proposed-config numbering (no divergent transient)")
+            check(n.contains("canvas.firstZoneNumber = numbering.displays"),
+                  "each canvas receives its display's global first-zone number (no per-canvas restart)")
+        } else {
+            check(false, "updateCanvasNumbering body is readable")
+        }
+        check(overlay.contains("func refreshForDisplayChange()")
+              && overlay.contains("session.rebase(base: freshBase, screens: current.map { $0.info })")
+              && overlay.contains("presentBanner(\"Displays changed. Review the updated zone numbers, then save again.\")"),
+              "a display change rebases the open editor (drafts preserved by exact key), recomputes offsets, and surfaces the refresh inline")
+        check(overlay.contains("guard Self.signature(for: current) == topologySignature else {")
+              && overlay.contains("guard let freshBase = candidate() else {")
+              && overlay.contains("guard freshBase == session.base else {"),
+              "Save compares BOTH fresh topology and a fresh candidate base before persisting; either mismatch rebases first")
+        if let done = zonesFuncBody("doneTapped(", in: overlay) {
+            let nilBanner = done.range(of: "presentBanner(\"Couldn’t save. Your changes are still here, so try Save again.\")")
+            let baseGuard = done.range(of: "guard freshBase == session.base else {")
+            let save = done.range(of: "if save(session.proposal) {")
+            check(nilBanner != nil && baseGuard != nil && save != nil
+                  && nilBanner!.lowerBound < baseGuard!.lowerBound && baseGuard!.lowerBound < save!.lowerBound,
+                  "Save ordering: a missing candidate provider fails CLOSED (banner + keep open, no stale write), the base-equality guard runs next, and only then the save")
+        } else {
+            check(false, "doneTapped body is readable")
+        }
+        check(overlay.contains("if save(session.proposal) {"),
+              "Save persists the session's complete proposal (candidate-only commits even with no tree edit)")
+        check(overlay.contains("var firstZoneNumber: Int? {"),
+              "canvases expose the global first-zone offset")
+        check(overlay.contains("drawNumber(firstZoneNumber + i, in: r)"),
+              "zone badges draw as firstZoneNumber + localIndex (global numbering)")
+        check(overlay.contains("\"Global zones \\(firstZoneNumber) through \\(last)\"")
+              && overlay.contains("\"Global zone numbers unavailable\""),
+              "canvases expose display/range accessibility, including the unavailable case")
+    }
+    editorSaveBlock: do { // the proposal write path: no-op detection, validate/save/assign order
+        guard let proposal = zonesFuncBody("applyEditorProposal(", in: tool) else {
+            check(false, "applyEditorProposal body is readable")
+            break editorSaveBlock
+        }
+        check(proposal.contains("if proposal == config { return true }"),
+              "a proposal equal to committed state succeeds WITHOUT a physical write")
+        check(proposal.contains("guard canWrite, let services"), "the proposal write is gated on canWrite")
+        let validate = proposal.range(of: "try proposal.validate()")
+        let save = proposal.range(of: "try services.config.save(proposal)")
+        let assign = proposal.range(of: "config = proposal")
+        let menu = proposal.range(of: "services.refreshMenu()")
+        let model = proposal.range(of: "settingsModel?.refresh()")
+        check(validate != nil && save != nil && assign != nil
+              && validate!.lowerBound < save!.lowerBound && save!.lowerBound < assign!.lowerBound,
+              "the proposal write validates, saves, THEN assigns (failed save keeps committed state)")
+        check(assign != nil && menu != nil && model != nil
+              && assign!.lowerBound < menu!.lowerBound && menu!.lowerBound < model!.lowerBound,
+              "a successful editor save refreshes the menu AND the Settings model, only after the save assigns")
+    }
+    lifecycleBlock: do { // one running observer owns reconciliation + editor refresh
+        let screens = zonesFuncBody("screensChanged(", in: tool)
+        check(screens?.contains("reconcileDisplayOrders()") == true,
+              "display changes trigger order reconciliation")
+        check(screens?.contains("editorOverlay?.refreshForDisplayChange()") == true,
+              "the running screen-change path refreshes the OPEN editor (rebase, not silent renumbering)")
+        check(screens?.contains("if usingDefaults { reloadConfig() }") == true,
+              "display changes still reload/adopt a deferred legacy import")
+        check(screens?.contains("registerHotkeys") != true,
+              "display changes need no hotkey re-registration (actions stay strings)")
+        // The pane's view-scoped observer is read-only: it must never write config or start
+        // tool resources, and the running tool stays the single reconciliation owner.
+        check(pane.contains("NSApplication.didChangeScreenParametersNotification")
+              && pane.contains("model.refresh()"),
+              "the visible pane subscribes at VIEW scope to screen changes and refreshes only the read-only model")
+        check(!pane.contains("reconcileDisplayOrders") && !pane.contains("config.save"),
+              "the pane's observer never reconciles or writes config (no second config-writing observer)")
+        check(pane.contains("canOpenLayoutEditor: Bool { isRunning && canWrite }"),
+              "the editor still opens only from a RUNNING, writable tool (its refresh owner exists)")
+    }
 }

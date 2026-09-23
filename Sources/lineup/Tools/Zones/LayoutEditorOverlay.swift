@@ -4,7 +4,11 @@ import ZonesCore
 /// Full-screen, WYSIWYG layout editor. Opens an editor over EVERY connected display at once, each
 /// showing that display's own layout (no picker to get confused by). Hover a zone to reveal labeled
 /// split/merge controls, drag the grip handles to resize, and Save (bottom-center, reachable even on
-/// a very wide screen). Esc/Cancel discards. Commits all changed displays atomically on Save.
+/// a very wide screen). Esc/Cancel discards. Save persists the COMPLETE proposed config
+/// atomically. Drafts and numbering live in the pure `ZoneEditorSession`, so the displayed
+/// global numbers and the committed proposal cannot diverge; when displays change while the
+/// editor is open it rebases (preserving drafts by exact screen key) and requires an explicit
+/// Save on the updated numbering.
 ///
 /// `@MainActor` since the 2.0 merge — it is pure AppKit, owned by the main-actor `ZonesTool`.
 @MainActor
@@ -12,39 +16,76 @@ final class LayoutEditorOverlayController {
     private var windows: [EditorWindow] = []
     private var canvases: [EditorCanvas] = []
     private var errorBanners: [NSView] = []
+    private var bannerLabels: [NSTextField] = []
     private var previousApp: NSRunningApplication?
 
-    private let screens: [(screen: NSScreen, info: ScreenInfo)]
-    private var drafts: [String: Node] = [:]            // per-screen edited layout (draft)
-    private let baseConfig: LineupConfig
+    /// The editor's transaction state: candidate base + drafts + current screens.
+    private var session: ZoneEditorSession
+    /// A fresh candidate base from the tool (nil when the tool is gone; the session keeps
+    /// its last base in that case).
+    private let candidate: () -> LineupConfig?
+    /// Persists the COMPLETE proposed config. Returns false on failure WITHOUT touching
+    /// committed state — the editor stays open with the drafts intact.
+    private let save: (LineupConfig) -> Bool
     private let canWrite: Bool
     private let blockedMessage: String?
-    private let commit: ([(screen: ScreenInfo, layout: Node)]) -> Bool
     private let onClose: () -> Void
+    /// Exact connected keys in spatial order plus screen metadata/frames at open/refresh
+    /// time. Save compares this against a fresh collection so a topology change that
+    /// slipped past the refresh can never be committed sight-unseen.
+    private var topologySignature = ""
 
-    init(config: LineupConfig,
-         canWrite: Bool,
+    init(canWrite: Bool,
          blockedMessage: String?,
-         commit: @escaping ([(screen: ScreenInfo, layout: Node)]) -> Bool,
+         candidate: @escaping () -> LineupConfig?,
+         save: @escaping (LineupConfig) -> Bool,
          onClose: @escaping () -> Void) {
-        self.baseConfig = config
         self.canWrite = canWrite
         self.blockedMessage = blockedMessage
-        self.commit = commit
+        self.candidate = candidate
+        self.save = save
         self.onClose = onClose
-        self.screens = NSScreen.screens.map { ($0, ScreenIdentity.info(for: $0)) }
+        let current = Self.currentScreens()
+        session = ZoneEditorSession(base: candidate() ?? LineupConfig(), screens: current.map { $0.info })
+        topologySignature = Self.signature(for: current)
+    }
+
+    /// The connected screens in the shared spatial order (left-to-right, top-to-bottom
+    /// tie-break, stable key last) — the same order the runtime snapshot uses.
+    private static func currentScreens() -> [(screen: NSScreen, info: ScreenInfo)] {
+        NSScreen.screens.sorted { a, b in
+            if a.frame.minX != b.frame.minX { return a.frame.minX < b.frame.minX }
+            if a.frame.minY != b.frame.minY { return a.frame.minY > b.frame.minY }
+            return ScreenIdentity.info(for: a).key < ScreenIdentity.info(for: b).key
+        }.map { ($0, ScreenIdentity.info(for: $0)) }
+    }
+
+    /// Topology identity: exact keys in spatial order plus each screen's metadata and
+    /// frame signature — enough to detect a rearrange, connect, or disconnect.
+    private static func signature(for screens: [(screen: NSScreen, info: ScreenInfo)]) -> String {
+        screens.map { screen, info in
+            let f = screen.frame, v = screen.visibleFrame
+            return "\(info.key)|\(info.label)|\(info.pixelsWide)x\(info.pixelsHigh)"
+                + "|\(info.keyIsStable ? 1 : 0)"
+                + "|\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))"
+                + "|\(Int(v.minX)),\(Int(v.minY)),\(Int(v.width)),\(Int(v.height))"
+        }.joined(separator: ";")
     }
 
     func show() {
-        guard !screens.isEmpty else { onClose(); return }
+        let current = Self.currentScreens()
+        guard !current.isEmpty else { onClose(); return }
         previousApp = NSWorkspace.shared.frontmostApplication
-        for (screen, info) in screens { openWindow(for: screen, info: info) }
+        for (screen, info) in current { openWindow(for: screen, info: info) }
+        updateCanvasNumbering()
         NSApp.activate(ignoringOtherApps: true)
         windows.first?.makeKeyAndOrderFront(nil)
         if let cv = canvases.first { windows.first?.makeFirstResponder(cv) }
     }
 
-    private func draft(for info: ScreenInfo) -> Node { drafts[info.key] ?? baseConfig.layout(forKey: info.key) }
+    private func currentDraft(for info: ScreenInfo) -> Node {
+        session.draft(for: info.key) ?? session.base.layout(forKey: info.key)
+    }
 
     private func openWindow(for screen: NSScreen, info: ScreenInfo) {
         // No `screen:` param — with one, AppKit interprets contentRect RELATIVE to that screen's
@@ -64,8 +105,11 @@ final class LayoutEditorOverlayController {
         let cv = EditorCanvas(frame: container.bounds, screenFrame: screen.frame, visibleFrame: screen.visibleFrame, info: info)
         cv.autoresizingMask = [.width, .height]
         cv.editable = canWrite
-        cv.root = draft(for: info)
-        cv.onChange = { [weak self] node in self?.drafts[info.key] = node }
+        cv.root = currentDraft(for: info)
+        cv.onChange = { [weak self] node in
+            self?.session.setDraft(node, for: info)
+            self?.updateCanvasNumbering()
+        }
         cv.onCancel = { [weak self] in self?.cancelTapped() }
         cv.onCommit = { [weak self] in self?.doneTapped() }
         container.addSubview(cv)
@@ -75,6 +119,20 @@ final class LayoutEditorOverlayController {
         win.contentView = container
         windows.append(win)
         win.orderFrontRegardless()
+    }
+
+    /// Number every canvas through the pure `ZoneEditorSession`: the displayed global
+    /// numbering is built from the session's PROPOSED config, so what the canvases show is
+    /// by construction what Save would commit. The candidate base owns exact connected
+    /// keys and stable orders; drafts replace only their trees, and disconnected saved
+    /// layouts stay in the map, reserving their ranges. Nothing here is persisted.
+    private func updateCanvasNumbering() {
+        let numbering = session.numbering
+        for canvas in canvases {
+            canvas.firstZoneNumber = numbering.displays
+                .first(where: { $0.key == canvas.screenKey })?
+                .firstZoneNumber
+        }
     }
 
     private func addChrome(to container: NSView, screenSize: CGSize, label: String) {
@@ -96,7 +154,7 @@ final class LayoutEditorOverlayController {
         errLabel.frame = NSRect(x: 12, y: 9, width: 576, height: 22)
         errLabel.alignment = .center; errLabel.textColor = .white; errLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         err.addSubview(errLabel); err.isHidden = true
-        container.addSubview(err); errorBanners.append(err)
+        container.addSubview(err); errorBanners.append(err); bannerLabels.append(errLabel)
 
         // Bottom-CENTER: Cancel + Save (reachable on very wide displays, unlike a corner).
         let barW: CGFloat = 300, barH: CGFloat = 60
@@ -121,16 +179,46 @@ final class LayoutEditorOverlayController {
         return v
     }
 
-    @objc private func doneTapped() {
-        let changes: [(screen: ScreenInfo, layout: Node)] = screens.compactMap { (_, info) in
-            guard let edited = drafts[info.key], edited != baseConfig.layout(forKey: info.key) else { return nil }
-            return (info, edited)
+    /// Surface a notice in the existing inline banner style (an NSAlert would hide behind
+    /// the overlay). Used for save failures and display-change refreshes alike.
+    private func presentBanner(_ text: String) {
+        for (banner, label) in zip(errorBanners, bannerLabels) {
+            label.stringValue = text
+            banner.isHidden = false
         }
-        if changes.isEmpty { close(); return }
-        if commit(changes) {
+    }
+
+    @objc private func doneTapped() {
+        // The user must Save against CURRENT state on BOTH axes, checked synchronously on
+        // the main actor before any save can run:
+        // 1. live topology — screens changed since the last refresh (rearrange/connect/disconnect);
+        // 2. the candidate BASE itself — the tool may have re-prepared (adoption/normalization)
+        //    even though the screens look identical. A stale base means the displayed numbering
+        //    is not what Save would commit.
+        // Either way: rebase first (drafts preserved by exact key), redraw, show the review
+        // banner, and require another explicit Save — never commit unseen numbering.
+        let current = Self.currentScreens()
+        guard Self.signature(for: current) == topologySignature else {
+            refreshForDisplayChange()
+            return
+        }
+        guard let freshBase = candidate() else {
+            // Fail closed: with no provider there is no current base to save against, so a
+            // potentially stale proposal must not be persisted. Keep the editor and drafts.
+            presentBanner("Couldn’t save. Your changes are still here, so try Save again.")
+            return
+        }
+        guard freshBase == session.base else {
+            refreshForDisplayChange()
+            return
+        }
+        // Save persists the COMPLETE proposed config (base candidate + drafts): candidate-only
+        // order normalization, materialization, or alias adoption commit even with no tree
+        // edit. The tool skips the physical write when the proposal equals committed state.
+        if save(session.proposal) {
             close()
         } else {
-            errorBanners.forEach { $0.isHidden = false } // surface inline; NSAlert would hide behind the overlay
+            presentBanner("Couldn’t save. Your changes are still here, so try Save again.")
         }
     }
 
@@ -147,9 +235,43 @@ final class LayoutEditorOverlayController {
         close()
     }
 
+    /// Rebase onto the CURRENT displays while the editor stays open: refresh the candidate
+    /// base, rebuild every canvas (add/remove/reposition) with draft trees preserved by
+    /// exact screen key, recompute all global offsets, and surface the refresh inline. The
+    /// user must explicitly press Save afterwards; nothing is persisted here and committed
+    /// routing state is untouched.
+    ///
+    /// Called from the tool's running screen-change path (the single owner of that
+    /// notification), so the editor never shows one numbering candidate and silently saves
+    /// another. Safe to call when not showing.
+    func refreshForDisplayChange() {
+        guard !windows.isEmpty else { return }
+        let current = Self.currentScreens()
+        if let freshBase = candidate() {
+            session.rebase(base: freshBase, screens: current.map { $0.info })
+        } else {
+            session.rebase(base: session.base, screens: current.map { $0.info })
+        }
+        topologySignature = Self.signature(for: current)
+        guard !current.isEmpty else { return } // no displays left: keep the session/drafts
+        rebuildWindows(current)
+        updateCanvasNumbering()
+        presentBanner("Displays changed. Review the updated zone numbers, then save again.")
+    }
+
+    /// Tear down and re-open the overlay windows for the current screens. Drafts live in
+    /// the session, so every canvas reloads its (preserved) draft tree.
+    private func rebuildWindows(_ current: [(screen: NSScreen, info: ScreenInfo)]) {
+        windows.forEach { $0.orderOut(nil) }
+        windows.removeAll(); canvases.removeAll(); errorBanners.removeAll(); bannerLabels.removeAll()
+        for (screen, info) in current { openWindow(for: screen, info: info) }
+        windows.first?.makeKeyAndOrderFront(nil)
+        if let cv = canvases.first { windows.first?.makeFirstResponder(cv) }
+    }
+
     private func close() {
         windows.forEach { $0.orderOut(nil) }
-        windows.removeAll(); canvases.removeAll(); errorBanners.removeAll()
+        windows.removeAll(); canvases.removeAll(); errorBanners.removeAll(); bannerLabels.removeAll()
         if let prev = previousApp, prev != NSRunningApplication.current {
             if #available(macOS 14.0, *) { prev.activate() } else { prev.activate(options: []) }
         }
@@ -172,6 +294,14 @@ private final class EditorCanvas: NSView {
     var onCancel: (() -> Void)?
     var onCommit: (() -> Void)?
     var editable = true
+    var firstZoneNumber: Int? {
+        didSet {
+            guard firstZoneNumber != oldValue else { return }
+            updateAccessibilitySummary()
+            needsDisplay = true
+        }
+    }
+    var screenKey: String { info.key }
 
     private let screenFrame: CGRect
     private let visibleFrame: CGRect
@@ -195,6 +325,10 @@ private final class EditorCanvas: NSView {
         controlBar.onSplitH = { [weak self] in self?.splitH() }
         controlBar.onMerge = { [weak self] in self?.mergeZone() }
         addSubview(controlBar)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Layout editor for \(info.label)")
+        updateAccessibilitySummary()
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -234,7 +368,24 @@ private final class EditorCanvas: NSView {
         }
     }
 
-    private func rebuildIfNeeded() { positionControls(); needsDisplay = true; window?.invalidateCursorRects(for: self) }
+    private func rebuildIfNeeded() {
+        positionControls()
+        updateAccessibilitySummary()
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
+    }
+
+    private func updateAccessibilitySummary() {
+        let count = ZoneNumbering.leafCount(root)
+        guard let firstZoneNumber else {
+            setAccessibilityValue("Global zone numbers unavailable")
+            return
+        }
+        let last = firstZoneNumber + count - 1
+        setAccessibilityValue(firstZoneNumber == last
+                              ? "Global zone \(firstZoneNumber)"
+                              : "Global zones \(firstZoneNumber) through \(last)")
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.20).setFill(); bounds.fill()
@@ -246,7 +397,9 @@ private final class EditorCanvas: NSView {
             let p = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10); p.fill()
             (isActive ? Brand.blue : Brand.blue.withAlphaComponent(0.55)).setStroke()
             p.lineWidth = isActive ? 3 : 1.5; p.stroke()
-            drawNumber(i + 1, in: r)
+            if let firstZoneNumber {
+                drawNumber(firstZoneNumber + i, in: r)
+            }
             drawSize(of: leaf.rect, in: r, controlsShown: isActive && !controlBar.isHidden)
         }
         if editable {

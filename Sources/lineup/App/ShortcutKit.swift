@@ -44,8 +44,6 @@ enum ShortcutKit {
         ("rightHalf", "Right half"),
         ("restore", "Restore previous size"),
     ]
-    /// How many positional Zone-N rows to offer (out-of-range ones disable themselves).
-    static let zoneRows = 9
 
     /// Default bindings: ONLY the quick actions (the Magnet replacement). Zone shortcuts
     /// default to UNASSIGNED so they don't collide with combos users already use (e.g.
