@@ -11,15 +11,161 @@
 # have to remove + re-grant in System Settings each time).
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+SOURCE_REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "${SOURCE_REPO_DIR}"
 
 APP_NAME="Lineup"
 EXEC_NAME="lineup"
 BUNDLE_ID="com.caiano.lineup"
 SIGN_IDENTITY="Lineup Self-Signed"
 BUILD_DIR=".build/release"
-OUT_DIR="${1:-dist}"          # pass a target dir, e.g. ~/Applications
+OUT_DIR_INPUT="${1:-dist}"    # pass a target dir, e.g. ~/Applications
+if [[ "${OUT_DIR_INPUT}" = /* ]]; then
+  OUT_DIR="${OUT_DIR_INPUT}"
+else
+  OUT_DIR="${SOURCE_REPO_DIR}/${OUT_DIR_INPUT}"
+fi
 APP="${OUT_DIR}/${APP_NAME}.app"
+
+# The checked-in plist describes the public Stable build. A Nightly package must opt in
+# explicitly, including its numeric X.Y.Z bundle display version and its Apple-valid prerelease
+# bundle version; the T3 Nightly display version belongs to its tag and appcast item.
+PLIST_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :LineupBuildChannel' Resources/Info.plist 2>/dev/null || echo stable)"
+BUILD_CHANNEL="${LINEUP_BUILD_CHANNEL:-${PLIST_CHANNEL}}"
+VERSION_OVERRIDE="${LINEUP_VERSION:-}"
+BUILD_OVERRIDE="${LINEUP_BUILD_VERSION:-}"
+SOURCE_BUILD_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist 2>/dev/null || true)"
+
+case "${BUILD_CHANNEL}" in
+  stable|nightly) ;;
+  *)
+    echo "error: LINEUP_BUILD_CHANNEL must be 'stable' or 'nightly' (got '${BUILD_CHANNEL}')." >&2
+    exit 1
+    ;;
+esac
+
+if [ "${BUILD_CHANNEL}" = "nightly" ] && { [ -z "${VERSION_OVERRIDE}" ] || [ -z "${BUILD_OVERRIDE}" ]; }; then
+  echo "error: Nightly builds require LINEUP_VERSION and LINEUP_BUILD_VERSION overrides." >&2
+  echo "       Use Scripts/nightly-release.sh to resolve both values." >&2
+  exit 1
+fi
+
+# CFBundleVersion is numeric with an optional Apple development suffix. Keep this validation next
+# to the override so a malformed prerelease cannot reach Sparkle with an unorderable version.
+if [ -n "${BUILD_OVERRIDE}" ] && [[ ! "${BUILD_OVERRIDE}" =~ ^[1-9][0-9]{0,3}(\.[0-9]{1,2}(\.[0-9]{1,2})?)?((d|a|b|fc)[0-9]{1,3})?$ ]]; then
+  echo "error: LINEUP_BUILD_VERSION '${BUILD_OVERRIDE}' is not an Apple-valid CFBundleVersion." >&2
+  exit 1
+fi
+if [ -n "${BUILD_OVERRIDE}" ] && [[ "${BUILD_OVERRIDE}" =~ (d|a|b|fc)([0-9]+)$ ]]; then
+  suffix_number="${BASH_REMATCH[2]}"
+  if [ "${suffix_number}" -lt 1 ] || [ "${suffix_number}" -gt 255 ]; then
+    echo "error: LINEUP_BUILD_VERSION suffix number must be from 1 through 255." >&2
+    exit 1
+  fi
+fi
+EFFECTIVE_BUILD_VERSION="${BUILD_OVERRIDE:-${SOURCE_BUILD_VERSION}}"
+if [ "${BUILD_CHANNEL}" = "stable" ] \
+    && [[ "${EFFECTIVE_BUILD_VERSION}" =~ (d|a|b|fc)[0-9]{1,3}$ ]]; then
+  echo "error: Stable LINEUP_BUILD_VERSION may not include an Apple prerelease suffix." >&2
+  exit 1
+fi
+if [ "${BUILD_CHANNEL}" = "nightly" ] && [[ ! "${BUILD_OVERRIDE}" =~ (d|a|b|fc)[0-9]{1,3}$ ]]; then
+  echo "error: Nightly LINEUP_BUILD_VERSION must include an Apple prerelease suffix." >&2
+  exit 1
+fi
+
+if [ -n "${VERSION_OVERRIDE}" ] && [[ ! "${VERSION_OVERRIDE}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: LINEUP_VERSION '${VERSION_OVERRIDE}' is not a three-part release version." >&2
+  exit 1
+fi
+
+SOURCE_SHA=""
+SOURCE_DIRTY=0
+NIGHTLY_SNAPSHOT=""
+cleanup_nightly_snapshot() {
+  if [ -n "${NIGHTLY_SNAPSHOT}" ] && [ -d "${NIGHTLY_SNAPSHOT}" ]; then
+    # The snapshot owns the fresh SwiftPM build output. Remove it through Git so no broad
+    # recursive deletion can touch the caller's checkout.
+    (cd "${SOURCE_REPO_DIR}" && git worktree remove --force "${NIGHTLY_SNAPSHOT}") >/dev/null 2>&1 || true
+  fi
+}
+if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  # A Nightly artifact must carry proof of the exact source commit that the public tag names.
+  # Do not allow a dirty checkout: embedding HEAD while local edits are present would make the
+  # marker look authoritative even though those edits also went into the built app.
+  SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null)" || {
+    echo "error: Nightly builds must run inside the Lineup Git checkout." >&2
+    exit 1
+  }
+  [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "error: Nightly source commit is not a 40-character Git SHA." >&2
+    exit 1
+  }
+  WORKTREE_STATE="$(git status --porcelain --untracked-files=all)"
+  if [ -n "${WORKTREE_STATE}" ]; then
+    if [ "${LINEUP_ALLOW_DIRTY:-0}" = "1" ]; then
+      echo "WARNING: LINEUP_ALLOW_DIRTY=1 is for local Nightly bundle tests only; never release this build." >&2
+      SOURCE_DIRTY=1
+    else
+      echo "error: Nightly builds require a clean checkout; source edits would invalidate the embedded commit." >&2
+      exit 1
+    fi
+  fi
+
+  # Build from a detached worktree at the exact source commit. The worktree starts without a
+  # .build directory, so its SwiftPM output cannot reuse a stale binary from the moving checkout.
+  NIGHTLY_SNAPSHOT="$(mktemp -d "${TMPDIR:-/tmp}/lineup-nightly-source.XXXXXX")"
+  trap cleanup_nightly_snapshot EXIT
+  if ! (cd "${SOURCE_REPO_DIR}" && git worktree add --detach "${NIGHTLY_SNAPSHOT}" "${SOURCE_SHA}") >/dev/null; then
+    echo "error: could not create the exact Nightly source snapshot." >&2
+    exit 1
+  fi
+  cd "${NIGHTLY_SNAPSHOT}"
+fi
+
+# The source snapshot must remain stable while Swift compiles and while the bundle is assembled.
+# A clean release checkout must still be clean; the explicit dirty escape is only for local tests
+# and must remain marked dirty so it cannot pass the Nightly appcast gate.
+validate_source_snapshot() {
+  local phase="${1}"
+  local current_sha current_state snapshot_sha snapshot_state
+  if ! current_sha="$(cd "${SOURCE_REPO_DIR}" && git rev-parse HEAD 2>/dev/null)"; then
+    echo "error: could not re-read the Nightly source commit after ${phase}." >&2
+    exit 1
+  fi
+  if [ "${current_sha}" != "${SOURCE_SHA}" ]; then
+    echo "error: Nightly source HEAD changed during ${phase}; refusing to assemble the bundle." >&2
+    exit 1
+  fi
+  if ! snapshot_sha="$(git -C "${NIGHTLY_SNAPSHOT}" rev-parse HEAD 2>/dev/null)"; then
+    echo "error: could not re-read the exact Nightly source snapshot after ${phase}." >&2
+    exit 1
+  fi
+  if [ "${snapshot_sha}" != "${SOURCE_SHA}" ]; then
+    echo "error: Nightly source snapshot changed during ${phase}; refusing to assemble the bundle." >&2
+    exit 1
+  fi
+  if ! snapshot_state="$(git -C "${NIGHTLY_SNAPSHOT}" status --porcelain --untracked-files=all)"; then
+    echo "error: could not re-check the Nightly source snapshot after ${phase}." >&2
+    exit 1
+  fi
+  if [ -n "${snapshot_state}" ]; then
+    echo "error: Nightly source snapshot became dirty during ${phase}; refusing to assemble the bundle." >&2
+    exit 1
+  fi
+  if ! current_state="$(cd "${SOURCE_REPO_DIR}" && git status --porcelain --untracked-files=all)"; then
+    echo "error: could not re-check the Nightly checkout after ${phase}." >&2
+    exit 1
+  fi
+  if [ "${SOURCE_DIRTY}" -eq 0 ] && [ -n "${current_state}" ]; then
+    echo "error: Nightly checkout became dirty during ${phase}; refusing to assemble the bundle." >&2
+    exit 1
+  fi
+  if [ "${SOURCE_DIRTY}" -eq 1 ] && [ -z "${current_state}" ]; then
+    echo "error: the test-only dirty Nightly checkout became clean during ${phase}; refusing to clear its dirty marker." >&2
+    exit 1
+  fi
+}
 
 # Build the release executable. Universal (arm64 + x86_64) by default so the app runs on every
 # supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
@@ -42,10 +188,23 @@ if [ "${UNIVERSAL}" = "1" ]; then
   SPARKLE_LICENSE="${ARM_SCRATCH}/checkouts/Sparkle/LICENSE"
 else
   echo "==> swift build -c release (host arch only)"
-  swift build -c release
-  EXEC_SRC="${BUILD_DIR}/${EXEC_NAME}"
-  SPARKLE_SEARCH_DIR="${BUILD_DIR}"
-  SPARKLE_LICENSE=".build/checkouts/Sparkle/LICENSE"
+  if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+    # The detached worktree has no prior .build output. Keep this explicit scratch path so a
+    # Nightly build can never consume a binary produced by the mutable source checkout.
+    swift build -c release --scratch-path .build
+    EXEC_SRC=".build/release/${EXEC_NAME}"
+    SPARKLE_SEARCH_DIR=".build/release"
+    SPARKLE_LICENSE=".build/checkouts/Sparkle/LICENSE"
+  else
+    swift build -c release
+    EXEC_SRC="${BUILD_DIR}/${EXEC_NAME}"
+    SPARKLE_SEARCH_DIR="${BUILD_DIR}"
+    SPARKLE_LICENSE=".build/checkouts/Sparkle/LICENSE"
+  fi
+fi
+
+if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  validate_source_snapshot "compilation"
 fi
 
 # Ensure the icon exists.
@@ -67,6 +226,19 @@ fi
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${EXEC_SRC}" "${APP}/Contents/MacOS/${EXEC_NAME}"
 cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
+
+# Keep the source plist Stable so ordinary builds preserve the existing release identity. Variant
+# metadata belongs in the assembled bundle and is inspectable with PlistBuddy after the build.
+if [ -n "${VERSION_OVERRIDE}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION_OVERRIDE}" \
+    "${APP}/Contents/Info.plist"
+fi
+if [ -n "${BUILD_OVERRIDE}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_OVERRIDE}" \
+    "${APP}/Contents/Info.plist"
+fi
+/usr/libexec/PlistBuddy -c "Set :LineupBuildChannel ${BUILD_CHANNEL}" \
+  "${APP}/Contents/Info.plist"
 
 # Fail closed if the real Sparkle public key was never filled in: a placeholder SUPublicEDKey
 # ships an app that can never validate an update (users would have to reinstall by hand).
@@ -102,6 +274,23 @@ SPARKLE_FW="${SPARKLE_SEARCH_DIR}/Sparkle.framework"
 [ -d "${SPARKLE_FW}" ] || { echo "error: Sparkle.framework not found; run 'swift build -c release' first." >&2; exit 1; }
 mkdir -p "${APP}/Contents/Frameworks"
 ditto "${SPARKLE_FW}" "${APP}/Contents/Frameworks/Sparkle.framework"
+
+if [ "${BUILD_CHANNEL}" = "nightly" ]; then
+  # Recheck after every bundle input is copied and immediately before the first signing probe.
+  # This closes the source-snapshot race across the whole source-sensitive assembly window.
+  validate_source_snapshot "bundle assembly"
+  if [ "${SOURCE_DIRTY}" -eq 1 ]; then
+    # A dirty test bundle must remain useful for local inspection but can never pass the
+    # Nightly appcast proof. The prefix is deliberately not a Git SHA; the appcast rejects it.
+    SOURCE_MARKER="dirty-${SOURCE_SHA}"
+    /usr/libexec/PlistBuddy -c "Add :LineupSourceDirty bool true" \
+      "${APP}/Contents/Info.plist"
+  else
+    SOURCE_MARKER="${SOURCE_SHA}"
+  fi
+  /usr/libexec/PlistBuddy -c "Add :LineupSourceCommit string ${SOURCE_MARKER}" \
+    "${APP}/Contents/Info.plist"
+fi
 
 # Resolve the signing identity by ATTEMPTING the sign on the bundled executable (a probe that
 # proves the key is actually usable), in order:
@@ -195,5 +384,6 @@ if [ "${UNIVERSAL}" = "1" ]; then
 fi
 
 echo "==> done: ${APP}"
+echo "    channel: ${BUILD_CHANNEL}"
 echo "    Launch with:  open \"${APP}\""
 echo "    First launch will prompt for Accessibility permission."

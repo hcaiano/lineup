@@ -43,6 +43,17 @@ final class SettingsStore: ObservableObject {
             if actual != showMenuBarIcon { showMenuBarIcon = actual }
         }
     }
+    /// The effective channel shown by the one General picker. Persistence is supplied by the
+    /// shell, which owns the authoritative config store; isolated previews use the no-op default
+    /// callback.
+    @Published var updateChannel: UpdateChannel {
+        didSet {
+            guard updateChannel != oldValue else { return }
+            guard !isRefreshingUpdateChannel else { return }
+            let actual = onUpdateChannelChange(updateChannel)
+            if actual != updateChannel { updateChannel = actual }
+        }
+    }
     @Published var launchAtLogin: Bool {
         didSet {
             guard launchAtLogin != oldValue else { return }
@@ -61,6 +72,11 @@ final class SettingsStore: ObservableObject {
     /// Returns the value that is actually in force after the write, which is the OLD one when the
     /// store refused it.
     private let onMenuBarIconChange: (Bool) -> Bool
+    /// Persists and applies the channel through the shell's shared config store.
+    private let onUpdateChannelChange: (UpdateChannel) -> UpdateChannel
+    /// Shell-driven refreshes must not turn a reset's implicit marker default back into an
+    /// explicit preference by calling the persistence callback.
+    private var isRefreshingUpdateChannel = false
     private var recordingDepth = 0
     /// Live recorders, keyed by object identity, each with the block that cancels its capture.
     /// The identity is what lets `stopAllRecording()` (blur, window close) tear down exactly the
@@ -70,11 +86,15 @@ final class SettingsStore: ObservableObject {
     init(registry: ToolRegistry,
          permissions: PermissionCenter,
          showMenuBarIcon: Bool,
-         onMenuBarIconChange: @escaping (Bool) -> Bool) {
+         onMenuBarIconChange: @escaping (Bool) -> Bool,
+         updateChannel: UpdateChannel = Product.buildChannel,
+         onUpdateChannelChange: @escaping (UpdateChannel) -> UpdateChannel = { $0 }) {
         self.registry = registry
         self.permissions = permissions
         self.showMenuBarIcon = showMenuBarIcon
         self.onMenuBarIconChange = onMenuBarIconChange
+        self.updateChannel = updateChannel
+        self.onUpdateChannelChange = onUpdateChannelChange
         self.launchAtLogin = LaunchAtLogin.isEnabled
         self.isAccessibilityTrusted = permissions.isAccessibilityTrusted
         self.isInputMonitoringGranted = permissions.isInputMonitoringGranted
@@ -83,7 +103,7 @@ final class SettingsStore: ObservableObject {
 
     /// Recompute everything the window shows. Called on open and whenever the shell notices a
     /// change (permission granted, tool started/stopped, config saved).
-    func refresh() {
+    func refresh(updateChannel: UpdateChannel? = nil) {
         toolRows = registry.tools.map {
             ToolRow(id: $0.id, name: $0.displayName, summary: $0.summary,
                     iconSymbol: $0.iconSymbol, isEnabled: registry.isEnabled($0.id),
@@ -94,6 +114,11 @@ final class SettingsStore: ObservableObject {
         toolEnableError = registry.lastEnableError
         let login = LaunchAtLogin.isEnabled
         if login != launchAtLogin { launchAtLogin = login }
+        if let updateChannel, updateChannel != self.updateChannel {
+            isRefreshingUpdateChannel = true
+            self.updateChannel = updateChannel
+            isRefreshingUpdateChannel = false
+        }
         objectWillChange.send()
     }
 

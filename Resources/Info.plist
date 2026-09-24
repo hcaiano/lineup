@@ -18,6 +18,8 @@
 	<string>2.0.1</string>
 	<key>CFBundleVersion</key>
 	<string>19</string>
+	<key>LineupBuildChannel</key>
+	<string>stable</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>

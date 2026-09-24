@@ -1,4 +1,5 @@
 import AppKit
+import AppCore
 import Foundation
 
 /// The facts both Abouts show. One producer keeps the AppKit window and SwiftUI Settings pane
@@ -202,6 +203,7 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
         let build = info["CFBundleVersion"] as? String ?? "0"
-        return "Version \(version) (\(build))"
+        let track = Product.buildChannel == .nightly ? " Nightly" : ""
+        return "Version \(version)\(track) (\(build))"
     }
 }

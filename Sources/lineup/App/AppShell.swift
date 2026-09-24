@@ -59,7 +59,6 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
         ActivationCoordinator.shared.applyBaseline() // agent: no Dock icon (also LSUIElement)
         TerminationCoordinator.shared.installSignalHandlers()
-        _ = AppUpdater.shared // start Sparkle's scheduled background update checks
 
         // Which audience this launch belongs to is decided from the state on disk BEFORE the
         // import writes anything — the import itself creates config.json, which would otherwise
@@ -74,6 +73,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
         case .failed(let state):
             log.error("config.json rejected (\(String(describing: state), privacy: .public)); running on defaults with writes blocked")
         }
+        // The shell is the only config reader. A failed or future-schema load starts Stable;
+        // loaded and fresh configs may follow the explicit preference or the bundle marker.
+        AppUpdater.start(channel: AppUpdater.initialChannel(config: store.config, state: store.state))
         let hasLegacyZones = FileManager.default.fileExists(atPath: Product.legacyZonesURL.path)
         let audience = Onboarding.audience(
             hasConfig: hasConfig,
@@ -291,15 +293,23 @@ final class AppShell: NSObject, NSApplicationDelegate {
     }
 
     private func resetConfig() {
+        var didReset = false
         do {
             try store.reset()
+            didReset = true
         } catch {
             // Preservation or the write failed: leave the file exactly as it was and keep writes
             // blocked, rather than clobber something the user might still recover by hand.
             log.error("reset aborted (config left untouched): \(error, privacy: .public)")
         }
         statusItem.refresh()
-        settings?.refresh()
+        if didReset {
+            let channel = AppUpdater.initialChannel(config: store.config, state: store.state)
+            AppUpdater.apply(channel: channel)
+            settings?.refresh(updateChannel: channel)
+        } else {
+            settings?.refresh()
+        }
     }
 
     // MARK: - Settings
@@ -314,7 +324,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
             permissions: PermissionCenter.shared,
             showMenuBarIcon: self.store.config.general.showMenuBarIcon,
             // A dead shell can't have changed anything, so report the value back unchanged.
-            onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) ?? show })
+            onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) ?? show },
+            updateChannel: AppUpdater.initialChannel(config: self.store.config, state: self.store.state),
+            onUpdateChannelChange: { [weak self] channel in self?.setUpdateChannel(channel) ?? channel })
         let controller = SettingsWindowController(store: store)
         controller.onClose = { [weak self] in self?.settings = nil }
         settings = controller
@@ -333,6 +345,20 @@ final class AppShell: NSObject, NSApplicationDelegate {
         }
         statusItem.refresh()
         return store.config.general.showMenuBarIcon
+    }
+
+    /// Persist the user's track before changing Sparkle. If the shared config is blocked, the
+    /// in-memory value remains unchanged and SettingsStore springs the picker back to it.
+    @discardableResult
+    private func setUpdateChannel(_ channel: UpdateChannel) -> UpdateChannel {
+        do {
+            try store.update { $0.general.updateChannel = channel }
+        } catch {
+            log.error("could not persist updateChannel: \(error, privacy: .public)")
+        }
+        let actual = AppUpdater.initialChannel(config: store.config, state: store.state)
+        AppUpdater.apply(channel: actual)
+        return actual
     }
 
     /// With the menu-bar icon hidden there is no way back in, so a Dock/Spotlight reopen has to
