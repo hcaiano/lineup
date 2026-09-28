@@ -226,10 +226,14 @@ Stable and Nightly share that feed, public bundle ID, config file, and TCC ident
 settings window has one **Update track** picker. Stable is the default. A first Nightly install
 follows its bundle marker, while an explicit choice in `config.json` wins across later installs.
 Sparkle always includes the default channel; Nightly adds only `nightly` through its updater
-delegate. Changing the track updates the one controller and resets its update cycle. Selecting
-Stable on a newer Nightly build stops Nightly checks; Sparkle waits for a newer Stable build and
-does not auto-downgrade to an older Stable item. If a check or install is already active, it
-finishes on its current track; the new choice applies to the next check.
+delegate. Changing the track updates the delegate at once, so any feed read that has not been
+filtered yet uses the new choice; the update-cycle reset waits until Sparkle is idle (it ignores a
+reset during a session or its pre-schedule installer probe). Selecting Stable on a newer Nightly
+build stops Nightly checks; Sparkle waits for a newer Stable build and does not auto-downgrade to
+an older Stable item. An update already selected or shown finishes on its original track. One
+exception outlives the switch: a Nightly the user downloaded and dismissed is resumed before the
+feed is read, and one that began installing installs on quit. Settings then shows the switch to
+Stable as pending until the user chooses Skip This Version.
 
 **One-time key setup** (do this once, ever — losing the key means you can't sign future
 updates that existing installs will accept):
