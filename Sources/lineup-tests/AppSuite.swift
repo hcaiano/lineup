@@ -870,11 +870,22 @@ private func runShellSourceScanTests() throws {
           "a rejected config follows the running bundle channel instead of forcing Stable")
     check(updater.contains("state == .ok")
             && updater.contains("config.schemaVersion <= LineupAppConfig.currentSchema")
-            && updater.contains("static func start(channel: UpdateChannel)")
-            && updater.contains("sessionInProgress")
-            && updater.contains("pendingChannelAfterSession")
-            && updater.contains("didFinishUpdateCycleFor updateCheck"),
-          "updater startup is fail-closed and defers track reset during active Sparkle sessions")
+            && updater.contains("static func start(channel: UpdateChannel)"),
+          "updater startup is fail-closed")
+    // Sparkle ignores resetUpdateCycle while sessionInProgress is true, and its pre-schedule
+    // installer probe raises that flag without any delegate callback. Waiting on a delegate
+    // callback lost a track change made during the probe; the reset now waits on the flag.
+    check(updater.contains("observe(\\.sessionInProgress")
+            && updater.contains("guard needsResetWhenIdle, !shared.updater.sessionInProgress")
+            && !updater.contains("didFinishUpdateCycleFor"),
+          "a track change resets Sparkle's schedule once Sparkle is idle, including after its probe")
+    // A dismissed downloaded Nightly is resumed before the feed is read, so allowedChannels
+    // cannot drop it; a switch to Stable must stay visibly pending until the user resolves it.
+    let generalPane = files.first(where: { $0.path == "Sources/lineup/Settings/GeneralPane.swift" })?.text ?? ""
+    check(updater.contains("userDidMake choice: SPUUserUpdateChoice")
+            && updater.contains("hasDeferredNightly = choice == .dismiss && stage != .notDownloaded")
+            && generalPane.contains("if store.hasDeferredNightly"),
+          "a dismissed downloaded Nightly keeps a switch to Stable visibly pending")
 
     // Two SPUStandardUpdaterControllers in one process is unsupported by Sparkle. Cycler's
     // Updater.swift is deliberately never copied.

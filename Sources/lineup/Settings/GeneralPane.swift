@@ -85,6 +85,13 @@ struct GeneralPane: View {
         guard store.updateChannel == .stable else {
             return store.updateChannel.settingsDescription
         }
+        if store.hasDeferredNightly {
+            // Sparkle resumes a dismissed download whatever the track says, so the switch is not
+            // finished yet. Name the one action that finishes it.
+            return "Switching to Stable finishes after you choose Skip This Version for the "
+                + "downloaded Nightly update. Until then Lineup keeps offering it, and one that "
+                + "already began installing installs when Lineup quits."
+        }
         // Explain the consequence before the user opts into Nightly. Name the alternative here:
         // the segmented control alone is not enough context for VoiceOver or a quick scan.
         return "Tested releases. Nightly gives you the newest public builds, which may be less "

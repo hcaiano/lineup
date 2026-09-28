@@ -62,9 +62,9 @@ public enum BuildChannelMarker {
 ///
 /// Apple permits a development suffix on an otherwise numeric bundle version. The current
 /// Stable build is the first component, the UTC day ordinal since 2026-01-01 is packed into the
-/// two two-digit revision components, and the sequence is a zero-padded suffix number. For the
-/// current Stable build 19, this produces `19.00.01a001`, which Sparkle orders above `19` and
-/// below the next Stable build `20`. The non-zero revision component is intentional: Sparkle's
+/// two two-digit revision components, and the sequence is a zero-padded suffix number. For
+/// Stable build 20, this produces `20.00.01a001`, which Sparkle orders above `20` and below the
+/// next Stable build `21`. The non-zero revision component is intentional: Sparkle's
 /// comparator treats trailing zero components as equal, so `19.00.00` could sort as Stable 19.
 /// This preserves a clean Stable supersession path while still making Nightly versions monotonic
 /// by date and sequence.

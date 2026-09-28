@@ -73,9 +73,10 @@ final class AppShell: NSObject, NSApplicationDelegate {
         case .failed(let state):
             log.error("config.json rejected (\(String(describing: state), privacy: .public)); running on defaults with writes blocked")
         }
-        // The shell is the only config reader. A failed or future-schema load starts Stable;
-        // loaded and fresh configs may follow the explicit preference or the bundle marker.
+        // The shell is the only config reader. A failed or future-schema load follows this bundle's
+        // marker; loaded and fresh configs may follow the explicit preference or the bundle marker.
         AppUpdater.start(channel: AppUpdater.initialChannel(config: store.config, state: store.state))
+        AppUpdater.onDeferredNightlyChange = { [weak self] in self?.settings?.refresh() }
         let hasLegacyZones = FileManager.default.fileExists(atPath: Product.legacyZonesURL.path)
         let audience = Onboarding.audience(
             hasConfig: hasConfig,

@@ -54,6 +54,9 @@ final class SettingsStore: ObservableObject {
             if actual != updateChannel { updateChannel = actual }
         }
     }
+    /// A downloaded Nightly the user dismissed. Sparkle resumes it regardless of the track, so a
+    /// switch to Stable stays pending until the user skips or installs it (see `AppUpdater`).
+    @Published private(set) var hasDeferredNightly: Bool
     @Published var launchAtLogin: Bool {
         didSet {
             guard launchAtLogin != oldValue else { return }
@@ -95,6 +98,7 @@ final class SettingsStore: ObservableObject {
         self.onMenuBarIconChange = onMenuBarIconChange
         self.updateChannel = updateChannel
         self.onUpdateChannelChange = onUpdateChannelChange
+        self.hasDeferredNightly = AppUpdater.hasDeferredNightly
         self.launchAtLogin = LaunchAtLogin.isEnabled
         self.isAccessibilityTrusted = permissions.isAccessibilityTrusted
         self.isInputMonitoringGranted = permissions.isInputMonitoringGranted
@@ -114,6 +118,8 @@ final class SettingsStore: ObservableObject {
         toolEnableError = registry.lastEnableError
         let login = LaunchAtLogin.isEnabled
         if login != launchAtLogin { launchAtLogin = login }
+        let deferred = AppUpdater.hasDeferredNightly
+        if deferred != hasDeferredNightly { hasDeferredNightly = deferred }
         if let updateChannel, updateChannel != self.updateChannel {
             isRefreshingUpdateChannel = true
             self.updateChannel = updateChannel
