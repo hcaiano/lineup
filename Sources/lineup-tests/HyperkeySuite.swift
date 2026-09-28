@@ -22,7 +22,8 @@ func runHyperkeyTests() throws {
 
 // MARK: - The hidutil mapping dump (pure parsing)
 
-/// `hidutil property --get UserKeyMapping` prints a CoreFoundation description. The parsing lives
+/// `hidutil property --get UserKeyMapping` prints a CoreFoundation description (one per HID
+/// service on macOS 27). The parsing lives
 /// in `HyperkeyCore` precisely so it can be checked here: the app target is an AppKit executable
 /// this runner cannot import, and getting "is this mapping ours?" wrong either strands the user's
 /// Caps Lock or wipes a mapping that belongs to somebody else.
@@ -81,6 +82,34 @@ private func runCapsLockMappingTests() throws {
     check(CapsLockMapping.pairs(in: "(\n)\n").isEmpty, "an empty dump has no pairs")
     check(CapsLockMapping.pairs(in: "({HIDKeyboardModifierMappingSrc = 30064771129;})").isEmpty,
           "a Src with no Dst is not a pair")
+
+    // ---- macOS 27 per-service table ----
+    // macOS 27 prints one row per HID service. Before this was parsed, every table read as
+    // "somebody else's mapping" and Hyper Key stayed blocked on every launch.
+    func table(_ values: [String]) -> String {
+        let rows = values.enumerated().map { index, value in
+            "10000\(String(0xb49 + index, radix: 16))   UserKeyMapping   \(value)"
+        }
+        return (["RegistryID  Key                   Value"] + rows).joined(separator: "\n") + "\n"
+    }
+    let ours = dump([(caps, f18)])
+    let freshBoot = table(["(null)", "(\n)", "(null)"])
+    check(CapsLockMapping.isEmpty(freshBoot), "a table of (null) and () services reads as empty")
+    check(!CapsLockMapping.isLineupMapping(freshBoot), "an empty table is not our mapping")
+
+    let applied = table([ours, "(null)", ours, "(\n)"])
+    check(CapsLockMapping.isLineupMapping(applied),
+          "our mapping on every service that holds one reads as ours")
+    check(!CapsLockMapping.isEmpty(applied), "a table with our mapping is not empty")
+
+    check(!CapsLockMapping.isLineupMapping(table([ours, dump([(f18, caps)])])),
+          "one service with a reversed mapping makes the table not ours")
+    check(!CapsLockMapping.isLineupMapping(table([ours, dump([(caps, f18), (0x700000029, caps)])])),
+          "one service with an extra remap makes the table not ours")
+    check(!CapsLockMapping.isEmpty(table([])) && !CapsLockMapping.isLineupMapping(table([])),
+          "a header with no service rows is neither empty nor ours")
+    check(!CapsLockMapping.isEmpty(table(["(null)", ""])),
+          "a service row with no value is not read as empty")
 }
 
 private func runHyperkeyModelTests() throws {
