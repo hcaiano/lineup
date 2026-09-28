@@ -1510,7 +1510,7 @@ private func runParityFixTests() throws {
         check(cyclerPane[start.lowerBound...].prefix(400).contains("cancelRecording?()"),
               "\(fn) cancels any live capture")
     }
-    check(cyclerPane.contains("model.cancelRecording = { [weak recorder] in recorder?.cancel() }")
+    check(cyclerPane.contains("model.cancelRecording = { [weak recorder = recorder] in recorder?.cancel() }")
             && cyclerPane.contains("model.cancelRecording = nil"),
           "the Cycler pane lends the model its recorder's cancel, and takes it back on disappear")
     check(cyclerPane.contains("boundCombos.conflictOwner(keyCode: keyCode, modifiers: modifiers,"),

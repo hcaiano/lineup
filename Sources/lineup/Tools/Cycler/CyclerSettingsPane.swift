@@ -433,9 +433,9 @@ private struct CyclerSettingsPaneBody: View {
             // The model has to be able to end a capture from a non-recorder action (opening a
             // picker, deleting a row, reloading), and the recorder is the view's.
             model.recorder = recorder
-            model.cancelRecording = { [weak recorder] in recorder?.cancel() }
+            model.cancelRecording = { [weak recorder = recorder] in recorder?.cancel() }
             // Conflict alerts name the owning tool the way the sidebar does.
-            model.toolDisplayName = { [weak settings] id in
+            model.toolDisplayName = { [weak settings = settings] id in
                 settings?.displayName(for: id) ?? id.rawValue.capitalized
             }
         }

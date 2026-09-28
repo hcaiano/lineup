@@ -20,8 +20,9 @@ need maintainer agreement before work starts.
 
 ## Set up the project
 
-You need Xcode 26 or Command Line Tools 26 so the macOS 26 SDK is available. Full Xcode is optional,
-and the built app still supports macOS 13 or later.
+You need the macOS 26 SDK or later. Command Line Tools 26 are enough, and the built app still
+supports macOS 13 or later. With the macOS 27 SDK, the app needs full Xcode 27; see
+[BUILDING.md](BUILDING.md#requirements).
 
 ```sh
 xcode-select --install
@@ -31,8 +32,8 @@ swift build
 swift run lineup-tests
 ```
 
-The test runner does not use XCTest. It works with Command Line Tools 26 alone. See
-[BUILDING.md](BUILDING.md) when you need to assemble and run `Lineup.app` with a stable local
+The test runner does not use XCTest. It works with Command Line Tools alone, including version 27.
+See [BUILDING.md](BUILDING.md) when you need to assemble and run `Lineup.app` with a stable local
 signature.
 
 ## Make a change
