@@ -44,6 +44,7 @@ enum CapsLockHandoff {
     ///
     /// A set flag with no mapping applied is stale (Cycler cleared the mapping but the flag
     /// survived, or the user cleared it by hand): the flag is dropped and nothing is adopted.
+    /// A probe that fails decides nothing: the flag stays, and the next launch tries again.
     ///
     /// The liveness guard is the whole reason this is not unconditional: a RUNNING standalone
     /// Cycler is still *using* that mapping. Adopting it would hand its Caps Lock to our teardown
@@ -63,11 +64,14 @@ enum CapsLockHandoff {
             log.info("standalone Cycler is running; leaving its Caps Lock ownership claim alone")
             return
         }
-        // Cycler is gone, so its claim is ours to retire: whatever the probe finds, it must not
-        // keep a claim on a mapping this process is about to manage.
-        legacy.removeObject(forKey: legacyKey)
-
         HyperKeyController.adoptAppliedMappingIfPresentAsync { adopted in
+            guard let adopted else {
+                log.error("could not read the Caps Lock mapping; keeping the legacy Cycler claim for the next launch")
+                return
+            }
+            // Cycler is gone and the probe answered, so its claim is ours to retire either way: it
+            // must not keep a claim on a mapping this process now manages.
+            legacy.removeObject(forKey: legacyKey)
             if adopted {
                 log.info("adopted the CapsLock->F18 mapping left by standalone Cycler")
             } else {
@@ -108,7 +112,7 @@ enum CapsLockHandoff {
             return
         }
         HyperKeyController.currentMappingAsync { mapping in
-            completion(HyperKeyController.isMappingOurs(mapping))
+            completion(mapping.map(HyperKeyController.isMappingOurs) ?? false)
         }
     }
 

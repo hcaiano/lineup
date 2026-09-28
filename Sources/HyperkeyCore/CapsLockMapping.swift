@@ -39,15 +39,50 @@ public enum CapsLockMapping {
         }
     }
 
+    /// What one `hidutil` dump says about the Caps Lock remap.
+    public enum State: Equatable {
+        /// No service holds a mapping.
+        case empty
+        /// Every service that holds a mapping holds exactly Caps Lock -> F18.
+        case lineup
+        /// Caps Lock -> F18 on some services and an explicitly empty mapping (`()`) on others: the
+        /// same shape, not installed everywhere. Only the per-service format can report this.
+        case partialLineup
+        /// Anything else, including output that could not be read completely.
+        case foreign
+    }
+
+    /// Classifies a whole `hidutil property --get UserKeyMapping` dump.
+    ///
+    /// An EMPTY string is deliberately not `.empty`: that is what a `hidutil` that failed to run
+    /// produces, and treating a failure as "nothing is mapped" would let us stomp on a mapping we
+    /// never actually read. For the same reason a service table that is not readable line by
+    /// line, or that has no rows, is `.foreign`.
+    public static func state(of output: String) -> State {
+        guard output.split(whereSeparator: \.isWhitespace).first == "RegistryID" else {
+            if isNullValue(output) || isEmptyArray(output) { return .empty }
+            return isLineupValue(output) ? .lineup : .foreign
+        }
+        guard let values = serviceValues(in: output), !values.isEmpty else { return .foreign }
+        var mapped = 0
+        var emptied = 0
+        for value in values where !isNullValue(value) {
+            if isEmptyArray(value) {
+                emptied += 1
+            } else if isLineupValue(value) {
+                mapped += 1
+            } else {
+                return .foreign
+            }
+        }
+        if mapped == 0 { return .empty }
+        return emptied == 0 ? .lineup : .partialLineup
+    }
+
     /// True when `hidutil` reports no user key mapping at all — on every service, in the
     /// per-service format.
-    ///
-    /// An EMPTY string is deliberately not "empty": that is what a `hidutil` that failed to run
-    /// produces, and treating a failure as "nothing is mapped" would let us stomp on a mapping we
-    /// never actually read. A service table with no rows is not "empty" for the same reason.
     public static func isEmpty(_ output: String) -> Bool {
-        guard let values = serviceValues(in: output) else { return isEmptyValue(output) }
-        return !values.isEmpty && values.allSatisfy(isEmptyValue)
+        state(of: output) == .empty
     }
 
     /// Every `Src -> Dst` pair in ONE printed value, split per printed dictionary so each Src
@@ -66,35 +101,55 @@ public enum CapsLockMapping {
     /// and Raycast's Hyper Key install the identical pair, so this is a SHAPE test, never a
     /// statement of ownership (see `CapsLockHandoff`).
     ///
-    /// In the per-service format, every service that holds a mapping must hold exactly this one:
-    /// a single service with a different remap means somebody else configured that device.
+    /// A partial table counts: clearing it only empties services that hold our pair or nothing, so
+    /// cleanup and recovery stay safe. Installing is stricter; see `HyperKeyController`.
     public static func isLineupMapping(_ output: String) -> Bool {
-        guard let values = serviceValues(in: output) else { return isLineupValue(output) }
-        let mapped = values.filter { !isEmptyValue($0) }
-        return !mapped.isEmpty && mapped.allSatisfy(isLineupValue)
+        let state = state(of: output)
+        return state == .lineup || state == .partialLineup
     }
 
-    private static func isEmptyValue(_ value: String) -> Bool {
+    private static func isNullValue(_ value: String) -> Bool {
         let compact = value.filter { !$0.isWhitespace }.lowercased()
-        return compact == "()" || compact == "(null)" || compact == "null"
+        return compact == "(null)" || compact == "null"
+    }
+
+    private static func isEmptyArray(_ value: String) -> Bool {
+        value.filter { !$0.isWhitespace } == "()"
     }
 
     private static func isLineupValue(_ value: String) -> Bool {
-        pairs(in: value) == [Pair(src: capsLockHID, dst: f18HID)]
+        isComplete(value) && pairs(in: value) == [Pair(src: capsLockHID, dst: f18HID)]
     }
 
-    /// Each service's printed value when `output` is the macOS 27 per-service table, or nil for
-    /// the single-value format. A row starts with a hexadecimal registry ID and the property key;
-    /// every other line continues the value of the row above it.
+    /// A printed array whose dictionaries all closed and all parsed. `pairs(in:)` skips a
+    /// dictionary it cannot read, so a truncated dump could otherwise read as ours and a clear
+    /// would take the skipped remap with it.
+    private static func isComplete(_ value: String) -> Bool {
+        let compact = value.filter { !$0.isWhitespace }
+        guard compact.hasPrefix("("), compact.hasSuffix(")") else { return false }
+        let opened = compact.filter { $0 == "{" }.count
+        return opened == compact.filter { $0 == "}" }.count && opened == pairs(in: value).count
+    }
+
+    /// Each service's printed value in the macOS 27 table, or nil when a line is neither the
+    /// header, a row, nor the continuation of a row. A row starts with a hexadecimal registry ID
+    /// and the property key; any other line continues the value of the row above it.
     private static func serviceValues(in output: String) -> [String]? {
-        guard output.split(whereSeparator: \.isWhitespace).first == "RegistryID" else { return nil }
         var values: [String] = []
+        var sawHeader = false
         for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
             let fields = line.split(maxSplits: 2, whereSeparator: \.isWhitespace)
-            if fields.count >= 2, fields[0].allSatisfy(\.isHexDigit), fields[1] == "UserKeyMapping" {
+            if !sawHeader {
+                if fields.isEmpty { continue }
+                guard fields[0] == "RegistryID" else { return nil }
+                sawHeader = true
+            } else if fields.count >= 2, fields[1] == "UserKeyMapping" {
+                guard fields[0].allSatisfy(\.isHexDigit) else { return nil }
                 values.append(fields.count == 3 ? String(fields[2]) : "")
             } else if !values.isEmpty {
                 values[values.count - 1] += "\n" + line
+            } else if !fields.isEmpty {
+                return nil
             }
         }
         return values
