@@ -133,10 +133,11 @@ public enum CapsLockMapping {
 
     /// Each service's printed value in the macOS 27 table, or nil when a line is neither the
     /// header, a row, nor the continuation of a row. A row starts with a hexadecimal registry ID
-    /// and the property key; any other line continues the value of the row above it.
+    /// and the property key; other lines continue the row above it until its outer `(` closes.
     private static func serviceValues(in output: String) -> [String]? {
         var values: [String] = []
         var sawHeader = false
+        var openParens = 0
         for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
             let fields = line.split(maxSplits: 2, whereSeparator: \.isWhitespace)
             if !sawHeader {
@@ -145,14 +146,23 @@ public enum CapsLockMapping {
                 sawHeader = true
             } else if fields.count >= 2, fields[1] == "UserKeyMapping" {
                 guard fields[0].allSatisfy(\.isHexDigit) else { return nil }
-                values.append(fields.count == 3 ? String(fields[2]) : "")
-            } else if !values.isEmpty {
+                let value = fields.count == 3 ? String(fields[2]) : ""
+                values.append(value)
+                openParens = parenDepth(value)
+            } else if fields.isEmpty {
+                continue
+            } else if !values.isEmpty, openParens > 0 {
                 values[values.count - 1] += "\n" + line
-            } else if !fields.isEmpty {
+                openParens += parenDepth(line)
+            } else {
                 return nil
             }
         }
         return values
+    }
+
+    private static func parenDepth(_ text: some StringProtocol) -> Int {
+        text.reduce(0) { $0 + ($1 == "(" ? 1 : $1 == ")" ? -1 : 0) }
     }
 
     /// The value of `key` inside one printed dictionary. CoreFoundation prints these numbers in

@@ -134,6 +134,9 @@ private func runCapsLockMappingTests() throws {
     let strayLine = header + "    {\n100000b49   UserKeyMapping   ()\n"
     check(CapsLockMapping.state(of: strayLine) == .foreign,
           "a line before the first row makes the table unreadable")
+    let afterClose = header + "100000b49   UserKeyMapping   " + ours + "unexpected ()\n"
+    check(CapsLockMapping.state(of: afterClose) == .foreign,
+          "a line after a row's value has closed makes the table unreadable")
     let truncatedExtra = "(\n    {\n        HIDKeyboardModifierMappingDst = \(f18);\n"
         + "        HIDKeyboardModifierMappingSrc = \(caps);\n    },\n    {\n"
         + "        HIDKeyboardModifierMappingSrc = 30064771113;\n"
