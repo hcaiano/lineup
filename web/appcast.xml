@@ -7,6 +7,22 @@
     <description>Updates for Lineup, a macOS utilities suite.</description>
     <language>en</language>
     <item>
+      <title>Lineup 2.0.3</title>
+      <link>https://lineup.caiano.com/</link>
+      <sparkle:version>21</sparkle:version>
+      <sparkle:shortVersionString>2.0.3</sparkle:shortVersionString>
+      <sparkle:releaseNotesLink>https://lineup.caiano.com/release-notes/2.0.3</sparkle:releaseNotesLink>
+      <description><![CDATA[
+        <h2>Lineup 2.0.3</h2>
+        <p>Adds an update track in Settings &rarr; General. Stable stays the default and gets tested
+        releases. Nightly gets the newest public builds first, which may be less reliable. Returning to
+        Stable waits for the next Stable release; Lineup never downgrades itself.</p>
+      ]]></description>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Mon, 28 Sep 2026 18:59:47 +0000</pubDate>
+      <enclosure url="https://lineup.caiano.com/downloads/Lineup-2.0.3.dmg" type="application/octet-stream" sparkle:edSignature="k22IHBOK+FZfgETZ6H3otyMjmDo8cCyDu4Ixy4ch9UfTJxS8etrMb0GQS2nXoFkjsgEJq6OO1CjyuZFzAin9AA==" length="3453225" />
+    </item>
+    <item>
       <title>Lineup 2.0.2</title>
       <link>https://lineup.caiano.com/</link>
       <sparkle:version>20</sparkle:version>
