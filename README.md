@@ -45,9 +45,9 @@ swift build
 swift run lineup-tests
 ```
 
-Building needs the macOS 26 SDK. Command Line Tools 26 are enough; full Xcode is optional. See
-[BUILDING.md](BUILDING.md) to assemble the app, keep a stable local Accessibility grant, and
-understand the project layout.
+Building needs the macOS 26 SDK or later. Command Line Tools 26 are enough; with the macOS 27 SDK,
+the app needs full Xcode 27. See [BUILDING.md](BUILDING.md) to assemble the app, keep a stable
+local Accessibility grant, and understand the project layout.
 
 ## Contribute
 
