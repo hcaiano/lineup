@@ -13,8 +13,10 @@ contribution workflow.
   a macro whose compiler plugin ships only inside `Xcode.app`, so Command Line Tools 27 stop with
   `plugin for module 'SwiftUIMacros' not found`. Select Xcode once with
   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`, or prefix a single command
-  with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. `swift run lineup-tests` still
-  works with Command Line Tools 27 alone.
+  with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. Without Xcode, build against the
+  macOS 26 SDK that Command Line Tools 27 still include:
+  `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build`.
+  `swift run lineup-tests` works with Command Line Tools 27 alone.
 
 ## Build and test
 
