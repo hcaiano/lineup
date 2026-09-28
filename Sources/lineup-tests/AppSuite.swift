@@ -637,12 +637,12 @@ private func runIdentityTests() throws {
     check(derived == literal, "the FourCharCode derived from Product.hotkeySignatureString is 'LNUP'")
     check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
 
-    check(plistString("CFBundleShortVersionString") == "2.0.1", "Info.plist ships 2.0.1")
+    check(plistString("CFBundleShortVersionString") == "2.0.2", "Info.plist ships 2.0.2")
     // Sparkle offers an update only when the appcast's sparkle:version (CFBundleVersion) sorts
-    // ABOVE the running app's. 2.0.0 shipped as build 18, so a 2.0.1 that reused 18 would be
+    // ABOVE the running app's. 2.0.1 shipped as build 19, so a 2.0.2 that reused 19 would be
     // invisible to every existing user. The build number must stay strictly monotonic.
-    check(plistString("CFBundleVersion") == "19", "Info.plist ships build 19")
-    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 18, "build number is above 2.0.0's build 18")
+    check(plistString("CFBundleVersion") == "20", "Info.plist ships build 20")
+    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 19, "build number is above 2.0.1's build 19")
 }
 
 private func runReleaseToolingTests() throws {
