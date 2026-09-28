@@ -66,7 +66,7 @@ body:
     attributes:
       label: Lineup version
       description: Find this in Lineup > About.
-      placeholder: 2.0.2
+      placeholder: 2.0.3
     validations:
       required: true
 
