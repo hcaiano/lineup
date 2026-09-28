@@ -7,6 +7,22 @@
     <description>Updates for Lineup, a macOS utilities suite.</description>
     <language>en</language>
     <item>
+      <title>Lineup 2.0.2</title>
+      <link>https://lineup.caiano.com/</link>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>2.0.2</sparkle:shortVersionString>
+      <sparkle:releaseNotesLink>https://lineup.caiano.com/release-notes/2.0.2</sparkle:releaseNotesLink>
+      <description><![CDATA[
+        <h2>Lineup 2.0.2</h2>
+        <p>Fixes Hyper Key on macOS 27. Lineup read the new way macOS 27 reports key remaps as another
+        app's Caps Lock remap, so Hyper Key stayed unavailable. Hyper Key now starts normally again, and
+        Lineup still leaves alone any Caps Lock remap that another app owns.</p>
+      ]]></description>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Mon, 28 Sep 2026 18:10:34 +0000</pubDate>
+      <enclosure url="https://lineup.caiano.com/downloads/Lineup-2.0.2.dmg" type="application/octet-stream" sparkle:edSignature="e/eAZi6Vq01597uvau6BZqVwk+lrmQhgtKjVme8COuGi6pt6idfLrjVEliyAqEBXLaQfZmXEYCE8GLvM9ZxYCQ==" length="3404518" />
+    </item>
+    <item>
       <title>Lineup 2.0.1</title>
       <link>https://lineup.caiano.com/</link>
       <sparkle:version>19</sparkle:version>
