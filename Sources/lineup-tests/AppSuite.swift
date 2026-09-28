@@ -712,13 +712,13 @@ private func runIdentityTests() throws {
     check(derived == literal, "the FourCharCode derived from Product.hotkeySignatureString is 'LNUP'")
     check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
 
-    check(plistString("CFBundleShortVersionString") == "2.0.1", "Info.plist ships 2.0.1")
+    check(plistString("CFBundleShortVersionString") == "2.0.2", "Info.plist ships 2.0.2")
     check(plistString("LineupBuildChannel") == "stable", "Info.plist marks the public build Stable")
     // Sparkle offers an update only when the appcast's sparkle:version (CFBundleVersion) sorts
-    // ABOVE the running app's. 2.0.0 shipped as build 18, so a 2.0.1 that reused 18 would be
+    // ABOVE the running app's. 2.0.1 shipped as build 19, so a 2.0.2 that reused 19 would be
     // invisible to every existing user. The build number must stay strictly monotonic.
-    check(plistString("CFBundleVersion") == "19", "Info.plist ships build 19")
-    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 18, "build number is above 2.0.0's build 18")
+    check(plistString("CFBundleVersion") == "20", "Info.plist ships build 20")
+    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 19, "build number is above 2.0.1's build 19")
 }
 
 private func runReleaseToolingTests() throws {
@@ -821,8 +821,8 @@ private func runReleaseToolingTests() throws {
             && nightly.contains("build-app.sh dist/nightly")
             && building.contains("build-app.sh dist/nightly")
             && building.contains("rechecks the same HEAD")
-            && building.contains("mv dist/nightly/Lineup-2.0.2.dmg")
-            && building.contains("Lineup-2.0.2-nightly.20260830.1.dmg")
+            && building.contains("mv dist/nightly/Lineup-2.0.3.dmg")
+            && building.contains("Lineup-2.0.3-nightly.20260830.1.dmg")
             && !building.contains("dist-nightly"),
           "the Nightly helper fails on stale metadata, uses bounded components, and enforces monotonic plans")
     check(!nightly.contains("gh release create") && !nightly.contains("gh release upload")
@@ -915,9 +915,10 @@ private func runShellSourceScanTests() throws {
     check(shortcutKit.contains("static func display(keyCode: Int, modifiers: UInt32)")
           && shortcutKit.contains("static func display(keyCode: Int, modifiers: Int)"),
           "merged ShortcutKit exposes both display overloads")
-    check(shortcutKit.contains("static let quickActions") && shortcutKit.contains("static let zoneRows")
-          && shortcutKit.contains("dragSnapModifierChoices"),
-          "merged ShortcutKit keeps Lineup's quick actions, zone rows and drag-snap helpers")
+    check(shortcutKit.contains("static let quickActions") && shortcutKit.contains("dragSnapModifierChoices"),
+          "merged ShortcutKit keeps Lineup's quick actions and drag-snap helpers")
+    check(!shortcutKit.contains("zoneRows"),
+          "the fixed zoneRows constant is gone (zone rows come from the dynamic ZoneShortcutGroup sections)")
 
     // The 2.0 config file is new; zones.json is the rollback safety net and must never be
     // written, renamed or deleted. Nothing outside Product may name it.
@@ -1725,7 +1726,7 @@ private func runParityFixTests() throws {
         check(cyclerPane[start.lowerBound...].prefix(400).contains("cancelRecording?()"),
               "\(fn) cancels any live capture")
     }
-    check(cyclerPane.contains("model.cancelRecording = { [weak recorder] in recorder?.cancel() }")
+    check(cyclerPane.contains("model.cancelRecording = { [weak recorder = recorder] in recorder?.cancel() }")
             && cyclerPane.contains("model.cancelRecording = nil"),
           "the Cycler pane lends the model its recorder's cancel, and takes it back on disappear")
     check(cyclerPane.contains("boundCombos.conflictOwner(keyCode: keyCode, modifiers: modifiers,"),
@@ -2160,17 +2161,17 @@ private func runToolWriteDisciplineTests() throws {
 
     // ---- 7. Zones validates a layout at WRITE time ----
     let zonesTool = source("Sources/lineup/Tools/Zones/ZonesTool.swift")
-    if let start = zonesTool.range(of: "private func applyLayouts(") {
+    if let start = zonesTool.range(of: "private func applyEditorProposal(") {
         let body = zonesTool[start.lowerBound...].prefix(900)
-        guard let validate = body.range(of: "try updated.validate()"),
-              let save = body.range(of: "try services.config.save(updated)") else {
-            check(false, "applyLayouts validates and then saves")
+        guard let validate = body.range(of: "try proposal.validate()"),
+              let save = body.range(of: "try services.config.save(proposal)") else {
+            check(false, "applyEditorProposal validates and then saves")
             return
         }
         check(validate.lowerBound < save.lowerBound,
               "an invalid layout is refused at write time, not discovered at the next launch")
     } else {
-        check(false, "ZonesTool owns applyLayouts")
+        check(false, "ZonesTool owns applyEditorProposal")
     }
     check(zonesTool.contains("if let rejected = try services.config.load(JSONValue.self)"),
           "Zones' reset aborts when the rejected blob cannot be read back")
@@ -2596,8 +2597,41 @@ private func runVisualDesignTests() throws {
           "the editor needs a running tool AND a writable config")
     check(source("Sources/lineup/Tools/Zones/ZonesTool.swift").contains("openLayoutEditor: { [weak self] in self?.openEditor() }"),
           "the pane's button and the menu item run the SAME action")
-    check(zonesPane.contains("if row.isBeyondLayout") && zonesPane.contains("(not in current layout)"),
-          "a zone row past the saved layout says so instead of silently doing nothing")
+    // Zone shortcuts are presented as dynamic per-display group sections, not fixed rows.
+    check(zonesPane.contains("struct ZoneShortcutGroup: Identifiable") && zonesPane.contains("group.rangeLabel")
+            && zonesPane.contains("group.status == .connected"),
+          "zone rows come from dynamic per-display groups with a range label and connected status")
+    check(!zonesPane.contains("isBeyondLayout") && !zonesPane.contains("(not in current layout)"),
+          "the fixed zone-row list and its beyond-layout special case are gone (groups cover all mapped zones)")
+    let zonesToolSource = source("Sources/lineup/Tools/Zones/ZonesTool.swift")
+    if let groupsStart = zonesToolSource.range(of: "private var zoneShortcutGroupsForSettings") {
+        let tail = zonesToolSource[groupsStart.lowerBound...]
+        let end = tail.range(of: "\n    }")
+        let groupsBody = end != nil ? String(tail[..<end!.lowerBound]) : ""
+        check(groupsBody.contains("if usingDefaults {") && groupsBody.contains("runtimeNumberingSnapshot()")
+                && groupsBody.contains("committedNumberingSnapshot()"),
+              "Settings shows the candidate map ONLY for untouched defaults; a loaded/saved section mirrors committed routing")
+        check(groupsBody.contains("\"Unavailable zones\"") && groupsBody.contains("notInSavedLayout")
+                && groupsBody.contains("shortcuts.bindings.compactMap"),
+              "out-of-range bindings land in an 'Unavailable zones' group built from ACTUAL bindings, never invented rows")
+    } else {
+        check(false, "zoneShortcutGroupsForSettings body is readable")
+    }
+    if let layoutsStart = zonesToolSource.range(of: "private func applyEditorProposal(") {
+        let tail = zonesToolSource[layoutsStart.lowerBound...]
+        let end = tail.range(of: "\n    }")
+        let body = end != nil ? String(tail[..<end!.lowerBound]) : ""
+        let noop = body.range(of: "if proposal == config { return true }")
+        let save = body.range(of: "config = proposal")
+        let menu = body.range(of: "services.refreshMenu()")
+        let model = body.range(of: "settingsModel?.refresh()")
+        check(noop != nil && save != nil && menu != nil && model != nil
+                && noop!.lowerBound < save!.lowerBound
+                && save!.lowerBound < menu!.lowerBound && menu!.lowerBound < model!.lowerBound,
+              "a proposal equal to committed state writes nothing; otherwise a successful editor save refreshes the menu AND Settings' zone groups, in that order, only after assignment")
+    } else {
+        check(false, "applyEditorProposal body is readable")
+    }
 
     // ---- 13. Hyperkey: the F-key caveat, where it applies ----
     check(source("Sources/HyperkeyCore/TriggerKey.swift").contains("public var isFunctionKey: Bool"),

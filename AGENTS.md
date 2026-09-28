@@ -76,6 +76,12 @@ swift build
 swift run lineup-tests
 ```
 
+With the macOS 27 SDK, the app target needs full Xcode. When `xcode-select -p` points at Command
+Line Tools, prefix `swift build` and `Scripts/build-app.sh` with
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, or with
+`SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk` when Xcode is not installed;
+[BUILDING.md](BUILDING.md#requirements) explains why.
+
 For every code change:
 
 - Run `swift run lineup-tests`; add focused checks for new core behavior and regressions.

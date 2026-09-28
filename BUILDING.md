@@ -7,8 +7,16 @@ contribution workflow.
 ## Requirements
 
 - Swift 5.9 or later
-- Xcode 26 or Xcode **Command Line Tools 26**, so the macOS 26 SDK is available. Full Xcode is
-  optional. The built app still supports macOS 13 or later.
+- The macOS 26 SDK or later. Xcode **Command Line Tools 26** are enough for the macOS 26 SDK; full
+  Xcode is optional. The built app still supports macOS 13 or later.
+- With the macOS 27 SDK, the app target needs full **Xcode 27**. That SDK makes SwiftUI's `@State`
+  a macro whose compiler plugin ships only inside `Xcode.app`, so Command Line Tools 27 stop with
+  `plugin for module 'SwiftUIMacros' not found`. Select Xcode once with
+  `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`, or prefix a single command
+  with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. Without Xcode, build against the
+  macOS 26 SDK that Command Line Tools 27 still include:
+  `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build`.
+  `swift run lineup-tests` works with Command Line Tools 27 alone.
 
 ## Build and test
 
@@ -29,8 +37,8 @@ open dist/Lineup.app
 
 `build-app.sh` produces a **universal** (arm64 + x86_64) app by default when `UNIVERSAL` is not set,
 so release builds run on every supported Mac. A universal build uses separate `--triple` builds and
-combines them with `lipo`; it does not need full Xcode. The assembled app includes the Lineup and
-Sparkle licence notices in `Contents/Resources`.
+combines them with `lipo`, which ships with the Command Line Tools. The assembled app includes the
+Lineup and Sparkle licence notices in `Contents/Resources`.
 
 Without a stable identity, a local app is ad-hoc signed. Its signature changes every build, so
 macOS keeps asking you to re-grant Accessibility. If you plan to launch repeated local builds, run
@@ -43,8 +51,8 @@ the prerelease value in the numeric-with-development-suffix `CFBundleVersion`:
 
 ```sh
 LINEUP_BUILD_CHANNEL=nightly \
-LINEUP_VERSION=2.0.2 \
-LINEUP_BUILD_VERSION=19.02.42a001 \
+LINEUP_VERSION=2.0.3 \
+LINEUP_BUILD_VERSION=20.02.42a001 \
 UNIVERSAL=0 ./Scripts/build-app.sh dist/nightly
 ```
 
@@ -83,22 +91,22 @@ the feed commit changes the checkout, while still requiring the public tag to pe
 source commit.
 
 ```sh
-./Scripts/nightly-release.sh --verify v2.0.2-nightly.20260830.1
+./Scripts/nightly-release.sh --verify v2.0.3-nightly.20260830.1
 ./Scripts/make-dmg.sh dist/nightly
-mv dist/nightly/Lineup-2.0.2.dmg \
-   dist/nightly/Lineup-2.0.2-nightly.20260830.1.dmg
+mv dist/nightly/Lineup-2.0.3.dmg \
+   dist/nightly/Lineup-2.0.3-nightly.20260830.1.dmg
 ./Scripts/sparkle-appcast.sh --nightly \
-  dist/nightly/Lineup-2.0.2-nightly.20260830.1.dmg \
-  https://github.com/hcaiano/lineup/releases/download/v2.0.2-nightly.20260830.1/Lineup-2.0.2-nightly.20260830.1.dmg \
-  2.0.2-nightly.20260830.1 19.02.42a001
+  dist/nightly/Lineup-2.0.3-nightly.20260830.1.dmg \
+  https://github.com/hcaiano/lineup/releases/download/v2.0.3-nightly.20260830.1/Lineup-2.0.3-nightly.20260830.1.dmg \
+  2.0.3-nightly.20260830.1 20.02.42a001
 ```
 
 `make-dmg.sh` names the local image from the numeric bundle version. Rename it to
 `Lineup-<nightly-version>.dmg` before attaching it to the public prerelease: this is the exact
 asset name that `nightly-release.sh --verify` requires.
 
-`CFBundleVersion` is deliberately based on the current Stable build. With Stable build `19`, the
-pinned Sparkle comparator orders `19 < 19.00.01a001 < 19.00.01a002 < 19.01.00a001 < 20`.
+`CFBundleVersion` is deliberately based on the current Stable build. With Stable build `20`, the
+pinned Sparkle comparator orders `20 < 20.00.01a001 < 20.00.01a002 < 20.01.00a001 < 21`.
 The `a1...a255` suffix range is Apple-valid and leaves a later Stable build able to supersede
 every Nightly build. The T3 Nightly version is used for the tag, asset name, and appcast
 `sparkle:shortVersionString`; the bundled `CFBundleShortVersionString` stays numeric.

@@ -171,12 +171,19 @@ validate_source_snapshot() {
 # supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
 # `--arch a --arch b` needs full Xcode (xcbuild); under Command Line Tools we build each slice
 # with --triple into its own scratch path and lipo them.
+#
+# Always the NATIVE build system. Swift 6.4 made swift-build the default, and its products record
+# the deployment target (13.0) as the linked SDK version. AppKit gates linked-on-or-after behavior
+# on that version, so the app would run in old-SDK compatibility mode unlike every 2.x release so
+# far. Native also keeps the <scratch>/<triple>/release layout this script reads. The flag is
+# deprecated; when a toolchain drops it, this fails loudly rather than shipping the wrong SDK.
+SWIFT_BUILD=(swift build -c release --build-system native)
 UNIVERSAL="${UNIVERSAL:-1}"
 if [ "${UNIVERSAL}" = "1" ]; then
   echo "==> swift build -c release (universal: arm64 + x86_64)"
   ARM_SCRATCH=".build/uni-arm64"; X86_SCRATCH=".build/uni-x86_64"
-  swift build -c release --triple arm64-apple-macosx13.0  --scratch-path "${ARM_SCRATCH}"
-  swift build -c release --triple x86_64-apple-macosx13.0 --scratch-path "${X86_SCRATCH}"
+  "${SWIFT_BUILD[@]}" --triple arm64-apple-macosx13.0  --scratch-path "${ARM_SCRATCH}"
+  "${SWIFT_BUILD[@]}" --triple x86_64-apple-macosx13.0 --scratch-path "${X86_SCRATCH}"
   mkdir -p ".build/uni-universal/release"
   lipo -create \
     "${ARM_SCRATCH}/arm64-apple-macosx/release/${EXEC_NAME}" \
@@ -191,12 +198,12 @@ else
   if [ "${BUILD_CHANNEL}" = "nightly" ]; then
     # The detached worktree has no prior .build output. Keep this explicit scratch path so a
     # Nightly build can never consume a binary produced by the mutable source checkout.
-    swift build -c release --scratch-path .build
+    "${SWIFT_BUILD[@]}" --scratch-path .build
     EXEC_SRC=".build/release/${EXEC_NAME}"
     SPARKLE_SEARCH_DIR=".build/release"
     SPARKLE_LICENSE=".build/checkouts/Sparkle/LICENSE"
   else
-    swift build -c release
+    "${SWIFT_BUILD[@]}"
     EXEC_SRC="${BUILD_DIR}/${EXEC_NAME}"
     SPARKLE_SEARCH_DIR="${BUILD_DIR}"
     SPARKLE_LICENSE=".build/checkouts/Sparkle/LICENSE"
@@ -375,11 +382,14 @@ codesign --verify --deep --strict "${APP}"
 
 # Fail closed on a universal build if either shipped binary isn't actually fat — e.g. a --triple
 # build silently produced one arch — instead of relying on manual `lipo -info` inspection.
+# One arch per `-verify_arch`: the Command Line Tools 27 lipo reads a second arch as an input file.
 if [ "${UNIVERSAL}" = "1" ]; then
-  lipo "${APP}/Contents/MacOS/${EXEC_NAME}" -verify_arch arm64 x86_64 \
-    || { echo "error: ${EXEC_NAME} is not universal (arm64 + x86_64)." >&2; exit 1; }
-  lipo "${FW}/Versions/B/Sparkle" -verify_arch arm64 x86_64 \
-    || { echo "error: embedded Sparkle.framework is not universal (arm64 + x86_64)." >&2; exit 1; }
+  for arch in arm64 x86_64; do
+    lipo "${APP}/Contents/MacOS/${EXEC_NAME}" -verify_arch "${arch}" \
+      || { echo "error: ${EXEC_NAME} is not universal (missing ${arch})." >&2; exit 1; }
+    lipo "${FW}/Versions/B/Sparkle" -verify_arch "${arch}" \
+      || { echo "error: embedded Sparkle.framework is not universal (missing ${arch})." >&2; exit 1; }
+  done
   echo "    arch: universal (arm64 + x86_64) verified."
 fi
 

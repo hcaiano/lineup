@@ -2,9 +2,10 @@ import Foundation
 
 /// One global shortcut: an action id bound to a key combo. `keyCode` is a Carbon virtual
 /// key; `modifiers` is a Carbon modifier mask (cmd/opt/ctrl/shift bits). Stored as plain
-/// ints so the model stays pure (no Carbon import in core).
+/// ints so the model stays pure (no Carbon import in core). A `zone:N` action is
+/// positional in the GLOBAL numbering across all saved displays.
 public struct ShortcutBinding: Codable, Equatable {
-    public var action: String   // "full"/"left"/... quick action, or "zone:N" positional
+    public var action: String   // "full"/"left"/... quick action, or "zone:N" global positional
     public var keyCode: Int
     public var modifiers: Int
 
@@ -15,7 +16,10 @@ public struct ShortcutBinding: Codable, Equatable {
     }
 }
 
-/// The global shortcut set (same on every screen; targets resolve per-screen at fire time).
+/// The global shortcut set — one set shared by every display; targets resolve per-screen
+/// at fire time. A `zone:N` action encodes the zero-based GLOBAL position `N-1`; it is the
+/// runtime's `ZoneNumbering.resolve(globalNumber:)` that later yields the OWNING display
+/// and that display's local zone index for layout geometry.
 public struct Shortcuts: Codable, Equatable {
     public var bindings: [ShortcutBinding]
 
@@ -103,8 +107,10 @@ public struct DragSnapTrigger: Equatable {
     }
 }
 
-/// Positional Zone-N action ids ("zone:1" = first zone). Indices are 1-based in the id,
-/// 0-based when resolving against `Layout.zoneRect`.
+/// Positional Zone-N action ids ("zone:1" = the first zone of the GLOBAL numbering across
+/// all saved displays). `zeroBasedIndex` returns the zero-based GLOBAL position (`N-1`);
+/// `ZoneNumbering.resolve` is what maps that position onto the owning display and its
+/// display-local zone index, which is what layout geometry consumes.
 public enum ZoneAction {
     public static func id(_ oneBased: Int) -> String { "zone:\(oneBased)" }
 

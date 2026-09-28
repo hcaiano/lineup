@@ -22,7 +22,8 @@ func runHyperkeyTests() throws {
 
 // MARK: - The hidutil mapping dump (pure parsing)
 
-/// `hidutil property --get UserKeyMapping` prints a CoreFoundation description. The parsing lives
+/// `hidutil property --get UserKeyMapping` prints a CoreFoundation description (one per HID
+/// service on macOS 27). The parsing lives
 /// in `HyperkeyCore` precisely so it can be checked here: the app target is an AppKit executable
 /// this runner cannot import, and getting "is this mapping ours?" wrong either strands the user's
 /// Caps Lock or wipes a mapping that belongs to somebody else.
@@ -81,6 +82,72 @@ private func runCapsLockMappingTests() throws {
     check(CapsLockMapping.pairs(in: "(\n)\n").isEmpty, "an empty dump has no pairs")
     check(CapsLockMapping.pairs(in: "({HIDKeyboardModifierMappingSrc = 30064771129;})").isEmpty,
           "a Src with no Dst is not a pair")
+
+    // ---- macOS 27 per-service table ----
+    // macOS 27 prints one row per HID service. Before this was parsed, every table read as
+    // "somebody else's mapping" and Hyper Key stayed blocked on every launch.
+    func table(_ values: [String]) -> String {
+        let rows = values.enumerated().map { index, value in
+            "10000\(String(0xb49 + index, radix: 16))   UserKeyMapping   \(value)"
+        }
+        return (["RegistryID  Key                   Value"] + rows).joined(separator: "\n") + "\n"
+    }
+    let ours = dump([(caps, f18)])
+    let freshBoot = table(["(null)", "(\n)", "(null)"])
+    check(CapsLockMapping.isEmpty(freshBoot), "a table of (null) and () services reads as empty")
+    check(!CapsLockMapping.isLineupMapping(freshBoot), "an empty table is not our mapping")
+
+    // What Lineup's own `--set` leaves behind: our pair everywhere, `(null)` where a service does
+    // not hold the property.
+    let applied = table([ours, "(null)", ours])
+    check(CapsLockMapping.state(of: applied) == .lineup,
+          "our mapping on every service that holds one reads as fully installed")
+    check(CapsLockMapping.isLineupMapping(applied), "a fully installed table is ours")
+    check(!CapsLockMapping.isEmpty(applied), "a table with our mapping is not empty")
+
+    // Our pair on some keyboards, an explicit `()` on another: same shape, not installed there.
+    // Cleanup may still clear it (that only empties services); installing re-applies only a
+    // mapping Lineup owns.
+    let partial = table([ours, "(\n)", "(null)"])
+    check(CapsLockMapping.state(of: partial) == .partialLineup,
+          "our mapping next to an explicitly empty service reads as partial")
+    check(CapsLockMapping.isLineupMapping(partial) && !CapsLockMapping.isEmpty(partial),
+          "a partial table keeps our shape for cleanup and is not empty")
+
+    check(!CapsLockMapping.isLineupMapping(table([ours, dump([(f18, caps)])])),
+          "one service with a reversed mapping makes the table not ours")
+    check(!CapsLockMapping.isLineupMapping(table([ours, dump([(caps, f18), (0x700000029, caps)])])),
+          "one service with an extra remap makes the table not ours")
+    check(!CapsLockMapping.isEmpty(table([])) && !CapsLockMapping.isLineupMapping(table([])),
+          "a header with no service rows is neither empty nor ours")
+    check(!CapsLockMapping.isEmpty(table(["(null)", ""])),
+          "a service row with no value is not read as empty")
+
+    // ---- Unreadable or incomplete dumps are never empty and never ours ----
+    // Each of these once let a malformed or cut-off dump pass for "nothing mapped" or "only ours",
+    // which would authorize a global write or a clear over somebody else's remap.
+    let header = "RegistryID  Key                   Value\n"
+    let badRowFirst = header + "BAD-ID   UserKeyMapping   " + dump([(f18, caps)])
+        + "100000b49   UserKeyMapping   ()\n"
+    check(CapsLockMapping.state(of: badRowFirst) == .foreign,
+          "a row whose registry ID is not hexadecimal makes the table unreadable")
+    let strayLine = header + "    {\n100000b49   UserKeyMapping   ()\n"
+    check(CapsLockMapping.state(of: strayLine) == .foreign,
+          "a line before the first row makes the table unreadable")
+    let afterClose = header + "100000b49   UserKeyMapping   " + ours + "unexpected ()\n"
+    check(CapsLockMapping.state(of: afterClose) == .foreign,
+          "a line after a row's value has closed makes the table unreadable")
+    let truncatedExtra = "(\n    {\n        HIDKeyboardModifierMappingDst = \(f18);\n"
+        + "        HIDKeyboardModifierMappingSrc = \(caps);\n    },\n    {\n"
+        + "        HIDKeyboardModifierMappingSrc = 30064771113;\n"
+    check(!CapsLockMapping.isLineupMapping(table([ours, truncatedExtra])),
+          "a service whose extra dictionary was cut off is not ours")
+    check(!CapsLockMapping.isLineupMapping(truncatedExtra),
+          "a single-value dump cut off inside an extra dictionary is not ours")
+    check(!CapsLockMapping.isLineupMapping(
+        "({HIDKeyboardModifierMappingSrc = 30064771129; HIDKeyboardModifierMappingDst = 30064771181;},"
+            + "{HIDKeyboardModifierMappingSrc = 30064771113;})"),
+          "our pair next to a dictionary with no Dst is not ours")
 }
 
 private func runHyperkeyModelTests() throws {
@@ -307,6 +374,20 @@ private func runHyperkeySourceScanTests() throws {
     }
     check(tool.contains("CapsLockHandoff.adoptLegacyOwnershipIfNeeded()"),
           "HyperkeyTool.start() adopts a legacy Caps Lock mapping before the first apply()")
+
+    // A failed `hidutil --get` can print a prefix that parses as empty or ours. It must decide
+    // nothing: the probe reports a non-zero exit as nil, and every caller treats nil as unknown.
+    check(controller.contains("static func currentMapping() -> String?")
+          && controller.contains("guard result.status == 0 else"),
+          "the hidutil probe reports a non-zero exit as unknown, never as its partial output")
+    check(controller.contains(#"return .blocked("hidutil failed to read UserKeyMapping")"#),
+          "enabling blocks without writing when the probe fails")
+    check(controller.contains("guard let mapping = currentMapping() else { return false }"),
+          "an owned-mapping cleanup keeps its claim when the probe fails")
+    check(handoff.contains("guard let adopted else {"),
+          "legacy adoption keeps Cycler's claim when the probe fails")
+    check(controller.contains("state == .partialLineup && !Self.ownsCapsLockMapping"),
+          "a partial table is re-applied only when Lineup owns the mapping")
 
     // Orphan detection must key on LIVENESS, not on the legacy flag: Cycler clears that flag only
     // on a clean teardown, so the crash it is meant to catch leaves the flag set. Keying on the

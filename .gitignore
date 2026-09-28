@@ -8,6 +8,7 @@ dist/
 Icon/AppIcon.iconset/
 
 # Local planning/dev logs (not part of the product)
+.slim/deepwork/
 task_plan.md
 findings.md
 progress.md

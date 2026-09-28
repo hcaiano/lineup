@@ -324,13 +324,19 @@ final class HyperKeyController {
     }
 
     private static func ensureCapsLockMapping() -> MappingResult {
-        let mapping = Self.currentMapping()
-        let mappingIsOurs = Self.isMappingOurs(mapping)
-        guard Self.isMappingEmpty(mapping) || mappingIsOurs else {
+        guard let mapping = Self.currentMapping() else {
+            return .blocked("hidutil failed to read UserKeyMapping")
+        }
+        let state = CapsLockMapping.state(of: mapping)
+        // A partial table is our pair on some keyboards and `()` on others. Re-applying fills the
+        // gaps, but only a mapping Lineup owns may be extended: someone else's per-device remap
+        // stays theirs, so Lineup reports the conflict instead of claiming Active.
+        let foreignForUs = state == .foreign || (state == .partialLineup && !Self.ownsCapsLockMapping)
+        guard !foreignForUs else {
             return .blocked("existing hidutil UserKeyMapping is not Lineup's CapsLock->F18 mapping")
         }
         var createdMapping = false
-        if !mappingIsOurs {
+        if state != .lineup {
             guard Self.applyCapsLockToF18() else {
                 return .blocked("hidutil failed to apply CapsLock->F18")
             }
@@ -532,22 +538,27 @@ final class HyperKeyController {
     // internal rather than private: `CapsLockHandoff` needs exactly these to adopt a mapping a
     // previous standalone-Cycler run left behind, to spot an orphaned one, and to restore it on
     // request. Nothing else in the target may touch hidutil.
-    static func currentMapping() -> String {
-        runHidutil(arguments: ["property", "--get", "UserKeyMapping"]).output
+
+    /// The raw dump, or nil when `hidutil` did not exit cleanly: its partial output can look empty
+    /// or ours while a later service holds somebody else's remap, so a failed probe must never
+    /// authorize a write or an ownership change.
+    static func currentMapping() -> String? {
+        let result = runHidutil(arguments: ["property", "--get", "UserKeyMapping"])
+        guard result.status == 0 else {
+            log.error("hidutil read failed \(result.status, privacy: .public): \(result.error, privacy: .public)")
+            return nil
+        }
+        return result.output
     }
 
     /// `hidutil` is a subprocess and every caller is on the main thread (launch, the menu's
     /// recovery probe, the pane's button). Same queue as the mapping work, so a probe queued
     /// before an apply is guaranteed to be answered first.
-    static func currentMappingAsync(completion: @escaping (String) -> Void) {
+    static func currentMappingAsync(completion: @escaping (String?) -> Void) {
         hidutilQueue.async {
             let mapping = currentMapping()
             DispatchQueue.main.async { completion(mapping) }
         }
-    }
-
-    static func isMappingEmpty(_ output: String) -> Bool {
-        CapsLockMapping.isEmpty(output)
     }
 
     /// Shape only — the pair is parsed Src-with-its-own-Dst, so a REVERSED F18 -> Caps Lock
@@ -579,7 +590,7 @@ final class HyperKeyController {
 
     @discardableResult
     static func clearIfMappingIsOurs() -> Bool {
-        guard isMappingOurs(currentMapping()) else { return false }
+        guard let mapping = currentMapping(), isMappingOurs(mapping) else { return false }
         let result = runHidutil(arguments: ["property", "--set", #"{"UserKeyMapping":[]}"#])
         if result.status != 0 {
             log.error("hidutil clear failed \(result.status, privacy: .public): \(result.error, privacy: .public)")
@@ -590,7 +601,10 @@ final class HyperKeyController {
 
     private static func clearKnownOwnedMapping() -> Bool {
         guard ownsCapsLockMapping else { return false }
-        guard isMappingOurs(currentMapping()) else {
+        // An unreadable probe proves nothing: keep the claim so a later pass, or the exit hook,
+        // can still clear the mapping.
+        guard let mapping = currentMapping() else { return false }
+        guard isMappingOurs(mapping) else {
             setOwnsCapsLockMapping(false)
             clearOnExit = false
             return false
@@ -655,11 +669,12 @@ final class HyperKeyController {
     /// Probe AND adopt in one step on the hidutil queue, so a `start()` that queues its own
     /// mapping work immediately afterwards is guaranteed to see the ownership flag already set.
     /// Splitting the two across a main-thread hop would race with `ensureCapsLockMapping`.
-    static func adoptAppliedMappingIfPresentAsync(completion: @escaping (Bool) -> Void) {
+    /// `completion` gets nil when the probe failed and nothing is known.
+    static func adoptAppliedMappingIfPresentAsync(completion: @escaping (Bool?) -> Void) {
         installAtexit()
         hidutilQueue.async {
-            let present = isMappingOurs(currentMapping())
-            if present { adoptAppliedMapping() }
+            let present = currentMapping().map(isMappingOurs)
+            if present == true { adoptAppliedMapping() }
             DispatchQueue.main.async { completion(present) }
         }
     }
