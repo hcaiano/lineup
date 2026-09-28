@@ -21,7 +21,9 @@ need maintainer agreement before work starts.
 ## Set up the project
 
 You need the macOS 26 SDK or later. Command Line Tools 26 are enough, and the built app still
-supports macOS 13 or later. With the macOS 27 SDK, the app needs full Xcode 27; see
+supports macOS 13 or later. If `xcode-select -p` points at Command Line Tools 27, select full
+Xcode 27 before `swift build`, or run
+`SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk swift build` instead; see
 [BUILDING.md](BUILDING.md#requirements).
 
 ```sh
