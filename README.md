@@ -4,7 +4,7 @@
 
 # Lineup
 
-**A native macOS menu-bar suite for window layouts and keyboard shortcuts.**
+**A native macOS menu-bar suite for window layouts, keyboard shortcuts and world clocks.**
 
 [Download](https://lineup.caiano.com) · [Build from source](BUILDING.md) ·
 [Contribute](CONTRIBUTING.md)
@@ -13,7 +13,7 @@
 
 ![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup combines three tools. Enable only the tools you need:
+Lineup combines four tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
   Zone shortcuts are numbered across ALL your displays: each display's Settings group shows its
@@ -25,8 +25,37 @@ Lineup combines three tools. Enable only the tools you need:
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
+- **World Clock:** Compare cities with your local time, scroll through nearby hours, and pin a
+  place's live time to the menu bar. City search and sunrise/sunset estimates work offline.
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
+
+## World Clock
+
+Enable World Clock in Settings to add its clock icon to the menu bar. It starts disabled and
+does not require Accessibility, Input Monitoring or location access. Its icon is independent of
+the main Lineup icon's visibility preference.
+
+- Click **+** to search cities or IANA time zones, such as `Europe/Lisbon`. Search accepts alternate
+  names and ignores accents. Cities include their region and country to distinguish namesakes.
+- Clocks run from earlier to later local time, with **Local** in its chronological position.
+  Local follows the Mac's time zone; ordering follows the selected instant, including daylight saving.
+- Use **Edit** to rename or remove places, or reorder cities that share the same time.
+- Click a **pin** to replace the clock icon with one place's name and live time. Pinning another
+  place replaces the previous pin; unpinning or removing it restores the icon. Local can be pinned.
+- Drag or scroll the time ruler, or use its arrow keys, to move in 15-minute steps across ±24
+  hours. The local time field accepts an exact time on the selected day. **Now**, or closing and
+  reopening the panel, restores live time. A pinned menu-bar time always remains live.
+- Hours follow the Mac's 12/24-hour preference. Day labels and differences use the selected
+  instant, including daylight-saving transitions and fractional-hour zones.
+- Each city shows its next sunrise or sunset at the selected instant. `+1d` means the next city
+  date. Solar times are approximate; polar day/night appears when there is no nearby event.
+  Local and bare time zones have no solar data because they do not identify coordinates.
+
+The bundled [GeoNames](https://www.geonames.org/) catalog covers cities with more than 15,000
+inhabitants and capitals. Smaller places may be absent; add a nearby city or its time zone.
+The catalog is distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Settings includes attribution links. No search or solar request leaves the Mac.
 
 ## Install
 

@@ -128,7 +128,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup 2.0 is one app shell hosting three independent tools, on top of four pure ("core") modules
+Lineup is one app shell hosting four independent tools, on top of five pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -145,12 +145,14 @@ Sources/CyclerCore/         Pure, tested core for the Cycler tool
 Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   TriggerKey.swift          Trigger key enum + display names
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
+Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
   Product.swift             Identity constants (name, bundle ID, paths, update feed)
   LineupAppConfig.swift     ~/.config/lineup/config.json envelope schema
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
-Sources/lineup/              AppKit agent (the app shell + the three tools)
+  WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
+Sources/lineup/              AppKit agent (the app shell + the four tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -158,19 +160,53 @@ Sources/lineup/              AppKit agent (the app shell + the three tools)
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
   Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
+  Tools/WorldClock/            Dedicated status item, popover, place management and Settings
+  Resources/WorldClock/        Offline GeoNames city catalog and attribution
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
-  main.swift                  Orchestrates the four suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / AppSuite.swift
+  main.swift                  Orchestrates the five suites below
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
-four suites.
+five suites.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`worldClock`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
+
+### World Clock data and lifecycle
+
+`WorldClockCore` uses Foundation only. The app's existing resource bundle carries `WorldClock/`
+alongside the tool icons; `build-app.sh` copies both into the assembled app. The catalog loader
+handles missing resources without trapping and keeps time-zone-only search available.
+
+To update city data, download `cities15000.zip` and `admin1CodesASCII.txt` from
+<https://download.geonames.org/export/dump/>, then run:
+
+```sh
+python3 Scripts/import-clock-cities.py /path/to/cities15000.zip /path/to/admin1CodesASCII.txt
+```
+
+The generated notice records attribution, transformations and input hashes. Commit the catalog
+and notice together. No runtime download or new package dependency is required. Solar estimates
+use NOAA's fractional-year equations with a 0.833-degree apparent horizon; calculations search
+absolute instants through the city's next day, including polar and date-line cases.
+
+The tool owns its status item and observers. It refreshes on time-zone, locale, clock, display and
+wake notifications. A minute timer exists only while a place is pinned or the popover is open.
+Stopping removes those resources and retains saved places. The `worldClock` section has its own
+version without changing the shared envelope schema. Unreadable or future settings block editing.
+Unknown settings, place and coordinate fields survive supported edits. Removing a pinned place
+also clears the pin in the same atomic save.
+
+The parsed city catalog stays cached for the app session so reopening search does not reload it.
+A load already in progress finishes into that cache when the panel closes. Search cancellation
+discards stale results. If the shared configuration is reset after a failed load, editing becomes
+available immediately. An unreadable World Clock section is left intact: quit Lineup, restore its
+valid saved data, then reopen Lineup, or install a newer compatible version. There is no section-reset
+action in this release.
 
 ### Downgrading from 2.0 to 1.9.x
 
