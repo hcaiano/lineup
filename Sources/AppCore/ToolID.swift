@@ -9,11 +9,11 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
     public static let zones = ToolID(rawValue: "zones")
     public static let cycler = ToolID(rawValue: "cycler")
     public static let hyperkey = ToolID(rawValue: "hyperkey")
-
+    public static let worldClock = ToolID(rawValue: "worldClock")
     public static let awake = ToolID(rawValue: "awake")
 
-    /// Registry/sidebar order.
-    public static let all: [ToolID] = [.zones, .cycler, .hyperkey, .awake]
+    /// Registry/sidebar order. Persisted identities never change when tools are added.
+    public static let all: [ToolID] = [.zones, .cycler, .hyperkey, .worldClock, .awake]
 }
 
 extension ToolID: CustomStringConvertible {
