@@ -128,7 +128,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup 2.0 is one app shell hosting three independent tools, on top of four pure ("core") modules
+Lineup is one app shell hosting four independent tools, on top of four pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -150,6 +150,8 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   LineupAppConfig.swift     ~/.config/lineup/config.json envelope schema
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
+  MenuBarSettings.swift     Optional menuBar tool settings, group membership and item ordering
+  MenuBarPreferences.swift  Validated macOS 27 tracked-app preference edits and recovery records
 Sources/lineup/              AppKit agent (the app shell + the three tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
@@ -158,12 +160,46 @@ Sources/lineup/              AppKit agent (the app shell + the three tools)
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
   Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
+  Tools/MenuBar/               Menu bar inventory, native reorder, visibility and recovery helper
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
   main.swift                  Orchestrates the four suites below
   ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / AppSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
+
+### Menu Bar runtime and recovery
+
+Menu Bar starts disabled and supports macOS 27 only. Its optional `tools.menuBar` section uses
+the existing config envelope without changing its schema. Malformed or newer tool settings
+block editing. The user's selected-file bookmark grants access only to the Control Center
+preferences file. The tool reads Accessibility menu extras without reading their menus and
+uses native Command-drag events for reorder operations initiated in Settings.
+
+Visibility changes use `CFPreferences` with the selected file's absolute preference domain.
+Writing the plist directly does not reliably notify the live menu bar. `MenuBarPreferences`
+validates the tracked-app array and changes only selected `isAllowed` fields, retaining unknown
+records and fields. The tool does not use the assessment-mode allow-list or hide system items.
+This preference format is OS-specific and must be revalidated before enabling another macOS
+major version. Other apps can edit the same preference; Lineup checks for an intervening edit
+before writing, but macOS does not expose a compare-and-swap operation for this shared key.
+
+Before hiding anything, Lineup writes `~/.config/lineup/menu-bar-recovery.json` atomically and
+starts its own executable with `--menu-bar-recovery`. The helper verifies its file access and
+acknowledges readiness before the parent writes. It has no app shell, updater, imported config,
+hotkeys or menu items. It restores recorded visibility when its parent exits, including SIGKILL.
+A session UUID and an advisory file lock prevent an old helper from restoring a newer session.
+Normal teardown restores first. A failed restoration keeps the journal for the next launch or
+the Settings recovery button. Revoking the file grant can prevent recovery until access returns.
+Granting access again renews the recovery record even if the main config is write-blocked. If
+both the app and helper are killed, restoration waits until Lineup next launches. The pane also
+links to macOS Menu Bar settings for manual recovery.
+
+For interactive review, a **debug** build accepts `LINEUP_MENU_BAR_REVIEW_DIR=<scratch-directory>`.
+It opens the real Menu Bar pane with `review-config.json` and `review-recovery.json` in that
+directory and does not run the main shell or other tools. Use an isolated review bundle identity
+and grant its permissions explicitly. An optional `control-center-access.bookmark` in the scratch
+directory seeds that review's first config. Never commit bookmarks, journals or review recordings.
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
 four suites.

@@ -19,6 +19,17 @@ with something you can shape: recursive zone layouts per display, snapping by sh
 shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
 instructions, and the app then disappears into muscle memory.
 
+## Menu bar organization
+
+Menu Bar is an optional tool for macOS 27. Its settings contain two horizontal groups, Visible
+Items and Hidden Items. Users drag items to arrange them and choose which apps the arrow hides.
+The arrow expands and collapses that group in the system menu bar. Items show their app icons
+and accessible names without requiring Screen Recording.
+
+Keep the interaction explicit: launch expanded, restore visibility when disabled or stopped,
+and never change system-item visibility. macOS 27 groups visibility by app, so moving one item
+between groups moves all items from that app. A failed recovery stays actionable in Settings.
+
 ## Update Tracks
 
 - Stable is the default and receives tested public releases.
