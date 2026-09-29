@@ -79,9 +79,13 @@ bytes match. The metadata helper's repository override remains for read-only aud
 but it cannot bypass the appcast publication guard.
 
 `--verify` requires GitHub to report `immutable=true` for the exact release and peels its Git tag
-ref to the local source commit. The repository currently has immutable releases disabled, so
-verification (and any release publishing flow that depends on it) fails closed until the
-maintainer enables GitHub immutable releases. This change does not alter repository settings.
+ref to the local source commit. Nightly publication fails closed until the maintainer enables
+GitHub immutable releases. The scripts do not change repository settings.
+
+For unattended publication after successful `main` CI, see [NIGHTLIES.md](NIGHTLIES.md).
+The release-Mac service reuses these scripts, checkpoints each release and preserves the public
+feed when publishing. Stable remains manual. Activating the service also makes its shared
+`publish-web` command the required entry point for Stable and website deploys.
 
 The default release audit and Nightly build refuse a dirty checkout; `LINEUP_ALLOW_DIRTY=1` is
 reserved for explicitly read-only local tests and must not be used for a release plan or release
@@ -348,6 +352,10 @@ Installed Stable copies do not depend on GitHub to fetch updates.
 (cd web && npx wrangler deploy)                          # publishes the feed + the download
 git add web/appcast.xml web/downloads web/release-notes && git commit -m "Appcast: <version>"
 ```
+
+When the automatic Nightly service is active, replace the direct Wrangler command above with
+`python3 Scripts/nightly-service.py publish-web web` on the release Mac. This uses the same
+publication lock and preserves public Nightly entries; see [NIGHTLIES.md](NIGHTLIES.md).
 
 Write the release notes first, as an HTML **fragment** in `web/release-notes/<version>.html`;
 the script inlines it as the item `<description>` and links it from `sparkle:releaseNotesLink`.
