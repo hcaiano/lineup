@@ -198,7 +198,8 @@ for the first document window. If the app supports neither notification, discove
 initial period. AX calls have a short timeout and startup retries back off to one second. After
 the discovery deadline, a supported observer waits for the next notification only if the last
 window list was readable. An unreadable window ends the attempt, and an unresolved list ends it
-at the deadline. This prevents a later document from consuming a missed first-window restore.
+at the deadline. Closed windows and missing or unsupported role/subrole attributes remain ineligible rather
+than cancelling the launch. This prevents a later document from consuming a missed first-window restore.
 Only non-modal standard windows qualify. The controller removes observation before the move attempt,
 including when the destination is unavailable. It does not subscribe to window movement or resizing.
 
@@ -209,7 +210,7 @@ disconnected, then reconnect it and relaunch the app to confirm the association 
 Use `--long-splash --busy-start` with the probe to delay its first document for eight seconds and
 simulate an unresponsive app during startup. Keyboard input and the menu bar should remain responsive. For a repeatable live check, run
 `./Scripts/placement-probe.sh --check-discovery`. It compiles the production launch controller,
-launches only the document-free fixture, and verifies discovery after the long splash while a
+launches only the document-free fixture, and verifies discovery after a long splash and a helper panel that closes immediately while a
 main-run-loop timer stays responsive, then checks cancellation while the fixture is busy and verifies that an unreadable first
 document cannot redirect restoration to its later window.
 It requires existing Accessibility access and never edits

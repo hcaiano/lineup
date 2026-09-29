@@ -29,6 +29,17 @@ final class PlacementProbe: NSObject, NSApplicationDelegate {
                 Thread.sleep(forTimeInterval: 2)
             }
         }
+        if CommandLine.arguments.contains("--fleeting-panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let panel = NSPanel(contentRect: CGRect(x: 180, y: 200, width: 300, height: 120),
+                                    styleMask: [.titled, .utilityWindow], backing: .buffered, defer: false)
+                panel.isReleasedWhenClosed = false
+                panel.title = "Short-lived helper panel"
+                panel.orderFrontRegardless()
+                NSAccessibility.post(element: panel, notification: .created)
+                panel.close()
+            }
+        }
         let splashDelay: TimeInterval = CommandLine.arguments.contains("--long-splash") ? 8 : 3
         if CommandLine.arguments.contains("--splash") || CommandLine.arguments.contains("--long-splash") {
             let panel = NSPanel(contentRect: CGRect(x: 160, y: 200, width: 650, height: 300),
@@ -107,7 +118,7 @@ struct DiscoveryCheck {
         var controller: AppLaunchPlacementController!
         var finished = false
         let config = NSWorkspace.OpenConfiguration()
-        config.arguments = ["--long-splash", unreadableDocument ? "--busy-document" : "--busy-start"]
+        config.arguments = ["--long-splash", "--fleeting-panel", unreadableDocument ? "--busy-document" : "--busy-start"]
         config.createsNewApplicationInstance = true
         let frame = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let target = AppZonePlacement(screenKey: "probe", layout: .halves,

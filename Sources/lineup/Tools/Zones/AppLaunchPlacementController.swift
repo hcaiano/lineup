@@ -83,7 +83,7 @@ private final class LaunchWindowWatch {
     private var deadline: TimeInterval = 0
     private var retryDelay: TimeInterval = 0.25
     private var unresolvedList = false
-    private enum DiscoveryError: Error { case unreadableWindow }
+    private enum DiscoveryError: Error { case unreadableWindow, closedWindow }
 
     init(pid: pid_t, completion: @escaping @MainActor (LaunchWindowWatch, AXUIElement?) -> Void) {
         self.pid = pid
@@ -186,24 +186,29 @@ private final class LaunchWindowWatch {
     private func isRegular(_ window: AXUIElement) throws -> Bool {
         guard !isCancelled else { return false }
         AXUIElementSetMessagingTimeout(window, 0.25)
-        func attribute(_ name: String, optional: Bool = false) throws -> CFTypeRef? {
+        func attribute(_ name: String) throws -> CFTypeRef? {
             guard !isCancelled else { return nil }
             var value: CFTypeRef?
             let result = AXUIElementCopyAttributeValue(window, name as CFString, &value)
-            if optional && (result == .attributeUnsupported || result == .noValue) { return nil }
+            if result == .invalidUIElement { throw DiscoveryError.closedWindow }
+            if result == .attributeUnsupported || result == .noValue { return nil }
             guard result == .success else { throw DiscoveryError.unreadableWindow }
             return value
         }
-        let role = try attribute(kAXRoleAttribute) as? String
-        let subrole = try attribute(kAXSubroleAttribute) as? String
-        guard let role, let subrole else { throw DiscoveryError.unreadableWindow }
-        // Avoid optional attribute queries for a known panel or sheet.
-        guard LaunchWindowEligibility.isEligible(role: role, subrole: subrole, modal: nil,
-                                                 minimized: nil, fullscreen: nil) else { return false }
-        return try LaunchWindowEligibility.isEligible(
-            role: role, subrole: subrole,
-            modal: attribute(kAXModalAttribute, optional: true) as? Bool,
-            minimized: attribute(kAXMinimizedAttribute, optional: true) as? Bool,
-            fullscreen: attribute("AXFullScreen", optional: true) as? Bool)
+        do {
+            let role = try attribute(kAXRoleAttribute) as? String
+            let subrole = try attribute(kAXSubroleAttribute) as? String
+            // Avoid optional attribute queries for a known panel or sheet.
+            guard LaunchWindowEligibility.isEligible(role: role, subrole: subrole, modal: nil,
+                                                     minimized: nil, fullscreen: nil) else { return false }
+            return try LaunchWindowEligibility.isEligible(
+                role: role, subrole: subrole,
+                modal: attribute(kAXModalAttribute) as? Bool,
+                minimized: attribute(kAXMinimizedAttribute) as? Bool,
+                fullscreen: attribute("AXFullScreen") as? Bool)
+        } catch DiscoveryError.closedWindow {
+            // A splash can disappear between its notification and this queued read.
+            return false
+        }
     }
 }
