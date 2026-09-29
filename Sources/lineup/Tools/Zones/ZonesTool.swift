@@ -115,7 +115,14 @@ final class ZonesTool: Tool {
 
     private lazy var dragSnap = DragSnapController(
         configProvider: { [weak self] in self?.config ?? LineupConfig() },
-        triggerProvider: { [weak self] in self?.dragSnapTrigger ?? .default })
+        triggerProvider: { [weak self] in self?.dragSnapTrigger ?? .default },
+        onPlacement: { [weak self] window, screen, rect, succeeded in
+            self?.rememberPlacement(window, on: screen, rect: rect, succeeded: succeeded)
+        })
+
+    private lazy var launchPlacement = AppLaunchPlacementController(
+        placement: { [weak self] bundleID in self?.config.appPlacements?[bundleID] },
+        restore: { [weak self] window, placement in self?.restorePlacement(window, placement: placement) })
 
     /// Build the runtime numbering snapshot from the live config and connected screens.
     private func runtimeNumberingSnapshot() -> ZoneRuntimeSnapshot {
@@ -244,6 +251,7 @@ final class ZonesTool: Tool {
                 MainActor.assumeIsolated { self?.screensChanged() }
             }
         isRunning = true
+        launchPlacement.start()
         services.refreshMenu()
         settingsModel?.refresh()
     }
@@ -254,6 +262,7 @@ final class ZonesTool: Tool {
         hotkeyTokens.removeAll()
         failedHotkeys.removeAll()
         dragSnap.stop()                            // global NSEvent monitor + lingerTimer
+        launchPlacement.stop()
         editorOverlay?.forceClose()                // every EditorWindow, WITHOUT committing
         editorOverlay = nil
         if let screenObserver {
@@ -265,6 +274,43 @@ final class ZonesTool: Tool {
         isRunning = false
         services?.refreshMenu()
         settingsModel?.refresh()
+    }
+
+    private func rememberPlacement(_ window: AXUIElement, on screen: NSScreen, rect: CGRect, succeeded: Bool) {
+        var pid: pid_t = 0
+        guard isRunning, AXUIElementGetPid(window, &pid) == .success else { return }
+        if succeeded { launchPlacement.cancel(pid) }
+        guard canWrite, let services,
+              let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return }
+        var updated = preparedConfigForUserWrite
+        let info = ScreenIdentity.info(for: screen)
+        let placement = AppZonePlacement(screenKey: info.key, layout: updated.layout(forKey: info.key),
+                                         target: rect, frame: screen.frame, visibleFrame: screen.visibleFrame,
+                                         pixelsWide: info.pixelsWide)
+        updated.rememberPlacement(placement, for: bundleID, succeeded: succeeded)
+        guard succeeded else { return }
+        guard updated != config else { return }
+        do {
+            try updated.validate()
+            try services.config.save(updated)
+            config = updated
+            usingDefaults = false
+        } catch {
+            services.log.error("app placement save failed (kept previous destination): \(error, privacy: .public)")
+        }
+    }
+
+    private func restorePlacement(_ window: AXUIElement, placement: AppZonePlacement) {
+        var pid: pid_t = 0
+        guard isRunning, configState == .ok, AXIsProcessTrusted(),
+              AXUIElementGetPid(window, &pid) == .success,
+              let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
+              config.appPlacements?[bundleID] == placement,
+              let screen = NSScreen.screens.first(where: { ScreenIdentity.info(for: $0).key == placement.screenKey }) else { return }
+        let info = ScreenIdentity.info(for: screen)
+        guard let rect = placement.rect(in: config, connectedKey: info.key, frame: screen.frame,
+                                        visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide) else { return }
+        WindowMover.snap(window, toCocoaRect: rect)
     }
 
     // MARK: - Effective settings
@@ -429,6 +475,8 @@ final class ZonesTool: Tool {
     @discardableResult
     private func applyEditorProposal(_ proposal: LineupConfig) -> Bool {
         guard canWrite, let services else { return false }
+        var proposal = proposal
+        proposal.preservePlacements(from: config)
         if proposal == config { return true } // complete no-op: nothing to commit, no write
         do {
             try proposal.validate()
@@ -573,11 +621,11 @@ final class ZonesTool: Tool {
         let now = Date().timeIntervalSinceReferenceDate
         switch action {
         case "left":
-            cycleState = WindowMover.cycleFocusedWindow(.left, config: config, now: now, prev: cycleState)
+            cycleState = WindowMover.cycleFocusedWindow(.left, config: config, now: now, prev: cycleState, onPlacement: rememberPlacement)
         case "right":
-            cycleState = WindowMover.cycleFocusedWindow(.right, config: config, now: now, prev: cycleState)
+            cycleState = WindowMover.cycleFocusedWindow(.right, config: config, now: now, prev: cycleState, onPlacement: rememberPlacement)
         case "center":
-            cycleState = WindowMover.cycleFocusedWindow(.center, config: config, now: now, prev: cycleState)
+            cycleState = WindowMover.cycleFocusedWindow(.center, config: config, now: now, prev: cycleState, onPlacement: rememberPlacement)
         case "restore":
             cycleState = nil
             WindowMover.restoreFocusedWindow()
@@ -588,7 +636,7 @@ final class ZonesTool: Tool {
                 // (stable numbering), not the Nth zone of the window's current screen.
                 moveFocusedWindowToGlobalZone(globalNumber: zoneIndex + 1)
             } else {
-                WindowMover.snapFocusedWindow(toQuickAction: action, config: config)
+                WindowMover.snapFocusedWindow(toQuickAction: action, config: config, onPlacement: rememberPlacement)
             }
         }
     }
@@ -615,7 +663,8 @@ final class ZonesTool: Tool {
             return false // disconnected/reserved, or the display vanished mid-snapshot
         }
         return WindowMover.snapFocusedWindow(
-            toZoneIndex: hit.zoneIndex, on: screen, configKey: hit.key, config: snapshot.config)
+            toZoneIndex: hit.zoneIndex, on: screen, configKey: hit.key, config: snapshot.config,
+            onPlacement: rememberPlacement)
     }
 
     /// Settings presentation uses the candidate map only for untouched built-in defaults, where

@@ -83,12 +83,14 @@ final class SnapMemory {
 /// thread, and both callers (the Zones hotkey actions and the drag monitor) are isolated there.
 @MainActor
 enum WindowMover {
+    typealias PlacementHandler = (AXUIElement, NSScreen, CGRect, Bool) -> Void
 
     /// Snap the focused window via a quick-action id ("full"/"left"/.../"rightHalf"),
     /// resolved against the per-screen layout for the screen the window is on.
     /// Returns false (silently) if there's no focused window or AX isn't trusted.
     @discardableResult
-    static func snapFocusedWindow(toQuickAction id: String, config: LineupConfig) -> Bool {
+    static func snapFocusedWindow(toQuickAction id: String, config: LineupConfig,
+                                  onPlacement: PlacementHandler? = nil) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let window = focusedWindow() else { return false }
 
@@ -106,6 +108,8 @@ enum WindowMover {
         // Record where the window was steered (fixed-size windows get centered, not the
         // zone rect) so the unsnap match works against where it really ends up.
         let landed = setFrame(target, of: window)
+        onPlacement?(window, screen, target, landed != nil)
+        guard let landed else { return false }
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
@@ -207,7 +211,8 @@ enum WindowMover {
     static func snapFocusedWindow(toZoneIndex index: Int,
                                   on target: NSScreen,
                                   configKey: String,
-                                  config: LineupConfig) -> Bool {
+                                  config: LineupConfig,
+                                  onPlacement: PlacementHandler? = nil) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let window = focusedWindow() else { return false }
         guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
@@ -220,13 +225,16 @@ enum WindowMover {
             frame: target.frame, visibleFrame: target.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
         let landed = setFrame(targetRect, of: window)
+        onPlacement?(window, target, targetRect, landed != nil)
+        guard let landed else { return false }
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
 
     /// Advance the left/right/center cycle for the focused window. Returns the new cycle
     /// state to carry forward (or the previous state unchanged if nothing could be moved).
-    static func cycleFocusedWindow(_ side: Side, config: LineupConfig, now: Double, prev: CycleState?) -> CycleState? {
+    static func cycleFocusedWindow(_ side: Side, config: LineupConfig, now: Double, prev: CycleState?,
+                                   onPlacement: PlacementHandler? = nil) -> CycleState? {
         guard AXIsProcessTrusted() else { return prev }
         guard let window = focusedWindow() else { return prev }
         guard let currentCocoa = currentCocoaFrame(of: window) else { return prev }
@@ -246,19 +254,23 @@ enum WindowMover {
                                  focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
         let target = steps[idx]
         let landed = setFrame(target, of: window)
+        onPlacement?(window, screen, target, landed != nil)
+        guard let landed else { return prev }
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
     /// Snap a specific window element to a Cocoa-space rect (used by modifier-drag snapping,
     /// where the dragged window isn't necessarily the focused one yet).
-    static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) {
-        guard AXIsProcessTrusted() else { return }
+    @discardableResult
+    static func snap(_ window: AXUIElement, toCocoaRect rect: CGRect) -> Bool {
+        guard AXIsProcessTrusted() else { return false }
         let before = currentCocoaFrame(of: window)
-        let landed = setFrame(rect, of: window)
+        guard let landed = setFrame(rect, of: window) else { return false }
         if let before {
             SnapMemory.shared.recordSnap(of: window, from: before, to: landed)
         }
+        return true
     }
 
     /// The Restore shortcut: put the focused window back at its pre-snap frame. Only
@@ -269,7 +281,7 @@ enum WindowMover {
               let current = currentCocoaFrame(of: window),
               let pre = SnapMemory.shared.preFrame(of: window, currentFrame: current)
         else { return false }
-        setFrame(pre, of: window)
+        guard setFrame(pre, of: window) != nil else { return false }
         // Forget AFTER the move: if a hung app made it fail, the next press can retry.
         SnapMemory.shared.forget(window)
         return true
@@ -309,7 +321,10 @@ enum WindowMover {
     /// ultimately steered to — the INTENT, which callers record; reading the result back
     /// instead would capture in-between junk from apps that resize asynchronously.
     @discardableResult
-    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) -> CGRect {
+    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) -> CGRect? {
+        var movable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &movable) == .success,
+              movable.boolValue else { return nil }
         let restoreEnhanced = suspendEnhancedUserInterface(of: window)
         defer { if let appEl = restoreEnhanced { setBool(appEl, enhancedUserInterfaceAttribute, true) } }
 
@@ -319,14 +334,14 @@ enum WindowMover {
             if let size = axSize(window, kAXSizeAttribute) {
                 return place(size: size, in: cocoa, of: window)
             }
-            return cocoa
+            return nil
         }
 
         let before = axSize(window, kAXSizeAttribute)
         let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY())
-        setSize(window, kAXSizeAttribute, ax.size)
-        setPoint(window, kAXPositionAttribute, ax.origin)
-        setSize(window, kAXSizeAttribute, ax.size)
+        let firstResize = setSize(window, kAXSizeAttribute, ax.size)
+        guard setPoint(window, kAXPositionAttribute, ax.origin) else { return nil }
+        let secondResize = setSize(window, kAXSizeAttribute, ax.size)
 
         // Verify: apps with a minimum size accept the move but refuse the resize, leaving
         // the window hanging out of the zone. Re-place what we actually got — but ONLY on
@@ -338,17 +353,18 @@ enum WindowMover {
            abs(actual.width - before.width) <= 1, abs(actual.height - before.height) <= 1 {
             return place(size: actual, in: cocoa, of: window)
         }
+        guard firstResize || secondResize else { return nil }
         return cocoa
     }
 
     /// Position-only placement: center `size` in the target zone, clamped to the zone's
     /// screen so the window stays fully on-screen. Returns the placed frame.
     @discardableResult
-    private static func place(size: CGSize, in zone: CGRect, of window: AXUIElement) -> CGRect {
+    private static func place(size: CGSize, in zone: CGRect, of window: AXUIElement) -> CGRect? {
         let bounds = screen(for: zone)?.visibleFrame ?? zone
         let target = FixedPlacement.center(size: size, in: zone, boundedBy: bounds)
         let ax = Coord.axRect(fromCocoa: target, primaryMaxY: primaryMaxY())
-        setPoint(window, kAXPositionAttribute, ax.origin)
+        guard setPoint(window, kAXPositionAttribute, ax.origin) else { return nil }
         return target
     }
 
@@ -418,16 +434,18 @@ enum WindowMover {
         return AXExtract.size(ref)
     }
 
-    private static func setPoint(_ el: AXUIElement, _ attr: String, _ point: CGPoint) {
+    @discardableResult
+    private static func setPoint(_ el: AXUIElement, _ attr: String, _ point: CGPoint) -> Bool {
         var p = point
-        guard let axv = AXValueCreate(.cgPoint, &p) else { return }
-        AXUIElementSetAttributeValue(el, attr as CFString, axv)
+        guard let axv = AXValueCreate(.cgPoint, &p) else { return false }
+        return AXUIElementSetAttributeValue(el, attr as CFString, axv) == .success
     }
 
-    private static func setSize(_ el: AXUIElement, _ attr: String, _ size: CGSize) {
+    @discardableResult
+    private static func setSize(_ el: AXUIElement, _ attr: String, _ size: CGSize) -> Bool {
         var s = size
-        guard let axv = AXValueCreate(.cgSize, &s) else { return }
-        AXUIElementSetAttributeValue(el, attr as CFString, axv)
+        guard let axv = AXValueCreate(.cgSize, &s) else { return false }
+        return AXUIElementSetAttributeValue(el, attr as CFString, axv) == .success
     }
 
     private static func setBool(_ el: AXUIElement, _ attr: String, _ value: Bool) {

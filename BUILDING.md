@@ -138,6 +138,7 @@ Sources/ZonesCore/          Pure, tested core for the Zones tool (no AppKit)
   LineupConfig.swift        Per-screen schema-3 config + migration (the legacy zones.json shape)
   Shortcuts.swift           Shortcut bindings + conflicts + zone actions
   Cycle.swift               Left/right cycle steps + continuation predicate
+  AppZonePlacement.swift    Saved per-app targets and one-shot launch restoration state
 Sources/CyclerCore/         Pure, tested core for the Cycler tool
   WindowCycle.swift         Cycle-order math
   AppGroupCycle.swift       App-group cycling
@@ -171,6 +172,39 @@ four suites.
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
 (`zones`/`cycler`/`hyperkey`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
+
+### App launch placement
+
+Zones stores an optional `appPlacements` map in its existing settings section. Older files need no
+migration. The tool saves learned destinations through `ToolConfigScope` only after a successful
+explicit move, and updates its in-memory config only after the atomic save succeeds. The map uses
+bundle IDs and exact display keys. A target includes its layout tree and relative geometry, so it
+cannot follow a reused zone number. Layout editor saves preserve the latest learned associations
+and invalidate those on edited displays.
+
+`AppLaunchPlacementController` listens to the workspace's launch and termination notifications.
+It ignores processes already running when Zones starts. For a new associated app it reads existing
+windows, observes AX window creation and focus changes, and briefly probes for windows while the
+app initializes. Those probes stop after five seconds; a supported AX observer can continue waiting
+for the first document window. If the app supports neither notification, discovery ends after that
+initial period. AX calls have a short timeout, and an unresponsive process cancels its pending work.
+Only non-modal standard windows qualify. The controller removes observation before the move attempt,
+including when the destination is unavailable. It does not subscribe to window movement or resizing.
+
+For manual verification, record a zone shortcut or Shift-drag placement, quit the target app, then
+relaunch it and show the first window returning. Open another window and move the restored window
+freely to confirm there is no further enforcement. Repeat with the saved external display
+disconnected, then reconnect it and relaunch the app to confirm the association was retained.
+Use `./Scripts/placement-probe.sh` to build a document-free native test app in a fresh temporary
+folder. Open the printed app path. It starts every process at a fixed frame and never saves window
+positions, so an app's own restoration cannot masquerade as Lineup's behavior. Shift-Command-M moves
+the focused window freely; Command-N opens a second window. Quit it, wait for the process to exit,
+and run `open -n "<printed app path>" --args --splash` to show a transient panel for three seconds
+before the first regular window. Discard the temporary bundle with `trash` when finished.
+
+Also check a splash or sheet before the first regular window, Zones disabled, and Accessibility
+revoked. Run these checks with a review build and collect before/after screenshots and a short video
+as required by [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Downgrading from 2.0 to 1.9.x
 
