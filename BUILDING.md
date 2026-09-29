@@ -190,10 +190,14 @@ and invalidate those on edited displays.
 `AppLaunchPlacementController` listens to the workspace's launch and termination notifications.
 It ignores processes already running when Zones starts. For a new associated app it reads existing
 windows, observes AX window creation and focus changes, and briefly probes for windows while the
-app initializes. Those probes stop after five seconds; a supported AX observer can continue waiting
+app initializes. AX discovery runs on a serial background queue per launch, so a busy app cannot
+block the main run loop used by Hyperkey. Observer callbacks only enqueue discovery work.
+A notified window is checked before querying the app's window list. Cancellation removes the
+observer immediately and discards queued results, including results from an earlier process session. Those probes stop after five seconds; a supported AX observer can continue waiting
 for the first document window. If the app supports neither notification, discovery ends after that
-initial period. AX calls have a short timeout; startup timeouts retry within that discovery period,
-and an unresponsive process cancels its pending work once the deadline expires.
+initial period. AX calls have a short timeout and startup retries back off to one second. After
+the discovery deadline, a supported observer waits for the next notification without polling; a
+window-list timeout does not discard a delayed first document.
 Only non-modal standard windows qualify. The controller removes observation before the move attempt,
 including when the destination is unavailable. It does not subscribe to window movement or resizing.
 
@@ -201,6 +205,13 @@ For manual verification, record a zone shortcut or Shift-drag placement, quit th
 relaunch it and show the first window returning. Open another window and move the restored window
 freely to confirm there is no further enforcement. Repeat with the saved external display
 disconnected, then reconnect it and relaunch the app to confirm the association was retained.
+Use `--long-splash --busy-start` with the probe to delay its first document for eight seconds and
+simulate an unresponsive app during startup. Keyboard input and the menu bar should remain responsive. For a repeatable live check, run
+`./Scripts/placement-probe.sh --check-discovery`. It compiles the production launch controller,
+launches only the document-free fixture, and verifies discovery after the long splash while a
+main-run-loop timer stays responsive, then checks cancellation while the fixture is busy.
+It requires existing Accessibility access and never edits
+Lineup settings. Run it manually, outside the dependency-free test suite.
 Use `./Scripts/placement-probe.sh` to build a document-free native test app in a fresh temporary
 folder. Open the printed app path. It starts every process at a fixed frame and never saves window
 positions, so an app's own restoration cannot masquerade as Lineup's behavior. Shift-Command-M moves

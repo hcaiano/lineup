@@ -24,10 +24,26 @@ public struct AppZonePlacement: Codable, Equatable {
                           width: target.width / container.width, height: target.height / container.height)
     }
 
-    public func rect(in config: LineupConfig, connectedKey: String,
-                     frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) -> CGRect? {
-        guard connectedKey == screenKey, config.screens[screenKey]?.layout == layout,
-              isValid else { return nil }
+    public struct Display {
+        public let key: String
+        public let frame: CGRect
+        public let visibleFrame: CGRect
+        public let pixelsWide: Int
+
+        public init(key: String, frame: CGRect, visibleFrame: CGRect, pixelsWide: Int) {
+            self.key = key
+            self.frame = frame
+            self.visibleFrame = visibleFrame
+            self.pixelsWide = pixelsWide
+        }
+    }
+
+    public func rect(in config: LineupConfig, displays: [Display]) -> CGRect? {
+        guard let display = displays.first(where: { $0.key == screenKey }),
+              config.screens[screenKey]?.layout == layout, isValid else { return nil }
+        let frame = display.frame
+        let visibleFrame = display.visibleFrame
+        let pixelsWide = display.pixelsWide
         let container: CGRect
         if let zoneIndex {
             guard let zone = Layout.zoneRect(index: zoneIndex, root: layout, frame: frame,
@@ -96,6 +112,13 @@ public struct ZoneLaunchRestoration {
 
 /// AX attributes needed to distinguish a document window from transient or hidden windows.
 public enum LaunchWindowEligibility {
+    /// Check the event's window before asking a potentially busy app for its window list.
+    public static func firstEligible<Window>(notified: Window?, windows: () -> [Window],
+                                             isEligible: (Window) -> Bool) -> Window? {
+        if let notified, isEligible(notified) { return notified }
+        return windows().first(where: isEligible)
+    }
+
     public static func isEligible(role: String?, subrole: String?, modal: Bool?,
                                   minimized: Bool?, fullscreen: Bool?) -> Bool {
         role == "AXWindow" && subrole == "AXStandardWindow" && modal != true

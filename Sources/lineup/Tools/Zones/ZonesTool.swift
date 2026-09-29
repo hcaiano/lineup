@@ -305,11 +305,13 @@ final class ZonesTool: Tool {
         guard isRunning, configState == .ok, AXIsProcessTrusted(),
               AXUIElementGetPid(window, &pid) == .success,
               let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
-              config.appPlacements?[bundleID] == placement,
-              let screen = NSScreen.screens.first(where: { ScreenIdentity.info(for: $0).key == placement.screenKey }) else { return }
-        let info = ScreenIdentity.info(for: screen)
-        guard let rect = placement.rect(in: config, connectedKey: info.key, frame: screen.frame,
-                                        visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide) else { return }
+              config.appPlacements?[bundleID] == placement else { return }
+        let displays = NSScreen.screens.map { screen in
+            let info = ScreenIdentity.info(for: screen)
+            return AppZonePlacement.Display(key: info.key, frame: screen.frame,
+                                            visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
+        }
+        guard let rect = placement.rect(in: config, displays: displays) else { return }
         WindowMover.snap(window, toCocoaRect: rect)
     }
 

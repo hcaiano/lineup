@@ -1,4 +1,8 @@
 import AppKit
+#if DISCOVERY_CHECK
+import ApplicationServices
+import ZonesCore
+#endif
 
 // Manual Zones verification fixture. It owns no documents, saved window frames, or user data.
 // Every process starts at the same frame, so macOS window restoration cannot fake a PASS.
@@ -20,14 +24,20 @@ final class PlacementProbe: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "Quit Placement Probe", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         NSApp.mainMenu = menu
         NSApp.activate(ignoringOtherApps: true)
-        if CommandLine.arguments.contains("--splash") {
+        if CommandLine.arguments.contains("--busy-start") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                Thread.sleep(forTimeInterval: 2)
+            }
+        }
+        let splashDelay: TimeInterval = CommandLine.arguments.contains("--long-splash") ? 8 : 3
+        if CommandLine.arguments.contains("--splash") || CommandLine.arguments.contains("--long-splash") {
             let panel = NSPanel(contentRect: CGRect(x: 160, y: 200, width: 650, height: 300),
                                 styleMask: [.titled, .utilityWindow], backing: .buffered, defer: false)
             panel.title = "Transient launch panel"
-            panel.contentView = label("Transient panel\nThe first regular window opens in 3 seconds.")
+            panel.contentView = label("Transient panel\nThe first regular window opens in \(Int(splashDelay)) seconds.")
             panel.orderFrontRegardless()
             splash = panel
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + splashDelay) { [self] in
                 splash?.orderOut(nil)
                 splash = nil
                 newWindow()
@@ -70,8 +80,85 @@ final class PlacementProbe: NSObject, NSApplicationDelegate {
     }
 }
 
-let app = NSApplication.shared
-let delegate = PlacementProbe()
-app.setActivationPolicy(.regular)
-app.delegate = delegate
-app.run()
+#if DISCOVERY_CHECK
+/// Optional live check, compiled with the production controller by placement-probe.sh.
+/// It measures discovery latency without launching Lineup or changing any user settings.
+@main
+@MainActor
+struct DiscoveryCheck {
+    static func main() {
+        guard AXIsProcessTrusted(), CommandLine.arguments.count >= 2 else {
+            print("BLOCKED: Accessibility access and the probe app path are required.")
+            exit(2)
+        }
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        let cancelDuringStartup = CommandLine.arguments.contains("--cancel")
+        let started = ProcessInfo.processInfo.systemUptime
+        var lastTick = started
+        var longestTick: TimeInterval = 0
+        var fixture: NSRunningApplication?
+        var controller: AppLaunchPlacementController!
+        var finished = false
+        let config = NSWorkspace.OpenConfiguration()
+        config.arguments = ["--long-splash", "--busy-start"]
+        config.createsNewApplicationInstance = true
+        let frame = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let target = AppZonePlacement(screenKey: "probe", layout: .halves,
+                                      target: CGRect(x: 500, y: 0, width: 500, height: 800),
+                                      frame: frame, visibleFrame: frame, pixelsWide: 1000)
+        func finish(_ success: Bool, _ message: String) {
+            guard !finished else { return }
+            finished = true
+            controller.stop()
+            fixture?.terminate()
+            print(message)
+            // Allow the document-free fixture to process termination before the checker exits.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(success ? 0 : 1) }
+        }
+        controller = AppLaunchPlacementController(placement: { bundle in
+            bundle == "com.caiano.lineup.placement-probe" ? target : nil
+        }, restore: { _, _ in
+            if cancelDuringStartup { finish(false, "FAIL: discovery delivered a window after stop."); return }
+            let elapsed = ProcessInfo.processInfo.systemUptime - started
+            let responsive = longestTick < 0.2
+            finish(responsive && elapsed >= 7,
+                   "\(responsive && elapsed >= 7 ? "PASS" : "FAIL"): first regular window after \(String(format: "%.2f", elapsed))s; maximum main-loop tick gap \(String(format: "%.3f", longestTick))s (limit 0.200s).")
+        })
+        controller.start()
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
+            let now = ProcessInfo.processInfo.systemUptime
+            longestTick = max(longestTick, now - lastTick)
+            lastTick = now
+        }
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: CommandLine.arguments[1]), configuration: config) { running, error in
+            DispatchQueue.main.async {
+                fixture = running
+                if let error { finish(false, "FAIL: probe launch: \(error.localizedDescription)") }
+            }
+        }
+        if cancelDuringStartup {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { controller.stop() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                finish(longestTick < 0.2,
+                       "\(longestTick < 0.2 ? "PASS" : "FAIL"): stop during busy startup discarded later window; maximum main-loop tick gap \(String(format: "%.3f", longestTick))s.")
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            finish(false, "FAIL: no regular window discovered; maximum main-loop tick gap \(longestTick)s.")
+        }
+        withExtendedLifetime(timer) { app.run() }
+    }
+}
+#else
+@main
+struct ProbeMain {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = PlacementProbe()
+        app.setActivationPolicy(.regular)
+        app.delegate = delegate
+        app.run()
+    }
+}
+#endif

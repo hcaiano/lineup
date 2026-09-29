@@ -22,7 +22,7 @@ func runAppPlacementTests() throws {
           "placement: replacement keeps one destination per app and preserves other apps")
 
     func resolve(_ placement: AppZonePlacement, _ cfg: LineupConfig, key: String = "external-uuid") -> CGRect? {
-        placement.rect(in: cfg, connectedKey: key, frame: frame, visibleFrame: visible, pixelsWide: 2000)
+        placement.rect(in: cfg, displays: [.init(key: key, frame: frame, visibleFrame: visible, pixelsWide: 2000)])
     }
     check(resolve(second, config) == right, "placement: restores the saved leaf on an offset display")
     check(resolve(second, config, key: "lookalike-uuid") == nil,
@@ -51,9 +51,13 @@ func runAppPlacementTests() throws {
     let quick = AppZonePlacement(screenKey: screen.key, layout: .halves, target: full,
                                  frame: frame, visibleFrame: visible, pixelsWide: 2000)
     check(resolve(quick, config) == full, "placement: quick actions spanning multiple zones retain their target")
-    let resized = second.rect(in: config, connectedKey: screen.key,
-                              frame: CGRect(x: -800, y: 900, width: 1600, height: 900),
-                              visibleFrame: CGRect(x: -800, y: 920, width: 1600, height: 850), pixelsWide: 3200)
+    check(second.rect(in: config, displays: []) == nil,
+          "placement: no connected displays means no restoration target")
+    let resized = second.rect(in: config, displays: [
+        .init(key: "other-display", frame: frame, visibleFrame: visible, pixelsWide: 2000),
+        .init(key: screen.key, frame: CGRect(x: -800, y: 900, width: 1600, height: 900),
+              visibleFrame: CGRect(x: -800, y: 920, width: 1600, height: 850), pixelsWide: 3200)
+    ])
     check(resized == CGRect(x: 0, y: 920, width: 800, height: 850),
           "placement: resolves against current display geometry rather than old absolute coordinates")
 
@@ -101,6 +105,21 @@ func runAppPlacementTests() throws {
                                                 minimized: minimized, fullscreen: fullscreen) == expected,
               "launch eligibility: regular documents qualify; panels, sheets, modal, minimized and fullscreen windows do not")
     }
+
+    var listReads = 0
+    let notified = LaunchWindowEligibility.firstEligible(notified: 42, windows: {
+        listReads += 1
+        return [] // A busy app cannot answer the list query.
+    }, isEligible: { $0 == 42 })
+    check(notified == 42 && listReads == 0,
+          "launch discovery: a notified regular window restores without querying a busy app's window list")
+    let afterSplash = LaunchWindowEligibility.firstEligible(notified: 1, windows: { [1, 42, 43] },
+                                                             isEligible: { $0 >= 42 })
+    check(afterSplash == 42,
+          "launch discovery: a transient notification does not hide the first eligible document in the list")
+    let fromList: Int? = LaunchWindowEligibility.firstEligible(notified: nil, windows: { [1, 42, 43] },
+                                                              isEligible: { $0 >= 42 })
+    check(fromList == 42, "launch discovery: startup without a notification selects the first regular window")
 
     let old = Data(#"{"schemaVersion":3,"screens":{},"defaultLayout":{"type":"leaf"}}"#.utf8)
     check(try JSONDecoder().decode(LineupConfig.self, from: old).appPlacements == nil,

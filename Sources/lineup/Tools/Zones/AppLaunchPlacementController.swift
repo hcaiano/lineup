@@ -10,16 +10,7 @@ final class AppLaunchPlacementController {
     private let restore: (AXUIElement, AppZonePlacement) -> Void
     private var sessions = ZoneLaunchRestoration()
     private var workspaceObservers: [NSObjectProtocol] = []
-    private struct Watch {
-        let app: AXUIElement
-        var observer: AXObserver?
-        let probeDeadline: TimeInterval
-        var isProbing: Bool { ProcessInfo.processInfo.systemUptime < probeDeadline }
-    }
-    private var watches: [pid_t: Watch] = [:]
-    private var initialProbeTimer: Timer?
-    private let probeInterval: TimeInterval = 0.25
-    private let initialProbeDuration: TimeInterval = 5
+    private var watches: [pid_t: LaunchWindowWatch] = [:]
 
     init(placement: @escaping (String) -> AppZonePlacement?,
          restore: @escaping (AXUIElement, AppZonePlacement) -> Void) {
@@ -50,21 +41,13 @@ final class AppLaunchPlacementController {
         for token in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(token) }
         workspaceObservers.removeAll()
         for pid in Array(watches.keys) { cancel(pid) }
-        initialProbeTimer?.invalidate()
-        initialProbeTimer = nil
         sessions = ZoneLaunchRestoration()
     }
 
     /// Explicit placement wins over any launch still waiting for its first regular window.
     func cancel(_ pid: pid_t) {
         sessions.cancel(pid)
-        if let watch = watches.removeValue(forKey: pid), let observer = watch.observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
-        }
-        if !watches.values.contains(where: { $0.isProbing }) {
-            initialProbeTimer?.invalidate()
-            initialProbeTimer = nil
-        }
+        watches.removeValue(forKey: pid)?.cancel()
     }
 
     private func launched(_ application: NSRunningApplication) {
@@ -73,89 +56,127 @@ final class AppLaunchPlacementController {
               sessions.launched(process: application.processIdentifier, placement: placement(bundleID),
                                 accessibilityTrusted: AXIsProcessTrusted()) else { return }
         let pid = application.processIdentifier
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.25)
-        watches[pid] = Watch(app: app, observer: makeObserver(pid, app: app),
-                             probeDeadline: ProcessInfo.processInfo.systemUptime + initialProbeDuration)
-        inspect(pid)
-        // Some apps expose their AX windows just after the workspace launch notification.
-        // Bounded discovery covers this race and apps without notifications. Once settled,
-        // an installed observer can wait for a delayed first document without polling.
-        if watches[pid] != nil, initialProbeTimer == nil {
-            initialProbeTimer = Timer.scheduledTimer(withTimeInterval: probeInterval, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.probeInitialWindows() }
-            }
+        let watch = LaunchWindowWatch(pid: pid) { [weak self] watch, window in
+            guard let self, self.watches[pid] === watch else { return }
+            let target = self.sessions.firstWindow(process: pid)
+            self.cancel(pid)
+            guard AXIsProcessTrusted(), let window, let target else { return }
+            self.restore(window, target)
+        }
+        watches[pid] = watch
+        watch.start()
+    }
+}
+
+/// AX messaging stays on a per-launch queue. The main run loop only delivers notifications;
+/// it also hosts Hyperkey's event tap and must never wait for a launching app to answer AX.
+private final class LaunchWindowWatch {
+    private let pid: pid_t
+    private let queue: DispatchQueue
+    private let completion: @MainActor (LaunchWindowWatch, AXUIElement?) -> Void
+    private let lock = NSLock()
+    // These two fields are shared with main-run-loop cancellation and observer installation.
+    private var cancelled = false
+    private var observer: AXObserver?
+    // Remaining state belongs exclusively to queue.
+    private lazy var app = AXUIElementCreateApplication(pid)
+    private var deadline: TimeInterval = 0
+    private var retryDelay: TimeInterval = 0.25
+
+    init(pid: pid_t, completion: @escaping @MainActor (LaunchWindowWatch, AXUIElement?) -> Void) {
+        self.pid = pid
+        self.completion = completion
+        queue = DispatchQueue(label: "com.caiano.lineup.launch-discovery.\(pid)", qos: .utility)
+    }
+
+    func start() {
+        queue.async { [self] in
+            deadline = ProcessInfo.processInfo.systemUptime + 5
+            AXUIElementSetMessagingTimeout(app, 0.25)
+            probe()
         }
     }
 
-    private func makeObserver(_ pid: pid_t, app: AXUIElement) -> AXObserver? {
-        var observer: AXObserver?
-        if AXObserverCreate(pid, { _, element, notification, context in
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let previous = observer
+        observer = nil
+        if let previous {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(previous), .commonModes)
+        }
+        lock.unlock()
+        // Releasing the observer may unregister remote notifications. Keep that off main too.
+        queue.async { withExtendedLifetime(previous) {} }
+    }
+
+    private var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    private var isObserving: Bool { lock.lock(); defer { lock.unlock() }; return observer != nil }
+
+    private func probe() {
+        guard !isCancelled else { return }
+        guard AXIsProcessTrusted() else { finish(nil); return }
+        if ProcessInfo.processInfo.systemUptime >= deadline {
+            if !isObserving { finish(nil) }
+            return
+        }
+        if !isObserving { installObserver() }
+        inspect()
+        guard !isCancelled else { return }
+        queue.asyncAfter(deadline: .now() + retryDelay) { [self] in probe() }
+    }
+
+    private func installObserver() {
+        var candidate: AXObserver?
+        guard AXObserverCreate(pid, { _, element, notification, context in
             guard let context else { return }
-            MainActor.assumeIsolated {
-                let controller = Unmanaged<AppLaunchPlacementController>.fromOpaque(context).takeUnretainedValue()
-                var pid: pid_t = 0
-                guard AXUIElementGetPid(element, &pid) == .success else { return }
-                controller.inspect(pid, created: (notification as String) == kAXWindowCreatedNotification ? element : nil)
-            }
-        }, &observer) == .success, let candidate = observer {
-            let context = Unmanaged.passUnretained(self).toOpaque()
-            let created = AXObserverAddNotification(candidate, app, kAXWindowCreatedNotification as CFString, context)
-            let focused = AXObserverAddNotification(candidate, app, kAXFocusedWindowChangedNotification as CFString, context)
-            if created == .success || focused == .success {
-                CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(candidate), .commonModes)
-            } else {
-                observer = nil
-            }
-        }
-        return observer
-    }
-
-    private func probeInitialWindows() {
-        for pid in Array(watches.keys) {
-            guard let watch = watches[pid] else { continue }
-            guard watch.isProbing else {
-                if watch.observer == nil { cancel(pid) }
-                continue
-            }
-            if watch.observer == nil { watches[pid]?.observer = makeObserver(pid, app: watch.app) }
-            inspect(pid)
-            if let current = watches[pid], !current.isProbing, current.observer == nil {
-                cancel(pid)
-            }
-        }
-        if !watches.values.contains(where: { $0.isProbing }) {
-            initialProbeTimer?.invalidate()
-            initialProbeTimer = nil
-        }
-    }
-
-    private func inspect(_ pid: pid_t, created: AXUIElement? = nil) {
-        guard let watch = watches[pid], sessions.isPending(pid) else { return }
-        guard AXIsProcessTrusted() else { cancel(pid); return }
-        var windows: [AXUIElement] = []
-        if let created { windows.append(created) }
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(watch.app, kAXWindowsAttribute as CFString, &value)
-        if result == .success, let list = value as? [AXUIElement] { windows += list }
-        // Startup can temporarily time out. Retry discovery only within the bounded probe window.
-        if result == .invalidUIElement { cancel(pid); return }
-        if result == .cannotComplete {
-            if !watch.isProbing { cancel(pid) }
+            let watch = Unmanaged<LaunchWindowWatch>.fromOpaque(context).takeUnretainedValue()
+            let created = (notification as String) == kAXWindowCreatedNotification ? element : nil
+            watch.queue.async { watch.inspect(created: created) }
+        }, &candidate) == .success, let candidate else { return }
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let created = AXObserverAddNotification(candidate, app, kAXWindowCreatedNotification as CFString, context)
+        guard !isCancelled else { return }
+        let focused = AXObserverAddNotification(candidate, app, kAXFocusedWindowChangedNotification as CFString, context)
+        guard created == .success || focused == .success else {
+            retryDelay = min(retryDelay * 2, 1)
             return
         }
-        for window in windows {
-            AXUIElementSetMessagingTimeout(window, 0.25)
-            guard isRegular(window) else { continue }
-            guard let target = sessions.firstWindow(process: pid) else { cancel(pid); return }
-            cancel(pid)
-            restore(window, target)
-            return
+        lock.lock()
+        if !cancelled {
+            observer = candidate
+            CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(candidate), .commonModes)
         }
+        lock.unlock()
+    }
+
+    private func inspect(created: AXUIElement? = nil) {
+        guard !isCancelled else { return }
+        guard AXIsProcessTrusted() else { finish(nil); return }
+        let window = LaunchWindowEligibility.firstEligible(notified: created, windows: { [self] in
+            guard !isCancelled else { return [] }
+            var value: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+            if result == .invalidUIElement { finish(nil) }
+            if result == .cannotComplete { retryDelay = min(retryDelay * 2, 1) }
+            return result == .success ? (value as? [AXUIElement] ?? []) : []
+        }, isEligible: isRegular)
+        if let window { finish(window) }
+        // A timeout never discards an installed observer. After startup it waits for the next
+        // notification, including a first document appearing after a long splash screen.
+    }
+
+    private func finish(_ window: AXUIElement?) {
+        guard !isCancelled else { return }
+        cancel()
+        DispatchQueue.main.async { [self] in completion(self, window) }
     }
 
     private func isRegular(_ window: AXUIElement) -> Bool {
+        guard !isCancelled else { return false }
+        AXUIElementSetMessagingTimeout(window, 0.25)
         func attribute(_ name: String) -> CFTypeRef? {
+            guard !isCancelled else { return nil }
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(window, name as CFString, &value) == .success else { return nil }
             return value
