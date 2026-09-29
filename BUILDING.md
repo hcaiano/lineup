@@ -128,7 +128,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting four independent tools, on top of four pure ("core") modules
+Lineup is one app shell hosting six independent tools, on top of five pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -138,6 +138,7 @@ Sources/ZonesCore/          Pure, tested core for the Zones tool (no AppKit)
   LineupConfig.swift        Per-screen schema-3 config + migration (the legacy zones.json shape)
   Shortcuts.swift           Shortcut bindings + conflicts + zone actions
   Cycle.swift               Left/right cycle steps + continuation predicate
+  AppZonePlacement.swift    Saved per-app targets and one-shot launch restoration state
 Sources/CyclerCore/         Pure, tested core for the Cycler tool
   WindowCycle.swift         Cycle-order math
   AppGroupCycle.swift       App-group cycling
@@ -145,14 +146,18 @@ Sources/CyclerCore/         Pure, tested core for the Cycler tool
 Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   TriggerKey.swift          Trigger key enum + display names
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
+Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
+  AwakeSession.swift        Timed power-request ownership and failure cleanup
+  AwakeSettings.swift       Keep Awake preferences, with unknown-key preservation
   Product.swift             Identity constants (name, bundle ID, paths, update feed)
   LineupAppConfig.swift     ~/.config/lineup/config.json envelope schema
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
+  WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
   MenuBarSettings.swift     Optional menuBar tool settings, group membership and item ordering
   MenuBarPreferences.swift  Validated macOS 27 tracked-app preference edits and recovery records
-Sources/lineup/              AppKit agent (the app shell + the three tools)
+Sources/lineup/              AppKit agent (the app shell + the six tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -160,10 +165,13 @@ Sources/lineup/              AppKit agent (the app shell + the three tools)
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
   Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
+  Tools/WorldClock/            Dedicated status item, popover, place management and Settings
+  Tools/Awake/                 IOKit idle-sleep requests, menu countdown, session settings
+  Resources/WorldClock/        Offline GeoNames city catalog and attribution
   Tools/MenuBar/               Menu bar inventory, native reorder, visibility and recovery helper
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
-  main.swift                  Orchestrates the four suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / AppSuite.swift
+  main.swift                  Orchestrates the seven suites below
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / MenuBarSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
@@ -202,11 +210,92 @@ and grant its permissions explicitly. An optional `control-center-access.bookmar
 directory seeds that review's first config. Never commit bookmarks, journals or review recordings.
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
-four suites.
+seven suites.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`menuBar`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
+
+### App launch placement
+
+Zones stores an optional `appPlacements` map in its existing settings section. Older files need no
+migration. The tool saves learned destinations through `ToolConfigScope` only after a successful
+explicit move, and updates its in-memory config only after the atomic save succeeds. Learning waits
+while no Zones section exists, preserving a deferred legacy import. A fresh installation already
+has its default section seeded by the importer. The map uses bundle IDs and exact display keys. A target includes its layout tree and relative geometry, so it
+cannot follow a reused zone number. Layout editor saves preserve the latest learned associations
+and invalidate those on edited displays.
+
+`AppLaunchPlacementController` listens to the workspace's launch and termination notifications.
+It ignores processes already running when Zones starts. For a new associated app it reads existing
+windows, observes AX window creation and focus changes, and briefly probes for windows while the
+app initializes. AX discovery runs on a serial background queue per launch, so a busy app cannot
+block the main run loop used by Hyperkey. Observer callbacks only enqueue discovery work.
+A notified window is checked before querying the app's window list. Cancellation removes the
+observer immediately and discards queued results, including results from an earlier process session. Those probes stop after five seconds; a supported AX observer can continue waiting
+for the first document window. If the app supports neither notification, discovery ends after that
+initial period. AX calls have a short timeout and startup retries back off to one second. After
+the discovery deadline, a supported observer waits for the next notification only if the last
+window list was readable. An unreadable window ends the attempt, and an unresolved list ends it
+at the deadline. Closed windows and missing or unsupported role/subrole attributes remain ineligible rather
+than cancelling the launch. This prevents a later document from consuming a missed first-window restore.
+Only non-modal standard windows qualify. The controller removes observation before the move attempt,
+including when the destination is unavailable. It does not subscribe to window movement or resizing.
+
+For manual verification, record a zone shortcut or Shift-drag placement, quit the target app, then
+relaunch it and show the first window returning. Open another window and move the restored window
+freely to confirm there is no further enforcement. Repeat with the saved external display
+disconnected, then reconnect it and relaunch the app to confirm the association was retained.
+Use `--long-splash --busy-start` with the probe to delay its first document for eight seconds and
+simulate an unresponsive app during startup. Keyboard input and the menu bar should remain responsive. For a repeatable live check, run
+`./Scripts/placement-probe.sh --check-discovery`. It compiles the production launch controller,
+launches only the document-free fixture, and verifies discovery after a long splash and a helper panel that closes immediately while a
+main-run-loop timer stays responsive, then checks cancellation while the fixture is busy and verifies that an unreadable first
+document cannot redirect restoration to its later window.
+It requires existing Accessibility access and never edits
+Lineup settings. Run it manually, outside the dependency-free test suite.
+Use `./Scripts/placement-probe.sh` to build a document-free native test app in a fresh temporary
+folder. Open the printed app path. It starts every process at a fixed frame and never saves window
+positions, so an app's own restoration cannot masquerade as Lineup's behavior. Shift-Command-M moves
+the focused window freely; Command-N opens a second window. Quit it, wait for the process to exit,
+and run `open -n "<printed app path>" --args --splash` to show a transient panel for three seconds
+before the first regular window. Discard the temporary bundle with `trash` when finished.
+
+Also check a splash or sheet before the first regular window, Zones disabled, and Accessibility
+revoked. Run these checks with a review build and collect before/after screenshots and a short video
+as required by [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### World Clock data and lifecycle
+
+`WorldClockCore` uses Foundation only. The app's existing resource bundle carries `WorldClock/`
+alongside the tool icons; `build-app.sh` copies both into the assembled app. The catalog loader
+handles missing resources without trapping and keeps time-zone-only search available.
+
+To update city data, download `cities15000.zip` and `admin1CodesASCII.txt` from
+<https://download.geonames.org/export/dump/>, then run:
+
+```sh
+python3 Scripts/import-clock-cities.py /path/to/cities15000.zip /path/to/admin1CodesASCII.txt
+```
+
+The generated notice records attribution, transformations and input hashes. Commit the catalog
+and notice together. No runtime download or new package dependency is required. Solar estimates
+use NOAA's fractional-year equations with a 0.833-degree apparent horizon; calculations search
+absolute instants through the city's next day, including polar and date-line cases.
+
+The tool owns its status item and observers. It refreshes on time-zone, locale, clock, display and
+wake notifications. A minute timer exists only while a place is pinned or the popover is open.
+Stopping removes those resources and retains saved places. The `worldClock` section has its own
+version without changing the shared envelope schema. Unreadable or future settings block editing.
+Unknown settings, place and coordinate fields survive supported edits. Removing a pinned place
+also clears the pin in the same atomic save.
+
+The parsed city catalog stays cached for the app session so reopening search does not reload it.
+A load already in progress finishes into that cache when the panel closes. Search cancellation
+discards stale results. If the shared configuration is reset after a failed load, editing becomes
+available immediately. An unreadable World Clock section is left intact: quit Lineup, restore its
+valid saved data, then reopen Lineup, or install a newer compatible version. There is no section-reset
+action in this release.
 
 ### Downgrading from 2.0 to 1.9.x
 
@@ -311,3 +400,23 @@ Two rules the feed depends on:
 
 The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) → `make-dmg.sh` →
 `notarize.sh` (DMG) → `sparkle-appcast.sh` → `wrangler deploy` → commit.
+
+## Keep Awake power requests
+
+`AwakeSession` in AppCore owns request lifetime. `AwakePowerController` implements its power
+interface with IOKit `PreventUserIdleSystemSleep` and the optional `PreventUserIdleDisplaySleep`.
+Both use a system timeout with release-on-timeout. No user-activity assertion or permanent power
+setting is used. The app uses `ContinuousClock` for elapsed time and a common-run-loop timer so
+countdown and expiration also run while a menu is open. Explicit system sleep cancels the session;
+wake only checks expiration and never acquires requests. Registry disable and termination use the
+same cancellation path.
+
+Preferences use the existing opaque `tools.awake` section without changing the envelope schema.
+Unknown settings keys survive edits; malformed settings block editing. Active sessions are never
+persisted.
+
+For manual verification, compare `pmset -g assertions` before start, with the display option off,
+with it on, and after stop, disable, and quit. Filter by the tested Lineup PID and the assertion name
+`Lineup Keep Awake`; other apps may also prevent sleep. Capture the Settings and menu countdown,
+and record a start/countdown/stop interaction. Physical idle sleep and display sleep still need an
+unattended check under the machine's existing power settings.
