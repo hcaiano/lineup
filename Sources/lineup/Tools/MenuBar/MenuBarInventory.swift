@@ -102,10 +102,14 @@ enum MenuBarInventory {
               CGEventSource.flagsState(.combinedSessionState).intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate]).isEmpty else {
             throw failure("Release the mouse and modifier keys, then try again.")
         }
+        let displayBounds = NSScreen.screens.compactMap { screen -> CGRect? in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+            return CGDisplayBounds(CGDirectDisplayID(number.uint32Value))
+        }
         guard NSRunningApplication(processIdentifier: source.pid)?.launchDate == source.launchDate,
               NSRunningApplication(processIdentifier: target.pid)?.launchDate == target.launchDate,
               let from = frame(source.element), let to = frame(target.element),
-              from.minX >= 0, to.minX >= 0, abs(from.midY - to.midY) < 2 else {
+              MenuBarOrder.canMove(from: from, to: to, displayBounds: displayBounds) else {
             throw failure("Show the items on the same menu bar before moving them.")
         }
         let start = CGPoint(x: from.midX, y: from.midY)

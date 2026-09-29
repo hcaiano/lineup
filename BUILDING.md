@@ -187,8 +187,10 @@ the existing config envelope without changing its schema. Malformed or newer too
 block editing. The user's selected-file bookmark grants access only to the Control Center
 preferences file. The tool reads Accessibility menu extras without reading their menus and
 uses native Command-drag events for reorder operations initiated in Settings. The pane follows
-the observed macOS order instead of persisting a second layout. Inventory scans run while the
-pane is visible, with a refresh on app launch/exit. A helper exit triggers restoration; a low-rate
+the observed macOS order instead of persisting a second layout. Reordering requires both item
+centers on the same connected display and menu-bar row, using global AX/Core Graphics bounds
+so displays left of or above the primary display retain their negative coordinates. Inventory scans
+run while the pane is visible, with a refresh on app launch/exit. A helper exit triggers restoration; a low-rate
 permission check runs only while items are hidden.
 
 Visibility changes use `CFPreferences` with the selected file's absolute preference domain.

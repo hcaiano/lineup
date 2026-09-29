@@ -3,6 +3,24 @@ import Foundation
 
 func runMenuBarTests() throws {
     try runMenuBarPreferenceTests()
+    let displays = [CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                    CGRect(x: -1600, y: 0, width: 1600, height: 900),
+                    CGRect(x: 1920, y: -900, width: 1600, height: 900)]
+    let moves: [(CGRect, CGRect, Bool, String)] = [
+        (.init(x: 1700, y: 3, width: 24, height: 24), .init(x: 1750, y: 3, width: 24, height: 24), true, "primary display"),
+        (.init(x: -150, y: 3, width: 24, height: 24), .init(x: -100, y: 3, width: 24, height: 24), true, "left display with negative X"),
+        (.init(x: 3200, y: -897, width: 24, height: 24), .init(x: 3250, y: -897, width: 24, height: 24), true, "upper display with negative Y"),
+        (.init(x: -1800, y: 3, width: 24, height: 24), .init(x: -1750, y: 3, width: 24, height: 24), false, "hidden offscreen items"),
+        (.init(x: 4000, y: 3, width: 24, height: 24), .init(x: 4050, y: 3, width: 24, height: 24), false, "positive coordinates outside all displays"),
+        (.init(x: -100, y: 3, width: 24, height: 24), .init(x: 1750, y: 3, width: 24, height: 24), false, "different displays on the same row"),
+        (.init(x: 1700, y: 3, width: 24, height: 24), .init(x: 1750, y: 40, width: 24, height: 24), false, "different rows")
+    ]
+    for (source, target, expected, name) in moves {
+        check(MenuBarOrder.canMove(from: source, to: target, displayBounds: displays) == expected,
+              "menu item move eligibility: \(name)")
+    }
+    check(!MenuBarOrder.canMove(from: moves[0].0, to: moves[0].1, displayBounds: []),
+          "missing display geometry cannot authorize a synthetic drag")
     let previous = ["music", "clock", "stats", "target"]
     check(!MenuBarOrder.verifiesMove("music", before: "target", previous: previous, observed: previous),
           "a missed rightward drag is rejected even when the source remains left of the target")

@@ -44,6 +44,14 @@ public struct MenuBarSettings: Codable, Equatable {
 
 /// macOS owns the order; accept a drag only when the observed permutation matches.
 public enum MenuBarOrder {
+    /// Rectangles use the global top-left coordinate space shared by AX and Core Graphics.
+    public static func canMove(from source: CGRect, to target: CGRect, displayBounds: [CGRect]) -> Bool {
+        guard abs(source.midY - target.midY) < 2 else { return false }
+        let start = CGPoint(x: source.midX, y: source.midY)
+        let end = CGPoint(x: target.midX, y: target.midY)
+        return displayBounds.contains { $0.contains(start) && $0.contains(end) }
+    }
+
     public static func verifiesMove(_ item: String, before target: String,
                                     previous: [String], observed: [String]) -> Bool {
         guard item != target, Set(previous).count == previous.count,
