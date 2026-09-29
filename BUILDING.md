@@ -138,6 +138,7 @@ Sources/ZonesCore/          Pure, tested core for the Zones tool (no AppKit)
   LineupConfig.swift        Per-screen schema-3 config + migration (the legacy zones.json shape)
   Shortcuts.swift           Shortcut bindings + conflicts + zone actions
   Cycle.swift               Left/right cycle steps + continuation predicate
+  AppZonePlacement.swift    Saved per-app targets and one-shot launch restoration state
 Sources/CyclerCore/         Pure, tested core for the Cycler tool
   WindowCycle.swift         Cycle-order math
   AppGroupCycle.swift       App-group cycling
@@ -178,6 +179,55 @@ six suites.
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
 (`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
+
+### App launch placement
+
+Zones stores an optional `appPlacements` map in its existing settings section. Older files need no
+migration. The tool saves learned destinations through `ToolConfigScope` only after a successful
+explicit move, and updates its in-memory config only after the atomic save succeeds. Learning waits
+while no Zones section exists, preserving a deferred legacy import. A fresh installation already
+has its default section seeded by the importer. The map uses bundle IDs and exact display keys. A target includes its layout tree and relative geometry, so it
+cannot follow a reused zone number. Layout editor saves preserve the latest learned associations
+and invalidate those on edited displays.
+
+`AppLaunchPlacementController` listens to the workspace's launch and termination notifications.
+It ignores processes already running when Zones starts. For a new associated app it reads existing
+windows, observes AX window creation and focus changes, and briefly probes for windows while the
+app initializes. AX discovery runs on a serial background queue per launch, so a busy app cannot
+block the main run loop used by Hyperkey. Observer callbacks only enqueue discovery work.
+A notified window is checked before querying the app's window list. Cancellation removes the
+observer immediately and discards queued results, including results from an earlier process session. Those probes stop after five seconds; a supported AX observer can continue waiting
+for the first document window. If the app supports neither notification, discovery ends after that
+initial period. AX calls have a short timeout and startup retries back off to one second. After
+the discovery deadline, a supported observer waits for the next notification only if the last
+window list was readable. An unreadable window ends the attempt, and an unresolved list ends it
+at the deadline. Closed windows and missing or unsupported role/subrole attributes remain ineligible rather
+than cancelling the launch. This prevents a later document from consuming a missed first-window restore.
+Only non-modal standard windows qualify. The controller removes observation before the move attempt,
+including when the destination is unavailable. It does not subscribe to window movement or resizing.
+
+For manual verification, record a zone shortcut or Shift-drag placement, quit the target app, then
+relaunch it and show the first window returning. Open another window and move the restored window
+freely to confirm there is no further enforcement. Repeat with the saved external display
+disconnected, then reconnect it and relaunch the app to confirm the association was retained.
+Use `--long-splash --busy-start` with the probe to delay its first document for eight seconds and
+simulate an unresponsive app during startup. Keyboard input and the menu bar should remain responsive. For a repeatable live check, run
+`./Scripts/placement-probe.sh --check-discovery`. It compiles the production launch controller,
+launches only the document-free fixture, and verifies discovery after a long splash and a helper panel that closes immediately while a
+main-run-loop timer stays responsive, then checks cancellation while the fixture is busy and verifies that an unreadable first
+document cannot redirect restoration to its later window.
+It requires existing Accessibility access and never edits
+Lineup settings. Run it manually, outside the dependency-free test suite.
+Use `./Scripts/placement-probe.sh` to build a document-free native test app in a fresh temporary
+folder. Open the printed app path. It starts every process at a fixed frame and never saves window
+positions, so an app's own restoration cannot masquerade as Lineup's behavior. Shift-Command-M moves
+the focused window freely; Command-N opens a second window. Quit it, wait for the process to exit,
+and run `open -n "<printed app path>" --args --splash` to show a transient panel for three seconds
+before the first regular window. Discard the temporary bundle with `trash` when finished.
+
+Also check a splash or sheet before the first regular window, Zones disabled, and Accessibility
+revoked. Run these checks with a review build and collect before/after screenshots and a short video
+as required by [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### World Clock data and lifecycle
 

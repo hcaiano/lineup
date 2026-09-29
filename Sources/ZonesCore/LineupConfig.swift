@@ -128,6 +128,8 @@ public struct LineupConfig: Codable, Equatable {
     /// which preserves the legacy Shift-drag behavior and the first configurable-modifier
     /// builds.
     public var dragSnapKeyCode: Int?
+    /// Last explicit destination per application bundle ID. Absent in older configs.
+    public var appPlacements: [String: AppZonePlacement]?
 
     public init(schemaVersion: Int = LineupConfig.currentSchema,
                 screens: [String: ScreenLayout] = [:],
@@ -135,7 +137,8 @@ public struct LineupConfig: Codable, Equatable {
                 shortcuts: Shortcuts? = nil,
                 dragSnapEnabled: Bool? = nil,
                 dragSnapModifiers: Int? = nil,
-                dragSnapKeyCode: Int? = nil) {
+                dragSnapKeyCode: Int? = nil,
+                appPlacements: [String: AppZonePlacement]? = nil) {
         self.schemaVersion = schemaVersion
         self.screens = screens
         self.defaultLayout = defaultLayout
@@ -143,6 +146,7 @@ public struct LineupConfig: Codable, Equatable {
         self.dragSnapEnabled = dragSnapEnabled
         self.dragSnapModifiers = dragSnapModifiers
         self.dragSnapKeyCode = dragSnapKeyCode
+        self.appPlacements = appPlacements
     }
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.
@@ -156,6 +160,10 @@ public struct LineupConfig: Codable, Equatable {
 
     /// Validate every stored layout (structure + unit rules). Throws on the first invalid.
     public func validate() throws {
+        for placement in (appPlacements ?? [:]).values {
+            guard placement.isValid else { throw LineupConfigError.unreadable }
+            try placement.layout.validate()
+        }
         try defaultLayout.validate()
         for layout in screens.values.map(\.layout) { try layout.validate() }
     }
