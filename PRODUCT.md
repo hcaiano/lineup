@@ -28,6 +28,18 @@ instructions, and the app then disappears into muscle memory.
 - Changing from a newer Nightly build to Stable stops Nightly updates. It waits for a newer Stable
   release; it does not install an older Stable build as a downgrade.
 
+## Text Capture
+
+Text Capture is an independent, opt-in tool. Invoke it from the menu bar, Settings, or an assigned
+global shortcut; drag a region on one display; paste the copied plain text in another app. Escape
+cancels selection. The selection overlay must never appear in the captured image.
+
+Recognition runs locally using Portuguese and English support in macOS. A brief visible and
+VoiceOver-announced notice confirms a copy. Empty results, capture or recognition failures, and cancellation preserve
+the clipboard. Screen Recording is requested only on capture, with recovery in Settings. Display
+changes and tool shutdown invalidate pending results. There is no capture history, automatic
+paste, translation, or network processing.
+
 ## Brand Personality
 
 Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in

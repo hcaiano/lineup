@@ -13,7 +13,7 @@
 
 ![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup combines three tools. Enable only the tools you need:
+Lineup combines four tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
   Zone shortcuts are numbered across ALL your displays: each display's Settings group shows its
@@ -25,6 +25,8 @@ Lineup combines three tools. Enable only the tools you need:
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
+- **Text Capture:** Select a region on any display and copy its text, recognized locally in
+  Portuguese and English.
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
@@ -35,6 +37,30 @@ Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 3. Allow Accessibility access when macOS asks. Lineup needs it to inspect and move windows.
 4. If you enable Hyperkey, allow Input Monitoring when macOS asks. The other tools do not request
    this permission.
+
+## Copy text from the screen
+
+1. Open Settings → Text Capture and enable the tool. It starts off, with no shortcut assigned.
+2. Choose **Capture Text…** in the menu bar or Settings. You can also record a global shortcut
+   in its settings. Conflicts with other Lineup tools or apps are reported there.
+3. On the first capture, allow Screen Recording in macOS. Enabling the tool alone never asks for
+   this permission. If access was denied or revoked, use **Open Screen Recording Settings…** in
+   Text Capture or General → Permissions. Quit and reopen Lineup if macOS asks, then try again.
+4. Drag around text on one display and release to copy it. Press Escape to cancel selection.
+   A drag crossing a display edge is limited to the display where it started.
+5. After **Text copied**, paste with Command-V in the destination app. Nothing is pasted automatically.
+
+Empty captures, failed recognition, and cancellation leave the clipboard unchanged. Select a
+larger region if small text is missed. The engine reads rows from top to bottom and fragments from
+left to right; complex columns and tables may need separate captures. Portuguese and English
+language support must both be available in the local macOS recognition engine. If either is
+unavailable, Text Capture explains this without replacing the clipboard.
+
+Invoking capture again during selection or recognition does not start another job. Use **Cancel
+Text Capture** in the menu to stop pending work. Display changes, disabling the tool, and quitting
+Lineup also cancel it. Captures stay in memory and are released after use; Lineup does not keep a
+capture history, log the recognized text, or send it to a service. The copied text remains on the
+system clipboard until another app or copy action replaces it.
 
 ## Update tracks
 

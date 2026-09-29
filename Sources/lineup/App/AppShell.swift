@@ -109,6 +109,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.register(ZonesTool())
         registry.register(CyclerTool())
         registry.register(HyperkeyTool())
+        registry.register(TextCaptureTool())
         registry.startEnabledTools()
         statusItem.refresh()
 

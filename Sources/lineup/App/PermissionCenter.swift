@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
-/// Accessibility + Input Monitoring status, live watching, and the request/recovery paths.
+/// Accessibility, Input Monitoring and Screen Recording status, live watching, and the request/recovery paths.
 ///
 /// Merges the identical Accessibility watch both 1.x apps had (distributed notification on
 /// `com.apple.accessibility.api` plus a 1.5 s poll, bounded at 80 ticks, started ONLY when the
@@ -12,6 +12,7 @@ import CoreGraphics
 /// existing Lineup users and must stay opt-in: it is requested lazily the first time Hyperkey is
 /// enabled, and otherwise only surfaced in General › Permissions and the Hyperkey pane.
 @MainActor
+// Screen Recording is requested by Text Capture only when a capture starts.
 final class PermissionCenter {
     static let shared = PermissionCenter()
 
@@ -28,11 +29,13 @@ final class PermissionCenter {
 
     var isAccessibilityTrusted: Bool { AXIsProcessTrusted() }
     var isInputMonitoringGranted: Bool { CGPreflightListenEventAccess() }
+    var isScreenRecordingGranted: Bool { CGPreflightScreenCaptureAccess() }
 
     func isGranted(_ permission: Permission) -> Bool {
         switch permission {
         case .accessibility: return isAccessibilityTrusted
         case .inputMonitoring: return isInputMonitoringGranted
+        case .screenRecording: return isScreenRecordingGranted
         }
     }
 
@@ -114,7 +117,17 @@ final class PermissionCenter {
         switch permission {
         case .accessibility: openAccessibilitySettings()
         case .inputMonitoring: openInputMonitoringSettings()
+        case .screenRecording: openScreenRecordingSettings()
         }
+    }
+
+    /// Only a user-invoked capture requests access; enabling the tool never prompts.
+    func requestScreenRecording() -> Bool {
+        CGRequestScreenCaptureAccess()
+    }
+
+    func openScreenRecordingSettings() {
+        open("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
     }
 
     private func open(_ urlString: String) {
