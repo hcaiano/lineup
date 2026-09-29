@@ -14,9 +14,9 @@ the only UI most users ever see is the on-screen layout editor (once) and the dr
 
 ## Product Purpose
 
-Lineup combines independently enabled tools for window layouts, app cycling, a Hyperkey and world
-clocks. Zones snaps windows into per-screen zones the user draws themselves. It replaces Magnet/Rectangle
-with something you can shape: recursive zone layouts per display, snapping by shift-drag or global
+Lineup combines independently enabled tools for window layouts, app cycling, a Hyperkey, world
+clocks and text capture. Zones snaps windows into per-screen zones the user draws themselves. It
+replaces Magnet/Rectangle with something you can shape: recursive zone layouts per display, snapping by shift-drag or global
 shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
 instructions, and the app then disappears into muscle memory.
 
@@ -47,6 +47,18 @@ the next event follows the simulated time. No calendar, location permission or n
 - Both tracks keep one app identity, config file, update feed and permission grants.
 - Changing from a newer Nightly build to Stable stops Nightly updates. It waits for a newer Stable
   release; it does not install an older Stable build as a downgrade.
+
+## Text Capture
+
+Text Capture is an independent, opt-in tool. Invoke it from the menu bar, Settings, or an assigned
+global shortcut; drag a region on one display; paste the copied plain text in another app. Escape
+cancels selection. The selection overlay must never appear in the captured image.
+
+Recognition runs locally using Portuguese and English support in macOS. A brief visible and
+VoiceOver-announced notice confirms a copy. Empty results, capture or recognition failures, and cancellation preserve
+the clipboard. Screen Recording is requested only on capture, with recovery in Settings. Display
+changes and tool shutdown invalidate pending results. There is no capture history, automatic
+paste, translation, or network processing.
 
 ## Brand Personality
 

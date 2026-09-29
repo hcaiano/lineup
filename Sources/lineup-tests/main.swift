@@ -21,6 +21,7 @@ runSuite("WorldClockSuite", runWorldClockTests)
 runSuite("AppSuite", runAppTests)
 runSuite("NightlyAutomationSuite", runNightlyAutomationTests)
 runSuite("AwakeSuite", runAwakeTests)
+runSuite("TextCaptureSuite", runTextCaptureTests)
 
 // ---- Report ----
 if failures == 0 {

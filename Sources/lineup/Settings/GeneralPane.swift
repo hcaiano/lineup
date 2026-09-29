@@ -107,9 +107,7 @@ struct GeneralPane: View {
     /// it stays honest as tools are added — nothing here names Zones, Cycler or Hyperkey.
     @ViewBuilder
     private func permissionRow(_ permission: Permission, neededBy tools: [String]) -> some View {
-        let granted = permission == .accessibility
-            ? store.isAccessibilityTrusted
-            : store.isInputMonitoringGranted
+        let granted = permissions.isGranted(permission)
         SettingsRow(title: permission.displayName,
                     detail: "Required by \(tools.joined(separator: ", "))") {
             HStack(spacing: 12) {
