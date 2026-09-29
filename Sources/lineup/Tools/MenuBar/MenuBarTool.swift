@@ -35,7 +35,8 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
 
     var supported: Bool { ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 }
     var canEdit: Bool { sectionLoadError == nil && services?.config.canWrite == true && !busy }
-    var canGrantAccess: Bool { !busy && (canEdit || FileManager.default.fileExists(atPath: journal.path)) }
+    var hasPendingRecovery: Bool { FileManager.default.fileExists(atPath: journal.path) }
+    var canGrantAccess: Bool { !busy && (canEdit || hasPendingRecovery) }
 
     func attach(_ services: ToolServices) {
         self.services = services
@@ -211,7 +212,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
                 helper.standardError = FileHandle.nullDevice
                 helper.terminationHandler = { [weak self, weak helper] _ in
                     Task { @MainActor in
-                        guard let self, let helper, self.recovery === helper else { return }
+                        guard let self, let helper, self.recovery === helper, self.collapsed else { return }
                         self.restore()
                     }
                 }

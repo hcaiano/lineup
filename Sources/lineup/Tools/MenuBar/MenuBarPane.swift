@@ -16,7 +16,7 @@ struct MenuBarPane: View {
                         .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 }
                 if tool.supported {
-                    if tool.settings.preferencesBookmark == nil {
+                    if tool.settings.preferencesBookmark == nil && !tool.hasPendingRecovery {
                         SettingsSectionView("Access", caption: "Choose the Control Center settings file once so Lineup can show and hide the apps you select.") {
                             Button("Grant Access…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
                         }
@@ -41,7 +41,9 @@ struct MenuBarPane: View {
                 }
                 HStack {
                     Button("Restore Items") { tool.restore(); tool.refresh() }.disabled(tool.busy)
-                    Button("Grant Access Again…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
+                    if tool.settings.preferencesBookmark != nil || tool.hasPendingRecovery {
+                        Button("Grant Access Again…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
+                    }
                 }
                 Button("Open macOS Menu Bar Settings…") {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension*menubar")!)
@@ -53,6 +55,16 @@ struct MenuBarPane: View {
         }
         .onAppear { tool.setPaneVisible(true) }
         .onDisappear { tool.setPaneVisible(false) }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
+            if (notification.object as? NSWindow)?.delegate is SettingsWindowController {
+                tool.setPaneVisible(false)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            if (notification.object as? NSWindow)?.delegate is SettingsWindowController {
+                tool.setPaneVisible(true)
+            }
+        }
     }
 
     private func group(_ title: String, hidden: Bool) -> some View {
