@@ -57,6 +57,11 @@ final class PlacementProbe: NSObject, NSApplicationDelegate {
         window.contentView = label("Window \(number)\n\nPlace with a Zones shortcut or Shift-drag.\nShift-Command-M: move freely\nCommand-N: another window\nCommand-Q: quit\n\nEvery launch starts at a fixed frame.\nThis app never saves window positions.")
         windows.append(window)
         window.makeKeyAndOrderFront(nil)
+        if number == 1, CommandLine.arguments.contains("--busy-document") {
+            NSAccessibility.post(element: window, notification: .created)
+            Thread.sleep(forTimeInterval: 2)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in newWindow() }
+        }
     }
 
     @objc private func moveFreely() {
@@ -94,6 +99,7 @@ struct DiscoveryCheck {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         let cancelDuringStartup = CommandLine.arguments.contains("--cancel")
+        let unreadableDocument = CommandLine.arguments.contains("--unknown-window")
         let started = ProcessInfo.processInfo.systemUptime
         var lastTick = started
         var longestTick: TimeInterval = 0
@@ -101,12 +107,20 @@ struct DiscoveryCheck {
         var controller: AppLaunchPlacementController!
         var finished = false
         let config = NSWorkspace.OpenConfiguration()
-        config.arguments = ["--long-splash", "--busy-start"]
+        config.arguments = ["--long-splash", unreadableDocument ? "--busy-document" : "--busy-start"]
         config.createsNewApplicationInstance = true
         let frame = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let target = AppZonePlacement(screenKey: "probe", layout: .halves,
                                       target: CGRect(x: 500, y: 0, width: 500, height: 800),
                                       frame: frame, visibleFrame: frame, pixelsWide: 1000)
+        func fixtureWindowCount() -> Int {
+            guard let fixture else { return 0 }
+            let element = AXUIElementCreateApplication(fixture.processIdentifier)
+            AXUIElementSetMessagingTimeout(element, 0.25)
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value) == .success else { return 0 }
+            return (value as? [AXUIElement])?.count ?? 0
+        }
         func finish(_ success: Bool, _ message: String) {
             guard !finished else { return }
             finished = true
@@ -120,6 +134,7 @@ struct DiscoveryCheck {
             bundle == "com.caiano.lineup.placement-probe" ? target : nil
         }, restore: { _, _ in
             if cancelDuringStartup { finish(false, "FAIL: discovery delivered a window after stop."); return }
+            if unreadableDocument { finish(false, "FAIL: an unreadable first document allowed a later restoration."); return }
             let elapsed = ProcessInfo.processInfo.systemUptime - started
             let responsive = longestTick < 0.2
             finish(responsive && elapsed >= 7,
@@ -140,8 +155,16 @@ struct DiscoveryCheck {
         if cancelDuringStartup {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { controller.stop() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                finish(longestTick < 0.2,
-                       "\(longestTick < 0.2 ? "PASS" : "FAIL"): stop during busy startup discarded later window; maximum main-loop tick gap \(String(format: "%.3f", longestTick))s.")
+                let passed = longestTick < 0.2 && fixtureWindowCount() >= 1
+                finish(passed,
+                       "\(passed ? "PASS" : "FAIL"): stop during busy startup discarded later window; maximum main-loop tick gap \(String(format: "%.3f", longestTick))s.")
+            }
+        }
+        if unreadableDocument {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
+                let passed = longestTick < 0.2 && fixtureWindowCount() >= 2
+                finish(passed,
+                       "\(passed ? "PASS" : "FAIL"): unreadable first document left both windows untouched; maximum main-loop tick gap \(String(format: "%.3f", longestTick))s.")
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) {

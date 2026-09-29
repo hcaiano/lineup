@@ -33,4 +33,5 @@ if [[ "${1:-}" == "--check-discovery" ]]; then
         -o "${PROBE_DIR}/discovery-check"
     "${PROBE_DIR}/discovery-check" "${PROBE_APP}"
     "${PROBE_DIR}/discovery-check" "${PROBE_APP}" --cancel
+    "${PROBE_DIR}/discovery-check" "${PROBE_APP}" --unknown-window
 fi

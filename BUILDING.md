@@ -196,8 +196,9 @@ A notified window is checked before querying the app's window list. Cancellation
 observer immediately and discards queued results, including results from an earlier process session. Those probes stop after five seconds; a supported AX observer can continue waiting
 for the first document window. If the app supports neither notification, discovery ends after that
 initial period. AX calls have a short timeout and startup retries back off to one second. After
-the discovery deadline, a supported observer waits for the next notification without polling; a
-window-list timeout does not discard a delayed first document.
+the discovery deadline, a supported observer waits for the next notification only if the last
+window list was readable. An unreadable window ends the attempt, and an unresolved list ends it
+at the deadline. This prevents a later document from consuming a missed first-window restore.
 Only non-modal standard windows qualify. The controller removes observation before the move attempt,
 including when the destination is unavailable. It does not subscribe to window movement or resizing.
 
@@ -209,7 +210,8 @@ Use `--long-splash --busy-start` with the probe to delay its first document for 
 simulate an unresponsive app during startup. Keyboard input and the menu bar should remain responsive. For a repeatable live check, run
 `./Scripts/placement-probe.sh --check-discovery`. It compiles the production launch controller,
 launches only the document-free fixture, and verifies discovery after the long splash while a
-main-run-loop timer stays responsive, then checks cancellation while the fixture is busy.
+main-run-loop timer stays responsive, then checks cancellation while the fixture is busy and verifies that an unreadable first
+document cannot redirect restoration to its later window.
 It requires existing Accessibility access and never edits
 Lineup settings. Run it manually, outside the dependency-free test suite.
 Use `./Scripts/placement-probe.sh` to build a document-free native test app in a fresh temporary

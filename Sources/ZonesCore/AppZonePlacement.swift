@@ -113,10 +113,10 @@ public struct ZoneLaunchRestoration {
 /// AX attributes needed to distinguish a document window from transient or hidden windows.
 public enum LaunchWindowEligibility {
     /// Check the event's window before asking a potentially busy app for its window list.
-    public static func firstEligible<Window>(notified: Window?, windows: () -> [Window],
-                                             isEligible: (Window) -> Bool) -> Window? {
-        if let notified, isEligible(notified) { return notified }
-        return windows().first(where: isEligible)
+    public static func firstEligible<Window>(notified: Window?, windows: () throws -> [Window],
+                                             isEligible: (Window) throws -> Bool) rethrows -> Window? {
+        if let notified, try isEligible(notified) { return notified }
+        return try windows().first(where: isEligible)
     }
 
     public static func isEligible(role: String?, subrole: String?, modal: Bool?,

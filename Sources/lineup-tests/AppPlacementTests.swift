@@ -121,6 +121,21 @@ func runAppPlacementTests() throws {
                                                               isEligible: { $0 >= 42 })
     check(fromList == 42, "launch discovery: startup without a notification selects the first regular window")
 
+    enum UnreadableWindow: Error { case timeout }
+    var laterWindowsRead = false
+    do {
+        _ = try LaunchWindowEligibility.firstEligible(notified: 1, windows: {
+            laterWindowsRead = true
+            return [2]
+        }, isEligible: { window in
+            if window == 1 { throw UnreadableWindow.timeout }
+            return true
+        })
+        check(false, "launch discovery: an unknown first window must abort selection")
+    } catch {
+        check(!laterWindowsRead, "launch discovery: an unreadable first window cannot be skipped for a later document")
+    }
+
     let old = Data(#"{"schemaVersion":3,"screens":{},"defaultLayout":{"type":"leaf"}}"#.utf8)
     check(try JSONDecoder().decode(LineupConfig.self, from: old).appPlacements == nil,
           "placement: old Zones settings load without associations or a migration")

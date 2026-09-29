@@ -82,6 +82,8 @@ private final class LaunchWindowWatch {
     private lazy var app = AXUIElementCreateApplication(pid)
     private var deadline: TimeInterval = 0
     private var retryDelay: TimeInterval = 0.25
+    private var unresolvedList = false
+    private enum DiscoveryError: Error { case unreadableWindow }
 
     init(pid: pid_t, completion: @escaping @MainActor (LaunchWindowWatch, AXUIElement?) -> Void) {
         self.pid = pid
@@ -117,7 +119,7 @@ private final class LaunchWindowWatch {
         guard !isCancelled else { return }
         guard AXIsProcessTrusted() else { finish(nil); return }
         if ProcessInfo.processInfo.systemUptime >= deadline {
-            if !isObserving { finish(nil) }
+            if !isObserving || unresolvedList { finish(nil) }
             return
         }
         if !isObserving { installObserver() }
@@ -153,17 +155,26 @@ private final class LaunchWindowWatch {
     private func inspect(created: AXUIElement? = nil) {
         guard !isCancelled else { return }
         guard AXIsProcessTrusted() else { finish(nil); return }
-        let window = LaunchWindowEligibility.firstEligible(notified: created, windows: { [self] in
-            guard !isCancelled else { return [] }
-            var value: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
-            if result == .invalidUIElement { finish(nil) }
-            if result == .cannotComplete { retryDelay = min(retryDelay * 2, 1) }
-            return result == .success ? (value as? [AXUIElement] ?? []) : []
-        }, isEligible: isRegular)
-        if let window { finish(window) }
-        // A timeout never discards an installed observer. After startup it waits for the next
-        // notification, including a first document appearing after a long splash screen.
+        do {
+            let window = try LaunchWindowEligibility.firstEligible(notified: created, windows: { [self] in
+                guard !isCancelled else { return [] }
+                var value: CFTypeRef?
+                let result = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+                guard result == .success, let windows = value as? [AXUIElement] else {
+                    unresolvedList = true
+                    retryDelay = min(retryDelay * 2, 1)
+                    if result == .invalidUIElement || ProcessInfo.processInfo.systemUptime >= deadline { finish(nil) }
+                    return []
+                }
+                unresolvedList = false
+                return windows
+            }, isEligible: isRegular)
+            if let window { finish(window) }
+        } catch {
+            // An unreadable window may be the first document. Do not leave a pending restore
+            // that a later document or focus change could consume instead.
+            finish(nil)
+        }
     }
 
     private func finish(_ window: AXUIElement?) {
@@ -172,20 +183,27 @@ private final class LaunchWindowWatch {
         DispatchQueue.main.async { [self] in completion(self, window) }
     }
 
-    private func isRegular(_ window: AXUIElement) -> Bool {
+    private func isRegular(_ window: AXUIElement) throws -> Bool {
         guard !isCancelled else { return false }
         AXUIElementSetMessagingTimeout(window, 0.25)
-        func attribute(_ name: String) -> CFTypeRef? {
+        func attribute(_ name: String, optional: Bool = false) throws -> CFTypeRef? {
             guard !isCancelled else { return nil }
             var value: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(window, name as CFString, &value) == .success else { return nil }
+            let result = AXUIElementCopyAttributeValue(window, name as CFString, &value)
+            if optional && (result == .attributeUnsupported || result == .noValue) { return nil }
+            guard result == .success else { throw DiscoveryError.unreadableWindow }
             return value
         }
-        return LaunchWindowEligibility.isEligible(
-            role: attribute(kAXRoleAttribute) as? String,
-            subrole: attribute(kAXSubroleAttribute) as? String,
-            modal: attribute(kAXModalAttribute) as? Bool,
-            minimized: attribute(kAXMinimizedAttribute) as? Bool,
-            fullscreen: attribute("AXFullScreen") as? Bool)
+        let role = try attribute(kAXRoleAttribute) as? String
+        let subrole = try attribute(kAXSubroleAttribute) as? String
+        guard let role, let subrole else { throw DiscoveryError.unreadableWindow }
+        // Avoid optional attribute queries for a known panel or sheet.
+        guard LaunchWindowEligibility.isEligible(role: role, subrole: subrole, modal: nil,
+                                                 minimized: nil, fullscreen: nil) else { return false }
+        return try LaunchWindowEligibility.isEligible(
+            role: role, subrole: subrole,
+            modal: attribute(kAXModalAttribute, optional: true) as? Bool,
+            minimized: attribute(kAXMinimizedAttribute, optional: true) as? Bool,
+            fullscreen: attribute("AXFullScreen", optional: true) as? Bool)
     }
 }
