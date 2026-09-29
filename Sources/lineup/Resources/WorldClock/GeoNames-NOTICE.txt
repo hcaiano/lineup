@@ -1,0 +1,12 @@
+City data © GeoNames contributors, licensed under CC BY 4.0.
+https://www.geonames.org/
+https://creativecommons.org/licenses/by/4.0/
+
+Source: https://download.geonames.org/export/dump/cities15000.zip
+Regions: https://download.geonames.org/export/dump/admin1CodesASCII.txt
+Coverage: cities with population > 15,000 and capitals.
+Changes: selected fields, joined region names, sorted/deduplicated alternate names.
+Rebuild: python3 Scripts/import-clock-cities.py <cities15000.zip> <admin1CodesASCII.txt>
+
+lineup-worldclock-cities15000.zip SHA-256: 67a34a836cb362ef3f63747ed5cde9695762526e796adcad4bca1e9aaffcca8f
+lineup-worldclock-admin1.txt SHA-256: 1da92a6323a5fec3176f3f743bf4cf4040fd56a876da55e46fbca23c863aa60a
