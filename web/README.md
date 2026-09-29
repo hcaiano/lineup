@@ -48,6 +48,11 @@ npx wrangler@4.127.1 deploy
 
 Changes go live in seconds.
 
+When the [automatic Nightly service](../NIGHTLIES.md) is active, publish from the repository root
+on its release Mac with `python3 Scripts/nightly-service.py publish-web web` instead. It uses
+the same lock as Nightly publication and preserves the public feed. Do not activate the dormant
+Actions deploy or run direct Wrangler deploys alongside the service.
+
 ## Regenerate the social card
 
 ```sh

@@ -19,6 +19,7 @@ runSuite("CyclerSuite", runCyclerTests)
 runSuite("HyperkeySuite", runHyperkeyTests)
 runSuite("WorldClockSuite", runWorldClockTests)
 runSuite("AppSuite", runAppTests)
+runSuite("NightlyAutomationSuite", runNightlyAutomationTests)
 runSuite("AwakeSuite", runAwakeTests)
 runSuite("MenuBarSuite", runMenuBarTests)
 
