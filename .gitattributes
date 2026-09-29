@@ -1,0 +1,2 @@
+# An empty final alias field is a meaningful trailing tab in the generated TSV.
+Sources/lineup/Resources/WorldClock/cities.tsv whitespace=-blank-at-eol

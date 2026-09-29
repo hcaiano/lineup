@@ -16,14 +16,15 @@ let package = Package(
         // Pure Hyper-key persisted settings (TriggerKey + HyperKeySettings). Split out of
         // CyclerCore so Cycler and Hyperkey are independent tools. No dependencies by design.
         .target(name: "HyperkeyCore"),
+        .target(name: "WorldClockCore"),
         // Pure cycle-order math + the legacy ~/.config/cycler/bindings.json model.
         // Depends on HyperkeyCore only to re-export TriggerKey/HyperKeySettings for that
         // legacy file shape (see Sources/CyclerCore/Bindings.swift).
         .target(name: "CyclerCore", dependencies: ["HyperkeyCore"]),
         // Product identity, tool identity, and the unified ~/.config/lineup/config.json
         // envelope + legacy import. Needs all three tool models to do the import.
-        .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore"]),
-        // Thin executable: AppKit agent shell + the three tools. AX window writes,
+        .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore"]),
+        // Thin executable: AppKit agent shell + the four tools. AX window writes,
         // Carbon hotkeys, CGEventTap.
         .executableTarget(
             name: "lineup",
@@ -32,13 +33,14 @@ let package = Package(
                 "ZonesCore",
                 "CyclerCore",
                 "HyperkeyCore",
+                "WorldClockCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             // Per-tool app icons for the Settings sidebar and pane headers. `.copy` (not
             // `.process`) so the folder shape inside lineup_lineup.bundle is predictable.
             // Scripts/build-app.sh must copy that bundle into Contents/Resources, where the
             // app's non-trapping tool-icon loader looks for it.
-            resources: [.copy("Resources/ToolIcons")],
+            resources: [.copy("Resources/ToolIcons"), .copy("Resources/WorldClock")],
             // The bundled app loads Sparkle.framework from Contents/Frameworks; SwiftPM only
             // adds an rpath into .build, so add the bundle-relative one for the shipped app.
             linkerSettings: [
@@ -49,7 +51,7 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore"]
         ),
     ]
 )
