@@ -1,4 +1,5 @@
 import AppKit
+import AppCore
 import ApplicationServices
 
 struct MenuBarObservedItem: Identifiable {
@@ -28,8 +29,9 @@ enum MenuBarInventory {
     static func read(completion: @escaping ([MenuBarObservedItem]) -> Void) {
         guard AXIsProcessTrusted() else { completion([]); return }
         let apps = NSWorkspace.shared.runningApplications.filter {
-            !$0.isTerminated && $0.bundleIdentifier != Bundle.main.bundleIdentifier
-                && $0.bundleIdentifier != nil && !$0.bundleIdentifier!.hasPrefix("com.apple.")
+            !$0.isTerminated && $0.bundleIdentifier.map {
+                MenuBarPreferences.isOrganizable($0, excluding: Set([Bundle.main.bundleIdentifier, Product.bundleID].compactMap { $0 }))
+            } == true
         }.map { app in
             (app.processIdentifier, app.bundleIdentifier!, app.localizedName ?? app.bundleIdentifier!,
              app.icon ?? NSImage(named: NSImage.applicationIconName)!, app.launchDate,
@@ -61,6 +63,13 @@ enum MenuBarInventory {
             }
             let ordered = result.sorted { $0.frame.minX < $1.frame.minX }
             DispatchQueue.main.async { completion(ordered) }
+        }
+    }
+
+    @MainActor
+    static func read() async -> [MenuBarObservedItem] {
+        await withCheckedContinuation { continuation in
+            read { continuation.resume(returning: $0) }
         }
     }
 

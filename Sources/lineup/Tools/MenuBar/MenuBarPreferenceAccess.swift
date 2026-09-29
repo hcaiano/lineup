@@ -75,7 +75,7 @@ enum MenuBarPreferenceAccess {
             guard session == nil || record.session == session else { return }
             let current = try snapshot(bookmark: record.bookmark)
             // Missing apps may have been uninstalled. Do not recreate their records.
-            let restore = record.original.filter { current.allowed[$0.key] == false }
+            let restore = current.changesToRestore(original: record.original)
             try set(restore, bookmark: record.bookmark)
             try FileManager.default.removeItem(at: journal)
         }

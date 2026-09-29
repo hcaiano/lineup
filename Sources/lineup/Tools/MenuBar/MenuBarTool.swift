@@ -23,6 +23,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var work: Task<Void, Never>?
     private var recovery: Process?
+    private var paneVisible = false
     private var scanning = false
     private var generation = 0
     private let journal: URL
@@ -50,9 +51,9 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     func start(_ services: ToolServices) {
         guard !isRunning else { return }
         self.services = services
-        isRunning = true
         guard supported else { message = "Menu Bar currently supports macOS 27."; return }
         guard sectionLoadError == nil else { return }
+        isRunning = true
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.autosaveName = "Lineup.MenuBar.Toggle"
         item.button?.target = self
@@ -69,14 +70,34 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
             }
             observers.append((center, token))
         }
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            let center = NSWorkspace.shared.notificationCenter
+            observers.append((center, center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { if self?.paneVisible == true { self?.refresh() } }
+            }))
+        }
+        updateMonitoring()
+        if paneVisible { refresh() }
+    }
+
+    func setPaneVisible(_ visible: Bool) {
+        paneVisible = visible
+        updateMonitoring()
+        if visible { refresh() }
+    }
+
+    private func updateMonitoring() {
+        let needed = isRunning && (paneVisible || collapsed)
+        if !needed { refreshTimer?.invalidate(); refreshTimer = nil; return }
+        guard refreshTimer == nil else { return }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.collapsed && (self.recovery?.isRunning != true || !AXIsProcessTrusted()) { self.restore() }
-                self.refresh()
+                if self.collapsed && !AXIsProcessTrusted() { self.restore() }
+                if self.paneVisible { self.refresh() }
             }
         }
-        refresh()
+        refreshTimer?.tolerance = 0.5
     }
 
     func stop() {
@@ -90,18 +111,19 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         toggle = nil
         services?.termination.removeCleanup(id)
         isRunning = false
+        items = []
     }
 
     func refresh() {
-        guard isRunning, !busy, !scanning, AXIsProcessTrusted() else { return }
+        guard isRunning, !busy, !collapsed, !scanning, AXIsProcessTrusted() else { return }
         scanning = true
         let revision = generation
         MenuBarInventory.read { [weak self] observed in
             guard let self else { return }
             self.scanning = false
             guard self.isRunning, self.generation == revision else { return }
-            let ids = self.settings.orderedIDs(observed: observed.map(\.id))
-            self.items = ids.compactMap { id in observed.first { $0.id == id } }
+            guard !self.busy, !self.collapsed else { return }
+            self.items = observed
         }
     }
 
@@ -145,7 +167,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     }
 
     func setHidden(_ hidden: Bool, owner: String) {
-        guard canEdit else { return }
+        guard supported, isRunning, canEdit else { return }
         restore()
         guard !FileManager.default.fileExists(atPath: journal.path) else { return }
         var next = settings
@@ -176,10 +198,8 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
             do {
                 try MenuBarPreferenceAccess.restore(journal: journal)
                 let snapshot = try MenuBarPreferenceAccess.snapshot(bookmark: bookmark)
-                let selected = settings.hiddenOwners.filter {
-                    !$0.hasPrefix("com.apple.") && $0 != Bundle.main.bundleIdentifier && $0 != Product.bundleID
-                }
-                let original = snapshot.allowed.filter { selected.contains($0.key) && $0.value }
+                let original = snapshot.originalsToHide(selected: settings.hiddenOwners,
+                    excluding: Set([Bundle.main.bundleIdentifier, Product.bundleID].compactMap { $0 }))
                 guard !original.isEmpty else { throw MenuBarPreferenceAccess.Failure(message: "None of the selected apps is currently allowed in the menu bar.") }
                 let record = MenuBarRecoveryRecord(session: session, bookmark: bookmark, original: original)
                 try MenuBarPreferenceAccess.prepare(record, journal: journal)
@@ -189,6 +209,12 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
                 helper.arguments = ["--menu-bar-recovery", journal.path, ready.path, String(getpid()), session.uuidString]
                 helper.standardOutput = FileHandle.nullDevice
                 helper.standardError = FileHandle.nullDevice
+                helper.terminationHandler = { [weak self, weak helper] _ in
+                    Task { @MainActor in
+                        guard let self, let helper, self.recovery === helper else { return }
+                        self.restore()
+                    }
+                }
                 try helper.run()
                 recovery = helper
                 for _ in 0..<50 {
@@ -208,7 +234,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
                 do { try MenuBarPreferenceAccess.restore(journal: journal, session: session) }
                 catch { message = "Visibility could not be restored. Use Restore Items before quitting. " + error.localizedDescription }
                 recovery?.terminate(); recovery = nil
-                if message == nil { message = error.localizedDescription }
+                if message == nil && !(error is CancellationError) { message = error.localizedDescription }
             }
             services?.refreshMenu()
         }
@@ -228,8 +254,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     }
 
     func move(_ itemID: String, before targetID: String) {
-        guard canEdit, isRunning, let source = items.first(where: { $0.id == itemID }),
-              let target = items.first(where: { $0.id == targetID }), itemID != targetID else { return }
+        guard supported, canEdit, isRunning, itemID != targetID else { return }
         restore()
         guard !FileManager.default.fileExists(atPath: journal.path) else { return }
         busy = true
@@ -239,20 +264,28 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
             defer { busy = false; updateToggle(); refresh() }
             do {
                 try await Task.sleep(nanoseconds: 300_000_000)
+                let previous = await MenuBarInventory.read()
+                try Task.checkCancellation()
+                guard let source = previous.first(where: { $0.id == itemID }),
+                      let target = previous.first(where: { $0.id == targetID }) else {
+                    throw MenuBarPreferenceAccess.Failure(message: "The menu bar items changed. Refresh and try again.")
+                }
                 try await MenuBarInventory.move(source, before: target)
                 try await Task.sleep(nanoseconds: 400_000_000)
-                guard let from = MenuBarInventory.frame(source.element), let to = MenuBarInventory.frame(target.element),
-                      from.minX < to.minX else { throw MenuBarPreferenceAccess.Failure(message: "macOS did not move this item. You can also hold Command and drag it directly in the menu bar.") }
-                var next = settings
-                next.move(itemID, before: targetID, observed: items.map(\.id))
-                // The OS has already moved the item. Save only after observing the result.
-                busy = false
-                _ = save(next)
+                let observed = await MenuBarInventory.read()
+                try Task.checkCancellation()
+                items = observed
+                guard MenuBarOrder.verifiesMove(itemID, before: targetID,
+                    previous: previous.map(\.id), observed: observed.map(\.id)) else {
+                    throw MenuBarPreferenceAccess.Failure(message: "macOS did not move this item to the requested position. You can also hold Command and drag it directly in the menu bar.")
+                }
+                message = nil
             } catch { if !(error is CancellationError) { message = error.localizedDescription } }
         }
     }
 
     private func updateToggle() {
+        updateMonitoring()
         let label = collapsed ? "Show hidden menu bar items" : "Hide selected menu bar items"
         toggle?.button?.image = NSImage(systemSymbolName: collapsed ? "chevron.left" : "chevron.right", accessibilityDescription: label)
         toggle?.button?.setAccessibilityLabel(label)

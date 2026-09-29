@@ -155,7 +155,7 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
   WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
-  MenuBarSettings.swift     Optional menuBar tool settings, group membership and item ordering
+  MenuBarSettings.swift     Optional menuBar tool settings and group membership
   MenuBarPreferences.swift  Validated macOS 27 tracked-app preference edits and recovery records
 Sources/lineup/              AppKit agent (the app shell + the six tools)
   main.swift                 Bootstrap only
@@ -182,7 +182,10 @@ Menu Bar starts disabled and supports macOS 27 only. Its optional `tools.menuBar
 the existing config envelope without changing its schema. Malformed or newer tool settings
 block editing. The user's selected-file bookmark grants access only to the Control Center
 preferences file. The tool reads Accessibility menu extras without reading their menus and
-uses native Command-drag events for reorder operations initiated in Settings.
+uses native Command-drag events for reorder operations initiated in Settings. The pane follows
+the observed macOS order instead of persisting a second layout. Inventory scans run while the
+pane is visible, with a refresh on app launch/exit. A helper exit triggers restoration; a low-rate
+permission check runs only while items are hidden.
 
 Visibility changes use `CFPreferences` with the selected file's absolute preference domain.
 Writing the plist directly does not reliably notify the live menu bar. `MenuBarPreferences`

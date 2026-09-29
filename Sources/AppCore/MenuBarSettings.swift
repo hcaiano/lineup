@@ -4,14 +4,12 @@ import Foundation
 /// entire application, even when that application publishes several items.
 public struct MenuBarSettings: Codable, Equatable {
     public var hiddenOwners: Set<String>
-    public var itemOrder: [String]
     public var preferencesBookmark: Data?
     public var extra: [String: JSONValue]
 
-    public init(hiddenOwners: Set<String> = [], itemOrder: [String] = [],
+    public init(hiddenOwners: Set<String> = [],
                 extra: [String: JSONValue] = [:]) {
         self.hiddenOwners = hiddenOwners
-        self.itemOrder = itemOrder
         self.preferencesBookmark = nil
         self.extra = extra
     }
@@ -26,41 +24,32 @@ public struct MenuBarSettings: Codable, Equatable {
         }
         hiddenOwners = Set(try c.decodeIfPresent([String].self,
                             forKey: AnyCodingKey("hiddenOwners")) ?? [])
-        itemOrder = try c.decodeIfPresent([String].self,
-                            forKey: AnyCodingKey("itemOrder")) ?? []
         preferencesBookmark = try c.decodeIfPresent(Data.self, forKey: AnyCodingKey("preferencesBookmark"))
-        extra = try c.unknownValues(besides: ["version", "hiddenOwners", "itemOrder", "preferencesBookmark"])
+        extra = try c.unknownValues(besides: ["version", "hiddenOwners", "preferencesBookmark"])
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyCodingKey.self)
         try c.encode(1, forKey: AnyCodingKey("version"))
         try c.encode(hiddenOwners.sorted(), forKey: AnyCodingKey("hiddenOwners"))
-        try c.encode(itemOrder, forKey: AnyCodingKey("itemOrder"))
         try c.encodeIfPresent(preferencesBookmark, forKey: AnyCodingKey("preferencesBookmark"))
         try c.encodeExtra(extra)
-    }
-
-    /// Unknown items remain in their observed order. Missing apps retain their
-    /// saved identities so a layout edit does not discard them.
-    public func orderedIDs(observed: [String]) -> [String] {
-        var remaining = Set(observed)
-        let saved = itemOrder.filter { remaining.remove($0) != nil }
-        return saved + observed.filter { remaining.remove($0) != nil }
-    }
-
-    public mutating func move(_ item: String, before target: String?, observed: [String]) {
-        guard observed.contains(item), target != item,
-              target.map(observed.contains) ?? true else { return }
-        var order = orderedIDs(observed: observed).filter { $0 != item }
-        let index = target.flatMap { order.firstIndex(of: $0) } ?? order.endIndex
-        order.insert(item, at: index)
-        let absent = itemOrder.filter { !observed.contains($0) }
-        itemOrder = order + absent
     }
 
     public mutating func setHidden(_ hidden: Bool, owner: String) {
         guard !owner.isEmpty else { return }
         if hidden { hiddenOwners.insert(owner) } else { hiddenOwners.remove(owner) }
+    }
+}
+
+/// macOS owns the order; accept a drag only when the observed permutation matches.
+public enum MenuBarOrder {
+    public static func verifiesMove(_ item: String, before target: String,
+                                    previous: [String], observed: [String]) -> Bool {
+        guard item != target, Set(previous).count == previous.count,
+              previous.contains(item), previous.contains(target) else { return false }
+        var expected = previous.filter { $0 != item }
+        expected.insert(item, at: expected.firstIndex(of: target)!)
+        return observed == expected
     }
 }

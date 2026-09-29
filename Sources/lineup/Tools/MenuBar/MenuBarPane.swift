@@ -10,11 +10,12 @@ struct MenuBarPane: View {
             VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
                 if !tool.supported {
                     Text("Menu Bar currently supports macOS 27.").foregroundStyle(.secondary)
-                } else {
-                    if let error = tool.sectionLoadError ?? tool.message {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                    }
+                }
+                if let error = tool.sectionLoadError ?? tool.message {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
+                if tool.supported {
                     if tool.settings.preferencesBookmark == nil {
                         SettingsSectionView("Access", caption: "Choose the Control Center settings file once so Lineup can show and hide the apps you select.") {
                             Button("Grant Access…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
@@ -29,7 +30,6 @@ struct MenuBarPane: View {
                     HStack {
                         Button(tool.collapsed ? "Show Hidden Items" : "Hide Selected Items") { tool.toggleVisibility() }
                             .disabled(!tool.isRunning || tool.busy || tool.settings.hiddenOwners.isEmpty)
-                        Button("Restore Items") { tool.restore(); tool.refresh() }.disabled(tool.busy)
                         Spacer()
                         Button("Refresh") { tool.refresh() }.disabled(!tool.isRunning || tool.busy)
                     }
@@ -38,19 +38,21 @@ struct MenuBarPane: View {
                     if !tool.isRunning {
                         Text("Turn on Menu Bar to load the items from your running apps.").foregroundStyle(.secondary)
                     }
-                    if tool.settings.preferencesBookmark != nil {
-                        Button("Grant Access Again…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
-                    }
-                    Button("Open macOS Menu Bar Settings…") {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension*menubar")!)
-                    }
+                }
+                HStack {
+                    Button("Restore Items") { tool.restore(); tool.refresh() }.disabled(tool.busy)
+                    Button("Grant Access Again…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
+                }
+                Button("Open macOS Menu Bar Settings…") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension*menubar")!)
                 }
             }
             .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
             .padding(.vertical, SettingsMetrics.panePaddingVertical)
             .frame(maxWidth: .infinity)
         }
-        .onAppear { tool.refresh() }
+        .onAppear { tool.setPaneVisible(true) }
+        .onDisappear { tool.setPaneVisible(false) }
     }
 
     private func group(_ title: String, hidden: Bool) -> some View {

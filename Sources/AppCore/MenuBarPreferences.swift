@@ -39,6 +39,18 @@ public struct MenuBarPreferences {
         }
     }
 
+    public static func isOrganizable(_ owner: String, excluding: Set<String>) -> Bool {
+        !owner.isEmpty && !owner.hasPrefix("com.apple.") && !excluding.contains(owner)
+    }
+
+    public func originalsToHide(selected: Set<String>, excluding: Set<String>) -> [String: Bool] {
+        allowed.filter { $0.value && selected.contains($0.key) && Self.isOrganizable($0.key, excluding: excluding) }
+    }
+
+    public func changesToRestore(original: [String: Bool]) -> [String: Bool] {
+        original.filter { $0.value && allowed[$0.key] == false && !$0.key.hasPrefix("com.apple.") }
+    }
+
     public mutating func setAllowed(_ values: [String: Bool]) throws {
         for id in values.keys where indices[id] == nil { throw Failure.missingApplication(id) }
         for (id, value) in values {
