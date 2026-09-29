@@ -28,7 +28,7 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
         } catch {
             services.log.error("World Clock settings failed to load: \(error.localizedDescription, privacy: .public)")
             model.configure(settings: WorldClockSettings(), sectionLoadError:
-                "World Clock settings couldn’t be read and were left untouched. Restore valid settings or update Lineup to edit places.")
+                "World Clock settings couldn’t be read and were left untouched. Quit Lineup before restoring valid settings, then reopen it. Settings from a newer version require updating Lineup.")
         }
         model.save = { [weak self] settings in
             guard let self, self.model.blockedMessage == nil, let services = self.services else {
