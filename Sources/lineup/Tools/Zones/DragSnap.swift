@@ -23,6 +23,8 @@ final class DragSnapController {
     private var monitor: Any?
     private let configProvider: () -> LineupConfig
     private let triggerProvider: () -> DragSnapTrigger
+    private let onPlacement: WindowMover.PlacementHandler
+    private var targetScreenKey: String?
 
     private var captured: AXUIElement?   // the window grabbed at drag start
     private var armed = false            // trigger modifier held + a window captured
@@ -51,9 +53,11 @@ final class DragSnapController {
     private var restoreCandidate: (window: AXUIElement, preFrame: CGRect, frameAtMatch: CGRect)?
     private var restoreRetries = 0
 
-    init(configProvider: @escaping () -> LineupConfig, triggerProvider: @escaping () -> DragSnapTrigger) {
+    init(configProvider: @escaping () -> LineupConfig, triggerProvider: @escaping () -> DragSnapTrigger,
+         onPlacement: @escaping WindowMover.PlacementHandler) {
         self.configProvider = configProvider
         self.triggerProvider = triggerProvider
+        self.onPlacement = onPlacement
     }
 
     var isEnabled: Bool { monitor != nil }
@@ -104,8 +108,9 @@ final class DragSnapController {
             maybeRestoreUnsnappedSize()
             if armed { updateHighlight() }
         case .leftMouseUp:
-            if armed, let win = captured, let rect = lastTargetRect {
-                WindowMover.snap(win, toCocoaRect: rect)
+            if armed, let win = captured, let rect = lastTargetRect,
+               let screen = NSScreen.screens.first(where: { ScreenIdentity.info(for: $0).key == targetScreenKey }) {
+                if WindowMover.snap(win, toCocoaRect: rect) { onPlacement(win, screen, rect) }
             }
             reset()
         default:
@@ -217,6 +222,7 @@ final class DragSnapController {
         let p = NSEvent.mouseLocation
         guard let screen = screenContaining(p) else { return nil }
         let info = ScreenIdentity.info(for: screen)
+        targetScreenKey = info.key
         let root = configProvider().layout(forKey: info.key)
         // The leaf zone whose rect contains the cursor; fall back to the nearest by center.
         let zones = Layout.zones(root, frame: screen.frame, visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
@@ -285,6 +291,7 @@ final class DragSnapController {
     private func hideHighlight() {
         highlight?.orderOut(nil)
         lastTargetRect = nil
+        targetScreenKey = nil
         clearLinger()
     }
 
@@ -297,6 +304,7 @@ final class DragSnapController {
         highlight?.orderOut(nil)
         highlight = nil
         lastTargetRect = nil
+        targetScreenKey = nil
         clearLinger()
         dragStart = nil
         restoreChecked = false

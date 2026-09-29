@@ -27,6 +27,7 @@ func runAppTests() throws {
     try runEnvelopeTests()
     try runUpdateChannelTests()
     try runStoreTests()
+    try runAppPlacementPersistenceTests()
     try runLegacyImportTests()
     try runIdentityTests()
     try runReleaseToolingTests()
@@ -2695,4 +2696,59 @@ private func runVisualDesignTests() throws {
           "the app picker focuses its search field on open")
     check(picker.contains(".onSubmit { pickFirstMatch() }") && picker.contains("private func pickFirstMatch()"),
           "Return picks the first match, and does nothing when there is none")
+}
+
+private func runAppPlacementPersistenceTests() throws {
+    try withTempDir("app-placements") { dir in
+        let url = dir.appendingPathComponent("config.json")
+        let legacy = dir.appendingPathComponent("zones.json")
+        let legacyBytes = Data("legacy import source".utf8)
+        try legacyBytes.write(to: legacy)
+        let store = LineupAppConfigStore(url: url)
+        store.load()
+        try store.setSettings(HyperKeySettings(enabled: true, triggerKey: .f12), for: .hyperkey)
+        let sibling = store.config.tools[ToolID.hyperkey.rawValue]
+        let screen = ScreenInfo(key: "display-uuid", label: "External", pixelsWide: 1000,
+                                pixelsHigh: 800, keyIsStable: true)
+        let frame = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        var zones = LineupConfig().setting(layout: .halves, for: screen, now: nil)
+        let saved = AppZonePlacement(screenKey: screen.key, layout: .halves,
+                                     target: CGRect(x: 500, y: 0, width: 500, height: 800),
+                                     frame: frame, visibleFrame: frame, pixelsWide: 1000)
+        zones.rememberPlacement(saved, for: "app.one")
+        try store.setSettings(zones, for: .zones)
+        let restarted = LineupAppConfigStore(url: url)
+        restarted.load()
+        let loaded = try restarted.config.settings(LineupConfig.self, for: .zones)
+        check(loaded?.appPlacements?["app.one"] == saved,
+              "placement persistence: shared-store save survives a Lineup restart")
+        let retainedLegacy = try Data(contentsOf: legacy)
+        check(restarted.config.tools[ToolID.hyperkey.rawValue] == sibling && retainedLegacy == legacyBytes,
+              "placement persistence: sibling settings and read-only legacy bytes remain intact")
+        // Force an actual atomic-write failure without changing the accepted in-memory store.
+        let obstructed = dir.appendingPathComponent("not-a-directory")
+        try Data("file".utf8).write(to: obstructed)
+        let failing = LineupAppConfigStore(url: obstructed.appendingPathComponent("config.json"), config: restarted.config)
+        zones.appPlacements = nil
+        do {
+            try failing.setSettings(zones, for: .zones)
+            check(false, "placement persistence: refused save must throw")
+        } catch {
+            let retained = try failing.config.settings(LineupConfig.self, for: .zones)
+            check(retained?.appPlacements?["app.one"] == saved,
+                  "placement persistence: failed atomic save keeps the last accepted association")
+        }
+        for bytes in [Data("broken JSON".utf8), Data(#"{"schemaVersion":999,"general":{},"tools":{}}"#.utf8)] {
+            try bytes.write(to: url)
+            let rejected = LineupAppConfigStore(url: url)
+            rejected.load()
+            do {
+                try rejected.setSettings(zones, for: .zones)
+                check(false, "placement persistence: rejected load blocks placement saves")
+            } catch {
+                check((try Data(contentsOf: url)) == bytes,
+                      "placement persistence: rejected or newer config bytes survive a placement save")
+            }
+        }
+    }
 }

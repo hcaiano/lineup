@@ -30,6 +30,25 @@ Lineup combines four tools. Enable only the tools you need:
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
+## Remembering app placement
+
+Zones remembers the last successful placement for each app, including zone shortcuts, directional
+shortcuts and Shift-drag edge or corner placements. Quit and relaunch that app while Zones is running
+to put its first regular window back in the saved destination. Splash screens and sheets are skipped.
+Additional windows stay where the app opens them. Moving or resizing a window yourself, or using
+Restore, leaves the remembered destination unchanged.
+
+This happens once per app launch. Enabling Zones or restarting Lineup does not move windows of apps
+that are already running. Turning Zones off stops pending restorations. Missing Accessibility access
+or a failed move does not cause repeated placement attempts.
+
+Destinations use the saved display identity, not shortcut numbers. If that display is disconnected,
+the window stays where macOS opens it and the association is kept for a later launch. A changed
+layout is also skipped. Saving layout edits clears remembered placements for that display; place an
+app again to teach its new destination. Editing another display or changing display order does not
+affect it. Learning also waits while an old layout import is pending; reconnect that display first.
+Associations live in the shared `~/.config/lineup/config.json` file.
+
 ## World Clock
 
 Enable World Clock in Settings to add its clock icon to the menu bar. It starts disabled and
