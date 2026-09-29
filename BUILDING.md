@@ -128,7 +128,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting four independent tools, on top of five pure ("core") modules
+Lineup is one app shell hosting five independent tools, on top of five pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -148,12 +148,14 @@ Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
 Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
+  AwakeSession.swift        Timed power-request ownership and failure cleanup
+  AwakeSettings.swift       Keep Awake preferences, with unknown-key preservation
   Product.swift             Identity constants (name, bundle ID, paths, update feed)
   LineupAppConfig.swift     ~/.config/lineup/config.json envelope schema
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
   WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
-Sources/lineup/              AppKit agent (the app shell + the four tools)
+Sources/lineup/              AppKit agent (the app shell + the five tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -162,19 +164,20 @@ Sources/lineup/              AppKit agent (the app shell + the four tools)
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
   Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
   Tools/WorldClock/            Dedicated status item, popover, place management and Settings
+  Tools/Awake/                 IOKit idle-sleep requests, menu countdown, session settings
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
-  main.swift                  Orchestrates the five suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift
+  main.swift                  Orchestrates the six suites below
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
-five suites.
+six suites.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`/`worldClock`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
 
 ### App launch placement
@@ -361,3 +364,23 @@ Two rules the feed depends on:
 
 The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) → `make-dmg.sh` →
 `notarize.sh` (DMG) → `sparkle-appcast.sh` → `wrangler deploy` → commit.
+
+## Keep Awake power requests
+
+`AwakeSession` in AppCore owns request lifetime. `AwakePowerController` implements its power
+interface with IOKit `PreventUserIdleSystemSleep` and the optional `PreventUserIdleDisplaySleep`.
+Both use a system timeout with release-on-timeout. No user-activity assertion or permanent power
+setting is used. The app uses `ContinuousClock` for elapsed time and a common-run-loop timer so
+countdown and expiration also run while a menu is open. Explicit system sleep cancels the session;
+wake only checks expiration and never acquires requests. Registry disable and termination use the
+same cancellation path.
+
+Preferences use the existing opaque `tools.awake` section without changing the envelope schema.
+Unknown settings keys survive edits; malformed settings block editing. Active sessions are never
+persisted.
+
+For manual verification, compare `pmset -g assertions` before start, with the display option off,
+with it on, and after stop, disable, and quit. Filter by the tested Lineup PID and the assertion name
+`Lineup Keep Awake`; other apps may also prevent sleep. Capture the Settings and menu countdown,
+and record a start/countdown/stop interaction. Physical idle sleep and display sleep still need an
+unattended check under the machine's existing power settings.

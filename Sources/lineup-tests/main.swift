@@ -19,6 +19,7 @@ runSuite("CyclerSuite", runCyclerTests)
 runSuite("HyperkeySuite", runHyperkeyTests)
 runSuite("WorldClockSuite", runWorldClockTests)
 runSuite("AppSuite", runAppTests)
+runSuite("AwakeSuite", runAwakeTests)
 
 // ---- Report ----
 if failures == 0 {

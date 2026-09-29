@@ -78,3 +78,13 @@ Every control carries an accessibility label (SF Symbol `accessibilityDescriptio
 Hover-revealed controls are also click-pinned so trackpad/switch users get a stable target. Esc
 always cancels; Return always confirms. Color is never the only signal (active zones also get
 thicker strokes). No motion beyond system defaults, so no reduced-motion variants are required.
+
+## Keep Awake
+
+Keep Awake is an independent, opt-in tool for timed idle-sleep prevention. Users start and stop
+sessions from the menu bar or Settings. The active menu-bar label and countdown show the current
+state. Keeping the display on is a separate preference, off by default.
+
+Sessions last 15, 30, 60, or 120 minutes. Changing duration restarts the timer; changing the display
+option preserves its deadline. Explicit sleep ends the session. Sessions never resume at wake or
+app launch. The tool does not change permanent power settings, screen locking, or closed-lid behavior.

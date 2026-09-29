@@ -1,12 +1,13 @@
 # Lineup
 
-Lineup is a native macOS 13+ menu-bar suite. It combines four tools that users can enable
+Lineup is a native macOS 13+ menu-bar suite. It combines five tools that users can enable
 independently:
 
 - **Zones** arranges windows in per-screen layouts.
 - **Cycler** moves through apps and windows with global shortcuts.
 - **Hyperkey** maps one physical key to Control + Option + Shift + Command.
 - **World Clock** compares local and world times in its own menu-bar panel.
+- **Keep Awake** prevents idle sleep for a timed session, with a separate display option.
 
 Read [PRODUCT.md](PRODUCT.md) before changing user-visible behavior or design. Read
 [BUILDING.md](BUILDING.md) for build, package, and architecture details. Read

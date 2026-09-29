@@ -77,6 +77,7 @@ enum ToolIconLibrary {
         case .cycler: return "arrow.triangle.2.circlepath"
         case .hyperkey: return "capslock.fill"
         case .worldClock: return "clock"
+        case .awake: return "sun.max.fill"
         default: return "wrench.and.screwdriver.fill"
         }
     }

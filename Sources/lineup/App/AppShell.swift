@@ -110,6 +110,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.register(CyclerTool())
         registry.register(HyperkeyTool())
         registry.register(WorldClockTool())
+        registry.register(AwakeTool())
         registry.startEnabledTools()
         statusItem.refresh()
 
