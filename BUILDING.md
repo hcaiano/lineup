@@ -132,7 +132,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting six independent tools, on top of five pure ("core") modules
+Lineup is one app shell hosting seven independent tools, on top of six pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -151,6 +151,7 @@ Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   TriggerKey.swift          Trigger key enum + display names
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
 Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
+Sources/TextCaptureCore/    Display-local capture geometry, reading order, and cancellation gate
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
   AwakeSession.swift        Timed power-request ownership and failure cleanup
   AwakeSettings.swift       Keep Awake preferences, with unknown-key preservation
@@ -159,9 +160,10 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   LineupAppConfigStore.swift  Load/validate/atomic-write/backup discipline
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
   WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
+  TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
   MenuBarSettings.swift     Optional menuBar tool settings and group membership
   MenuBarPreferences.swift  Validated macOS 27 tracked-app preference edits and recovery records
-Sources/lineup/              AppKit agent (the app shell + the six tools)
+Sources/lineup/              AppKit agent (the app shell + the seven tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -172,10 +174,11 @@ Sources/lineup/              AppKit agent (the app shell + the six tools)
   Tools/WorldClock/            Dedicated status item, popover, place management and Settings
   Tools/Awake/                 IOKit idle-sleep requests, menu countdown, session settings
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
+  Tools/TextCapture/           ScreenCaptureKit selection/capture, Vision OCR, clipboard, Settings
   Tools/MenuBar/               Menu bar inventory, native reorder, visibility and recovery helper
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
-  main.swift                  Orchestrates the seven suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / MenuBarSuite.swift
+  main.swift                  Orchestrates the suites below
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / NightlyAutomationSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
@@ -219,10 +222,34 @@ and grant its permissions explicitly. An optional `control-center-access.bookmar
 directory seeds that review's first config. Never commit bookmarks, journals or review recordings.
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
-seven suites.
+registered suites.
+
+Text Capture uses a one-frame `SCStream` so the capture path also works on macOS 13. The filter
+excludes selection-window IDs before the overlays close. AppKit global coordinates become
+display-local top-left points; output dimensions use that display's backing scale. Vision runs
+off the main thread with revision 3 and locally supported Portuguese/English language codes.
+Every asynchronous completion checks its invocation token, display topology, and permission
+before the clipboard can change. Stopping the tool invalidates the token before cancelling the
+stream and Vision request. No captured image or recognized text is persisted or logged.
+
+For manual Text Capture verification, record this sequence on the actual app:
+
+1. Enable it in Settings; verify no Screen Recording prompt appears. Assign a shortcut, including
+   a conflicting shortcut to check the existing warning and retry path.
+2. Capture Portuguese accents and English across multiple lines, then paste in a plain-text
+   editor. Record selection, the copy notice, and the pasted result. Check VoiceOver's notice.
+3. Start with a known clipboard value. Cancel a selection, capture an empty region, and deny
+   Screen Recording. Each must preserve the value. Follow the Settings recovery action.
+4. Repeat on Retina/scaled and secondary displays with negative or vertically offset origins.
+   Change the display arrangement during selection; it must cancel without copying.
+5. Invoke repeatedly during selection and recognition. Disable the tool and quit during pending
+   work; no overlay or late clipboard write may survive. Re-enable and verify the saved shortcut.
+
+The dependency-free suite checks geometry, reading order, settings persistence, and the clipboard
+commit gate. It does not prove macOS permission prompts, live OCR quality, or compositor behavior.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`menuBar`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`/`menuBar`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
 
 ### App launch placement

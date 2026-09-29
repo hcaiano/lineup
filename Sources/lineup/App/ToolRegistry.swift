@@ -175,7 +175,7 @@ final class ToolRegistry {
                 byPermission[permission, default: []].append(tool.displayName)
             }
         }
-        return [Permission.accessibility, .inputMonitoring].compactMap { permission in
+        return [Permission.accessibility, .inputMonitoring, .screenRecording].compactMap { permission in
             guard let names = byPermission[permission] else { return nil }
             return (permission, names)
         }

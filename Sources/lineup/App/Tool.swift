@@ -12,11 +12,13 @@ import os
 enum Permission: Hashable {
     case accessibility
     case inputMonitoring
+    case screenRecording
 
     var displayName: String {
         switch self {
         case .accessibility: return "Accessibility"
         case .inputMonitoring: return "Input Monitoring"
+        case .screenRecording: return "Screen Recording"
         }
     }
 }
@@ -164,7 +166,7 @@ final class ToolServices {
     }
 }
 
-/// One of Lineup's three tools. A tool owns its hotkeys, taps, monitors, timers and observers,
+/// One of Lineup's independent tools. A tool owns its hotkeys, taps, monitors, timers and observers,
 /// and must be able to give every one of them back.
 @MainActor
 protocol Tool: AnyObject {

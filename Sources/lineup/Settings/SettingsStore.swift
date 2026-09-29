@@ -31,8 +31,6 @@ struct ToolRow: Identifiable, Equatable {
 final class SettingsStore: ObservableObject {
     @Published var selection: SettingsSection? = .general
     @Published private(set) var toolRows: [ToolRow] = []
-    @Published private(set) var isAccessibilityTrusted: Bool
-    @Published private(set) var isInputMonitoringGranted: Bool
     /// Mirrors `general.showMenuBarIcon`. The shell hands back what is ACTUALLY in force after the
     /// write, so a refused save puts the switch back instead of showing a preference the user does
     /// not have — the same self-correction `launchAtLogin` does below.
@@ -100,8 +98,6 @@ final class SettingsStore: ObservableObject {
         self.onUpdateChannelChange = onUpdateChannelChange
         self.hasDeferredNightly = AppUpdater.hasDeferredNightly
         self.launchAtLogin = LaunchAtLogin.isEnabled
-        self.isAccessibilityTrusted = permissions.isAccessibilityTrusted
-        self.isInputMonitoringGranted = permissions.isInputMonitoringGranted
         refresh()
     }
 
@@ -113,8 +109,6 @@ final class SettingsStore: ObservableObject {
                     iconSymbol: $0.iconSymbol, isEnabled: registry.isEnabled($0.id),
                     isRunning: $0.isRunning)
         }
-        isAccessibilityTrusted = permissions.isAccessibilityTrusted
-        isInputMonitoringGranted = permissions.isInputMonitoringGranted
         toolEnableError = registry.lastEnableError
         let login = LaunchAtLogin.isEnabled
         if login != launchAtLogin { launchAtLogin = login }
@@ -139,7 +133,7 @@ final class SettingsStore: ObservableObject {
     /// The tool's display name, or its raw id when the tool isn't registered in this build —
     /// used by messages that name an owner (a restore failure, a cross-tool combo conflict).
     func displayName(for id: ToolID) -> String {
-        toolRows.first { $0.id == id }?.name ?? id.rawValue.capitalized
+        toolRows.first { $0.id == id }?.name ?? id.displayName
     }
 
     /// Reads through to the registry, so a toggle the store refused to persist springs back on

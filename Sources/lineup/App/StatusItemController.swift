@@ -53,7 +53,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.image = Brand.menuBarLogo()
-            item.button?.toolTip = "\(Product.name): window snapping, app cycling, hyper key"
+            item.button?.toolTip = "\(Product.name): window snapping, app cycling, Hyperkey, world clocks, Keep Awake, text capture"
             statusItem = item
         }
         let awake = (registry.tool(.awake) as? AwakeTool)?.isActive == true
