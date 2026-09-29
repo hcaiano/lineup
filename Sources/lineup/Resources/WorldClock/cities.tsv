@@ -1016,10 +1016,10 @@
 11523810	Melbourne City Centre	AU	Victoria	-37.81501	144.96657	Australia/Melbourne	60057	Melbourne CBD|Melbourne central business district
 11523825	Adelaide city centre	AU	South Australia	-34.92873	138.60334	Australia/Adelaide	19820	Adelaide CBD
 11523847	Wollongong city centre	AU	New South Wales	-34.4279	150.89268	Australia/Sydney	19108	
-3577072	Tanki Leendert	AW	00	12.53914	-70.02004	America/Aruba	21500	Tanki Lender
-3577102	Santa Cruz	AW	00	12.50953	-69.98094	America/Aruba	15236	
-3577154	Oranjestad	AW	00	12.52398	-70.02703	America/Aruba	29998	Aran'estad|Oran'estad|Oranestad|Oraniestat|Oranjestad pa Aruba|Oranjestad på Aruba|Oranjestadas|Oranjestade|Oranjestado|Oranjested|Oranjestêd|Playa|ao la nie si ta de|awrnjstad|olanyeseutateu|oraniesutaddo|oraniyecuttatu|oranjestada|xo ran yes tad|Οράνιεστατ|Араньестад|Оранестад|Ораньестад|Ораньєстад|Орањестад|אורנייסטאד|أورنجستاد|اورنجستاد|اورنجسٹیڈ، اروبا|ओरांजेश्टाड|ஒரானியெசுத்தாடு|โอรันเยสตัด|ორანესტადი|オラニエスタッド|奥拉涅斯塔德|오라녜스타트
-3577159	Noord	AW	00	12.56596	-70.03198	America/Aruba	24193	
+3577072	Tanki Leendert	AW		12.53914	-70.02004	America/Aruba	21500	Tanki Lender
+3577102	Santa Cruz	AW		12.50953	-69.98094	America/Aruba	15236	
+3577154	Oranjestad	AW		12.52398	-70.02703	America/Aruba	29998	Aran'estad|Oran'estad|Oranestad|Oraniestat|Oranjestad pa Aruba|Oranjestad på Aruba|Oranjestadas|Oranjestade|Oranjestado|Oranjested|Oranjestêd|Playa|ao la nie si ta de|awrnjstad|olanyeseutateu|oraniesutaddo|oraniyecuttatu|oranjestada|xo ran yes tad|Οράνιεστατ|Араньестад|Оранестад|Ораньестад|Ораньєстад|Орањестад|אורנייסטאד|أورنجستاد|اورنجستاد|اورنجسٹیڈ، اروبا|ओरांजेश्टाड|ஒரானியெசுத்தாடு|โอรันเยสตัด|ორანესტადი|オラニエスタッド|奥拉涅斯塔德|오라녜스타트
+3577159	Noord	AW		12.56596	-70.03198	America/Aruba	24193	
 3041732	Mariehamn	AX	Mariehamn	60.09726	19.93481	Europe/Mariehamn	10682	MHQ|Maarianhamina|Marianhamina|Mariankhamina|Mariehameena|Mariekhamn|Mariuhoefn|Mariyekhamn|Marrianhamina|Maríuhöfn|malieham|mariehamun|Мариехамн|マリエハムン|마리에함
 147059	Əhmədbəyli	AZ	Saatlı	39.88074	48.39158	Asia/Baku	17242	Ahmadbayli|Ahmedbeyli|Tel'mankend|Telmankand|Telmankənd|Tel’mankend
 147105	Shusha	AZ	Shusha	39.76006	46.74989	Asia/Baku	19400	Choucha|Shoushi|Shushe|Shushi|Susa|Suse|Susha|Susi|Szusza|shusha|shwshy|susa|swsa|swsh|swst|Şuşa|Şuşi|Şûşa|Суса|Суша|Шуша|Շուշե|Շուշի|שושה|سوسا|سوسة|شوشی|सुसा|সুসা|ਸੂਸਾ|შუშა|ሱሳ|スサ
@@ -1688,7 +1688,7 @@
 10339095	Cobly	BJ	Atakora	10.49222	0.99972	Africa/Porto-Novo	24878	
 10339148	Klouékanmè	BJ	Kouffo	6.98028	1.84222	Africa/Porto-Novo	23763	Klouekanme
 11427410	Kpozoun	BJ	Zou	7.22868	2.21317	Africa/Porto-Novo	26688	
-3579132	Gustavia	BL	00	17.89618	-62.84978	America/St_Barthelemy	5988	Goustavia|Gustaf|Gustavi|Gustavija|Gustavio|Gustávia|Guthavia|Qustaviya|guseutabia|gustavhiya|gusutabia|gwiseutabia|gwstawya|ju si ta wei ya|ku s ta wi ya|kucutaviya|Γουσταβία|Густави|Густавия|Густавија|Густавія|گوستاویا|گوسٹاویا|गुस्ताव्हिया|குசுதாவியா|กุสตาวียา|გუსტავია|グスタビア|居斯塔维亚|구스타비아|귀스타비아
+3579132	Gustavia	BL		17.89618	-62.84978	America/St_Barthelemy	5988	Goustavia|Gustaf|Gustavi|Gustavija|Gustavio|Gustávia|Guthavia|Qustaviya|guseutabia|gustavhiya|gusutabia|gwiseutabia|gwstawya|ju si ta wei ya|ku s ta wi ya|kucutaviya|Γουσταβία|Густави|Густавия|Густавија|Густавія|گوستاویا|گوسٹاویا|गुस्ताव्हिया|குசுதாவியா|กุสตาวียา|გუსტავია|グスタビア|居斯塔维亚|구스타비아|귀스타비아
 3573197	Hamilton	BM	Hamilton city	32.2949	-64.78303	Atlantic/Bermuda	902	BDA|Chamilton|Gamil'tan|Gamil'ton|Hamilton pa Bermuda|Hamilton på Bermuda|Hamiltonas|Hamiltono|Khamilton|Khamiltun|amiltan|ha mi er dun|haemilteon|hamiruton|hamyltwn|hemiltana|hmyltwn|Χάμιλτον|Гамильтон|Гамільтан|Гамільтон|Хамилтон|Хамилтън|המילטון|هاميلتون|همیلتون|ہیملٹن|हॅमिल्टन|ஆமில்டன்|แฮมิลตัน|ჰამილტონი|ハミルトン|哈密尔顿|해밀턴
 1820071	Tutong	BN	Tutong	4.80278	114.64917	Asia/Brunei	19151	Pekan Tutong|touton|tutam|tutonga|tutoniግ|twtwng|twtwnj|Тутонг|توتونج|توتونگ|ٹwٹwng|ٹوٹونگ|तुटोंग|তুতং|ਤੁਟੋਂਗ|ቱቶንግ|トゥトン
 1820491	Kuala Belait	BN	Belait	4.58361	114.2312	Asia/Brunei	31178	Belait|KUB|Kuala-Belait|Kuala-Belajt|Kvala Belaitas|Kwala Belait|ku'ala belaita|kuallabeullais|kuaraburaito|kuwala belayiti|kuyala bela'ita|kwala blayt|kwala bylayt|kwala bylyt|ma lai yi|Куала-Белаит|Куала-Белайт|קואלה בלייט|كوالا بيلايت|کوالا بلایت|کوالا بيلايت|کوالا بیلیت|कुआला बेलैट|কুয়ালা বেলাইট|ਕੁਆਲਾ ਬੇਲੈਟ|ኩዋላ ቤላይት|クアラブライト|马来奕|쿠알라블라잇
@@ -8030,7 +8030,7 @@
 8521418	Espargos	CV	Sal	16.75524	-22.9446	Atlantic/Cape_Verde	24500	Ehspargush|SID|aisaparagosa|asbarkws|aspargws|esapargosa|espargosa|esuparugosu|siፓrigosi|Эспаргуш|إسباركوس|اسپارگوس|एस्पर्गोस|এসপার্গোস|ਐਸਪਾਰਗੋਸ|ስፓርጎስ|エスパルゴス
 3513090	Willemstad	CW		12.12246	-68.88641	America/Curacao	125000	Vilemstad|Vilemstadas|Vilemstade|Vilemstado|Villemstad|Villemstant|Villemştad|Willemsted|Willemstêd|billemseutateu|uiremusutatto|vilemastada|villemstatu|wei lian si ta de|willems tad|wylmstad|Βίλλεμσταντ|Вилемстад|Виллемстад|Вілемстад|Віллемстад|וילמסטאד|ويلمستاد|ویلمستاد|ویلمسٹیڈ|विलेमश्टाड|வில்லெம்ஸ்டாடு|วิลเลมสตัด|ვილემსტადი|ウィレムスタット|威廉斯塔德|빌렘스타트
 13308487	Bandariba	CW		12.09257	-68.83092	America/Curacao	20838	
-2078127	Flying Fish Cove	CX	00	-10.42172	105.67912	Indian/Christmas	1355	Flain-Fish-Kouv|Flaing Fish Kouv|Flajing Fish Kouv|Flajing-Fish-Kouv|Flayinq Fis Kouv|Flayinq Fiş Kouv|Kampong|The Settlement|fala'iga fisa kova|fei yu wan|flay xing fich khof|flayngh fysh kwf|flayyng fsh kww|peullaingpisikobeu|phla'inga phisa kova|pilaiyin pis kov|plaing-pishi|Флаинг Фиш Коув|Флайинг-Фиш-Коув|Флаін-Фіш-Коўв|Флајинг Фиш Коув|فلائینگ فش کوو|فلاينغ فيش كوف|फ्लाइंग फिश कोव|ਫ਼ਲਾਇੰਗ ਫ਼ਿਸ਼ ਕੋਵ|பிளையிங் பிஷ் கோவ்|ฟลายอิงฟิชโคฟ|ფლაინგ-ფიში|フライング・フィッシュ・コーブ|飞鱼湾|플라잉피시코브
+2078127	Flying Fish Cove	CX		-10.42172	105.67912	Indian/Christmas	1355	Flain-Fish-Kouv|Flaing Fish Kouv|Flajing Fish Kouv|Flajing-Fish-Kouv|Flayinq Fis Kouv|Flayinq Fiş Kouv|Kampong|The Settlement|fala'iga fisa kova|fei yu wan|flay xing fich khof|flayngh fysh kwf|flayyng fsh kww|peullaingpisikobeu|phla'inga phisa kova|pilaiyin pis kov|plaing-pishi|Флаинг Фиш Коув|Флайинг-Фиш-Коув|Флаін-Фіш-Коўв|Флајинг Фиш Коув|فلائینگ فش کوو|فلاينغ فيش كوف|फ्लाइंग फिश कोव|ਫ਼ਲਾਇੰਗ ਫ਼ਿਸ਼ ਕੋਵ|பிளையிங் பிஷ் கோவ்|ฟลายอิงฟิชโคฟ|ფლაინგ-ფიში|フライング・フィッシュ・コーブ|飞鱼湾|플라잉피시코브
 18918	Protaras	CY	Ammochostos	35.0125	34.05833	Asia/Famagusta	20230	Fig Tree Bay|Protarás|prwtaras|pu luo ta la si|purotarasu|Πρωταράς|Протарас|پروتاراس|پروٹاراس|プロタラス|普罗塔拉斯|普羅塔拉斯
 145963	Germasógeia	CY	Limassol	34.72073	33.08447	Asia/Nicosia	17325	Germasogeia|Yermasoya|Yermasoyia|Γερμασόγεια
 146054	Stróvolos	CY	Nicosia	35.14867	33.33384	Asia/Nicosia	67904	Istrovolos|Istrovulo|Strovilo|Strovolo|Strovolos|İstrovolos|İstrovulo|Στρόβολος|Строволос
@@ -10043,7 +10043,7 @@
 7521348	Ain Sukhna	EG	Suez	29.60018	32.31671	Africa/Cairo	45552	Ain El Sukhna|Ajn-Sukhna|alʿyn alskhnt|Айн-Сухна|العين السخنة
 7799991	New Cairo	EG	Cairo	30.03	31.47	Africa/Cairo	313139	Novyj Kair|alqahrt aljdydt|Новый Каир|القاهرة الجديدة
 7799998	El Shorouk	EG	Cairo	30.13806	31.61556	Africa/Cairo	91899	Ash-Shuruq|Ash-Shurūq|alshrwq|الشروق
-8134081	Al Qāhirah al Jadīdah	EG	00	30.04214	31.44446	Africa/Cairo	313139	Al Kakhirakh Al Dzhadidakh|Al Qahirah al Jadidah|New Cairo|alqahrt aljdydt|Ал Кахирах Ал Джадидах|القاهرة الجديدة
+8134081	Al Qāhirah al Jadīdah	EG		30.04214	31.44446	Africa/Cairo	313139	Al Kakhirakh Al Dzhadidakh|Al Qahirah al Jadidah|New Cairo|alqahrt aljdydt|Ал Кахирах Ал Джадидах|القاهرة الجديدة
 9073431	Aţ Ţārif	EG	New Valley	25.73826	32.63684	Africa/Cairo	38871	Al-Qarnuh al-Jadidah|Al-Qarnuh al-Jadīdah|At Tarif|At-Tarif|Aṭ-Ṭārif|altarf|الطارف
 9075170	Būr Fu’ād	EG	Port Said	31.24408	32.31955	Africa/Cairo	81591	Bur Fu'ad|Port Fouad|Port Fuad|bwr fwad|بور فؤاد
 12451089	Al-'Ubūr	EG	Qalyubia	30.22886	31.48149	Africa/Cairo	138987	Al Ubour|Al-'Ubur|Al-Ubur|El Ubour|alʿbwr|Ал-Убур|العبور
@@ -10056,10 +10056,10 @@
 13118928	New Bani Sewif City	EG	Beni Suweif	29.03556	31.11792	Africa/Cairo	29117	
 13680148	Aḍ-Ḍawāḥy	EG	Port Said	31.24408	32.27731	Africa/Cairo	148624	Ad-Davakhij|Ad-Dawahy|Al Dawahi|aldwahy|Ад-Давахий|الضواحي
 13680149	Az-Zuhūr	EG	Port Said	31.26504	32.26405	Africa/Cairo	266381	Al Zohur|Az-Zuhur|Az-Zukhur|alzhwr|Аз-Зухур|الزهور
-2461993	El Marsa	EH	00	27.09611	-13.41583	Africa/El_Aaiun	28848	Laayoune Plage|Marsa|Playa de Aaiun|Playa de Aaiún|Playa del Aaiun|Playa del Aaiún|almrsy|المرسى
+2461993	El Marsa	EH		27.09611	-13.41583	Africa/El_Aaiun	28848	Laayoune Plage|Marsa|Playa de Aaiun|Playa de Aaiún|Playa del Aaiun|Playa del Aaiún|almrsy|المرسى
 2462881	Laayoune	EH		27.1418	-13.18797	Africa/El_Aaiun	196331	Aaium|Aaiun|Aaiún|Aiun|Ajuno|Al Ayoun|Al-Aaiun|Al-Ajoen|Al-Ayun|Al-Ujun|EUN|Ehl'-Ajun|Ejbei Uad el Aabd|El Aaiun|El Aaiún|El Aium|El Aiun|El Aiún|El Ajun|El Ayun|El-Aaiun|El-Aaiún|La'Youn|Laâyoune|La’Youn|O Aaiun|O Aaiún|a you en|aiun|el-aiun|Ел Ајун|Эль-Аюн|العيون|العیون|アイウン|阿尤恩|엘아이운
 2463029	Boujdour	EH		26.13073	-14.48513	Africa/El_Aaiun	42651	Bu Jaydur|Bujdur|Cabo Bojador|Cape Blanc|bwjdwr|بوجدور|ⴱⵓⵊⴷⵓⵔ
-2463447	Dakhla	EH	CE	23.68477	-15.95798	Africa/El_Aaiun	106277	Ad - Dakhla|Ad Dakhla|Dajla|Dakhlah|Factoria Villa Cisneros|VIL|Villa Cisneras|Villa Cisneros|aldakhlt|dakhlh|Дахла|الداخلة|داخله
+2463447	Dakhla	EH		23.68477	-15.95798	Africa/El_Aaiun	106277	Ad - Dakhla|Ad Dakhla|Dajla|Dakhlah|Factoria Villa Cisneros|VIL|Villa Cisneras|Villa Cisneros|aldakhlt|dakhlh|Дахла|الداخلة|داخله
 330546	Massawa	ER	Northern Red Sea	15.60811	39.47455	Africa/Asmara	23100	MIts'Iwwa|MSW|Macua|Masaoua|Masava|Masawa|Massaoua|Massau|Massaua|Massava|Massawah|Massowa|Massowah|Maçuá|Mesewa|Mits'iwa|Mitsewa|Mitsiwa'e|Mitsiwa’e|Mits’iwa|Mĭts’ĭwwa|ma sa wa|masaua|masava|masawa|massawa|mʼsʼwwh|Μασάουα|Массава|Массауа|מאסאווה|מאסאווע|مصوع|मासावा|მასაუა|ምጽዋ|ምጽዋዕ|マッサワ|马萨瓦|마사와
 333287	Keren	ER	Anseba	15.77792	38.45107	Africa/Asmara	74800	Cheren|Hamelmalo|Kehrehn|Kerenas|Kereno|karan|ke lun|kelen|keren|krn|kyryn  artrya|qrn|Κερέν|Керен|Кэрэн|קרן|كرن|كَرَن|کرن|کیرین، ارتریا|კერენი|ከረን|ケレン|克伦|케렌
 334717	Himora	ER	Gash-Barka	14.30427	36.60601	Africa/Asmara	46100	Himora (2)|Khimora-2
@@ -11016,8 +11016,8 @@
 8620932	Kobo	ET	Amhara	10.02798	39.8528	Africa/Addis_Ababa	56100	
 8643798	Arsi Negele	ET	Oromiya	7.3547	38.67465	Africa/Addis_Ababa	98100	Nageellee Arsii|Negele Arsi
 10239401	Digih Habar Es	ET	Somali	6.44258	45.98329	Africa/Addis_Ababa	22000	Dhigih Habar Esse|Dhigix Habar Ciise
-11048860	Chagni	ET	28	10.95627	36.50456	Africa/Addis_Ababa	52300	
-11048861	Shendi	ET	28	10.64061	36.94684	Africa/Addis_Ababa	23900	
+11048860	Chagni	ET		10.95627	36.50456	Africa/Addis_Ababa	52300	
+11048861	Shendi	ET		10.64061	36.94684	Africa/Addis_Ababa	23900	
 12640444	Burayu	ET	Oromiya	9.03528	38.66083	Africa/Addis_Ababa	101400	Buraju|Бураю
 12640445	Guder	ET	Oromiya	8.97054	37.76117	Africa/Addis_Ababa	30600	
 12640446	May Cadera	ET	Tigray	14.07294	36.56828	Africa/Addis_Ababa	27300	
@@ -11146,7 +11146,7 @@
 2204575	Lami	FJ	Central	-18.11094	178.40943	Pacific/Fiji	24639	
 2204582	Labasa	FJ	Northern	-16.4332	179.36451	Pacific/Fiji	27949	LBS|Lambasa|Lambasa Mill|Lambase|Lambassa
 8740209	Nasinu	FJ	Central	-18.07051	178.51313	Pacific/Fiji	92043	
-3426691	Stanley	FK	00	-51.69382	-57.85701	Atlantic/Stanley	2213	PSY|Port Stanley|Port Stenli|Port Stenlis|Port-Stehnli|Port-Stenli|Porto Arxentino/Stanley|Puerto Archentinas/Stenlis|Puerto Argentino|Puerto Stanley|Stanlef|Stanlejo|Stanley Harbour|Stehnli|Stenli|Stenlis|astnly  jzayr falklnd|asٹynlے  jzayr faklynڈ|icutanli|porta stenli|seutaenli|si tan li|si tan li gang|stanly|stnly|sutanre|sutanri|Στάνλεϋ|Порт Стенли|Порт-Стенлі|Порт-Стэнли|Стенли|Стэнлі|Պորտ Սթենլի|סטאנלי|סטנלי|استنلی، جزایر فالکلند|اسٹینلے، جزائر فاکلینڈ|ستانلي|سٹینلے|पोर्ट स्टॅन्ली|இசுடான்லி|സ്റ്റാൻലി|สแตนลีย์|スタンリー|スタンレー|斯坦利|斯坦利港|스탠리
+3426691	Stanley	FK		-51.69382	-57.85701	Atlantic/Stanley	2213	PSY|Port Stanley|Port Stenli|Port Stenlis|Port-Stehnli|Port-Stenli|Porto Arxentino/Stanley|Puerto Archentinas/Stenlis|Puerto Argentino|Puerto Stanley|Stanlef|Stanlejo|Stanley Harbour|Stehnli|Stenli|Stenlis|astnly  jzayr falklnd|asٹynlے  jzayr faklynڈ|icutanli|porta stenli|seutaenli|si tan li|si tan li gang|stanly|stnly|sutanre|sutanri|Στάνλεϋ|Порт Стенли|Порт-Стенлі|Порт-Стэнли|Стенли|Стэнлі|Պորտ Սթենլի|סטאנלי|סטנלי|استنلی، جزایر فالکلند|اسٹینلے، جزائر فاکلینڈ|ستانلي|سٹینلے|पोर्ट स्टॅन्ली|இசுடான்லி|സ്റ്റാൻലി|สแตนลีย์|スタンリー|スタンレー|斯坦利|斯坦利港|스탠리
 2081986	Palikir	FM	Pohnpei State	6.92477	158.16109	Pacific/Pohnpei	6942	Palakir|Palikyras|Palirik|Pallikir|Pálikír|pa li ji er|pa liki r|pallikileu|parikiru|plyqyr|Παλιρίκ|Паликир|Պալիկիր|פליקיר|ปาลีกีร์|ፓሊኪር|パリキール|帕利基尔|팔리키르
 2611396	Tórshavn	FO	Streymoy	62.00973	-6.77164	Atlantic/Faroe	13200	Havn|THorshoefn|THunreshaefen|Thori Portus|Thorshavn|Torsavno|Torschavn|Torsgavn|Torshamn|Torshaunas|Torshavn|Torshgavn|Torshkhavn|Torskhaun|Torskhavn|Torŝavno|Tourshavna|Touršhavna|lei shen gang|thosa'una|thxrs hea n|toleuseuhaun|tosuhaun|tuo er si gang|twshhafn|twshhawn|tۆrshawn|Þunreshæfen|Þórshöfn|Τόρσχαβν|Торсгавн|Торсхавн|Торсхаўн|Торшгавн|Торшхавн|Տորսհավն|טורסהאבן|تورشھاون|توشهافن|توشهاون|تۆرشاون|ਥੋਸ਼ਾਊਨ|ทอร์สเฮาน์|ტორსჰავნი|トースハウン|托爾斯港|雷神港|토르스하운
 2967245	Yerres	FR	Île-de-France	48.71785	2.49338	Europe/Paris	28897	Jer|Йер
@@ -12848,7 +12848,7 @@
 12640506	Nkawkaw	GH	Eastern	6.54584	-0.76264	Africa/Accra	47968	
 12640508	Taifa	GH	Greater Accra	5.65825	-0.25223	Africa/Accra	42623	
 13275281	Ahwiaa	GH	Ashanti	6.90306	-1.65199	Africa/Accra	19729	
-2411585	Gibraltar	GI	00	36.14474	-5.35257	Europe/Gibraltar	26544	Calpe|Cebelitarik|Cebelitarık|Djibraltar|GIB|Gibbilterra|Gibilterra|Gibraltaras|Gibraltaro|Gibraltár|Gíbraltar|Kamaka|Xibraltar|gybrltr|jbl tarq|jibeulolteo|jiburarutaru|mhmyt jbl tarq|zhi bu luo tuo|Ĝibraltaro|Γιβραλτάρ|Гибралтар|Ґібралтар|גיברלטר|جبل طارق|جبل‌الطارق|محمية جبل طارق|ジブラルタル|直布罗陀|지브롤터
+2411585	Gibraltar	GI		36.14474	-5.35257	Europe/Gibraltar	26544	Calpe|Cebelitarik|Cebelitarık|Djibraltar|GIB|Gibbilterra|Gibilterra|Gibraltaras|Gibraltaro|Gibraltár|Gíbraltar|Kamaka|Xibraltar|gybrltr|jbl tarq|jibeulolteo|jiburarutaru|mhmyt jbl tarq|zhi bu luo tuo|Ĝibraltaro|Γιβραλτάρ|Гибралтар|Ґібралтар|גיברלטר|جبل طارق|جبل‌الطارق|محمية جبل طارق|ジブラルタル|直布罗陀|지브롤터
 3421319	Nuuk	GL	Sermersooq	64.18347	-51.72157	America/Nuuk	14798	GOH|Godhopa|Godthaab|Godthab|Godthåb|Nououk|Nuk|Nuka|Nukas|Nuko|Nuuk (Godthab)|Nuuk (Godthåb)|Nuuks|Nūka|nu ke|nuk|nuka|nukeu|nuku|nwk|nwʼwq|Νουούκ|Нук|Нуук|Նուուկ|נואוק|نوك|نوک|नूक|নুক|ਨੂਕ|ନୁକ|நூக்|นุก|ნუუკი|ᓅᒃ|ヌーク|努克|누크
 2411700	Welingara	GM	Western	13.40361	-16.67361	Africa/Banjul	27856	Wellingara|Willingara
 2411805	Tanji	GM	Western	13.34972	-16.7891	Africa/Banjul	17441	Tanje|Tanjen|tan ji|tanji|tanjy  gambya|تانجی، گامبیا|タンジ|滩基|灘基|탄지
@@ -13062,7 +13062,7 @@
 8478257	Agios Ioannis Rentis	GR	Attica	37.96491	23.66511	Europe/Athens	15411	Rentis|Άγιος Ιωάννης Ρέντης|Ρέντης
 9034728	Néa Ionía	GR	Thessaly	39.37904	22.92752	Europe/Athens	31884	Nea Ionia|Nea Jonija|Nea-Ionija|Νέα Ιωνία|Неа Йония|Неа-Іонія
 11747175	Neapoli	GR	Central Macedonia	40.6532	22.94156	Europe/Athens	25822	Neapoli  Thessaloniki|Neapoli Thessalonikis|Neapolis|Neápoli|Neápolis|nai a bo li|neapori|nyabwly|nyapwly|Νεάπολη|Νεάπολη Θεσσαλονίκης|Неаполи|Неаполис|Неаполі|Նեապոլիս|نئاپولی|نيابولى|نيابولي|نیاپولی، تھیسالونیکی|ネアポリ|奈阿波利
-3426466	Grytviken	GS	00	-54.28111	-36.5092	Atlantic/South_Georgia	2	Gritviken|Griutvikenas|Grjutviken|Grutviken|Qryotviken|geuliteubiken|gritavikena|grytwwyqn|gu li de wei ken|guritobiken|krit wi khen|Грутвикен|Грутвікен|Грютвикен|Грютвікен|גריטוויקן|ग्रिटविकेन|กริตวีเคน|グリトビケン|古利德維肯|그리트비켄
+3426466	Grytviken	GS		-54.28111	-36.5092	Atlantic/South_Georgia	2	Gritviken|Griutvikenas|Grjutviken|Grutviken|Qryotviken|geuliteubiken|gritavikena|grytwwyqn|gu li de wei ken|guritobiken|krit wi khen|Грутвикен|Грутвікен|Грютвикен|Грютвікен|גריטוויקן|ग्रिटविकेन|กริตวีเคน|グリトビケン|古利德維肯|그리트비켄
 3587543	Zaragoza	GT	Chimaltenango	14.64968	-90.89034	America/Guatemala	24022	
 3587587	Zacapa	GT	Zacapa	14.96867	-89.52732	America/Guatemala	60424	Sakapa|Сакапа
 3587636	Yepocapa	GT	Chimaltenango	14.50195	-90.95396	America/Guatemala	34948	San Pedro Yepocapa
@@ -13248,7 +13248,7 @@
 1819595	Kwai Chung	HK	Kwai Tsing District	22.36828	114.13877	Asia/Hong_Kong	331600	Chung Kwai Chung|Kuichong|Kvai Chung|kui yong|Кваи Чунг|葵涌
 1819602	Kowloon Tong	HK	Kowloon City	22.33312	114.17969	Asia/Hong_Kong	18849	Jiulongtang|Kau Lung Tong|jiu long tang|九龍塘|九龙塘
 1819607	Kowloon City	HK	Kowloon City	22.33047	114.19222	Asia/Hong_Kong	418732	Chiu-lung-ku-ch'eng|Chiu-lung-ku-ch’eng|Jiulongcheng|Kau Lung Sheng|Kovlun|Kowloon|jiu long cheng|Ковлун|九龍城|九龙城
-1819609	Kowloon	HK	00	22.31667	114.18333	Asia/Hong_Kong	2232339	Chiu-lung|Czjulun|Kaulunas|Koulun|jiu long|julung|Цзюлун|九龍|九龙|주룽
+1819609	Kowloon	HK		22.31667	114.18333	Asia/Hong_Kong	2232339	Chiu-lung|Czjulun|Kaulunas|Koulun|jiu long|julung|Цзюлун|九龍|九龙|주룽
 1819638	Kennedy Town	HK	Central and Western	22.28277	114.12953	Asia/Hong_Kong	38000	Jiannidecheng|XKT|jian ni de cheng|堅尼地城
 1819685	Kam Tin	HK	Yuen Long	22.44123	114.06019	Asia/Hong_Kong	21876	Jitianshi|Kam Tin Hui|Kamtinhu|jin tian|錦田|锦田
 1819726	Hong Lok Yuen	HK	Tai Po	22.46315	114.1552	Asia/Hong_Kong	20389	kang le yuan|康樂園
@@ -13326,8 +13326,8 @@
 12746539	Lower Wong Tai Sin Estate (I & II)	HK	Wong Tai Sin District	22.33923	114.19441	Asia/Hong_Kong	29542	Lower Wong Tai Sin Estate
 12746541	Tsz Ching Estate	HK	Wong Tai Sin District	22.35099	114.20056	Asia/Hong_Kong	21845	
 12746547	Wang Tau Hom Estate	HK	Wong Tai Sin District	22.34009	114.18673	Asia/Hong_Kong	16794	
-12747063	New Territories	HK	00	22.42441	114.11095	Asia/Hong_Kong	3984077	New Territory Hong Kong|Novye Territorii|Xinjie|xin jie|Новые Территории|新界
-12747064	Hong Kong Island	HK	00	22.26302	114.18419	Asia/Hong_Kong	1195529	Hong Kong|Ostrov Gonkong|Xianggangdao|xiang gang dao|Остров Гонконг|香港岛|香港島
+12747063	New Territories	HK		22.42441	114.11095	Asia/Hong_Kong	3984077	New Territory Hong Kong|Novye Territorii|Xinjie|xin jie|Новые Территории|新界
+12747064	Hong Kong Island	HK		22.26302	114.18419	Asia/Hong_Kong	1195529	Hong Kong|Ostrov Gonkong|Xianggangdao|xiang gang dao|Остров Гонконг|香港岛|香港島
 13308632	Kowloon City Centre	HK	Kowloon City	22.32979	114.18889	Asia/Hong_Kong	194290	Kovlun centr goroda|Ковлун центр города
 13308633	Kowloon West End	HK	Kowloon City	22.32848	114.18514	Asia/Hong_Kong	74710	
 3600026	Puerto Cortez	HN	Cortés Department	15.82562	-87.92968	America/Tegucigalpa	142311	Port Cortez|Puehrto-Kortes|Puerto Caballo|Puerto Cortes|Puerto Cortés|Puerto de Caballos|Пуэрто-Кортес
@@ -13453,7 +13453,7 @@
 3740007	Cité Soleil	HT	Ouest	18.58028	-72.33806	America/Port-au-Prince	265072	Cite Simone|Cite Simone Duvalier|Cite Soleil|Cité Simone|Cité Simone Duvalier|Kite Soleil|Site Soley|Site Solèy|Ките Солеил
 3740016	Ti Port-de-Paix	HT	Nord-Ouest	19.93333	-72.83333	America/Port-au-Prince	34657	
 6201369	Carrefour	HT	Ouest	18.53333	-72.4	America/Port-au-Prince	511345	Kafou|Karrefur|Каррефур
-714419	Újszeged	HU	19	46.24754	20.16571	Europe/Budapest	25300	Ujseged|Ujszeged|uzegedo|Уйсегед|Уйсеґед|ウーゼゲド
+714419	Újszeged	HU		46.24754	20.16571	Europe/Budapest	25300	Ujseged|Ujszeged|uzegedo|Уйсегед|Уйсеґед|ウーゼゲド
 714581	Törökszentmiklós	HU	Jász-Nagykun-Szolnok	47.18333	20.41667	Europe/Budapest	22770	Toroksentmiklosh|Torokszenimiklos|Torokszentmiklos|Törökszenimiklós|Тороксентмиклош
 714697	Tiszaújváros	HU	Borsod-Abaúj-Zemplén	47.93333	21.08333	Europe/Budapest	17295	Leninvaros|Leninváros|Novi Grad na Tisi|Tisaujvarosh|Tiszaszederken|Tiszaszederkeny|Tiszaszederkény|Tiszaujvaros|Нови Град на Тиси|Тисаујварош
 715126	Szolnok	HU	Jász-Nagykun-Szolnok	47.18066	20.19835	Europe/Budapest	71285	Sol'nak|Sol'nok|Solnoca|Solnok|Solnokas|shwlnwk|slnwk|solnokeu|sorunoku|suo er nuo ke|swlnwq|Солнок|Сольнак|Сольнок|סולנוק|سلنوک|شولنوک|სოლნოკი|ソルノク|索尔诺克|솔노크
@@ -21525,7 +21525,7 @@
 3203106	Budva	ME	Budva	42.28721	18.83922	Europe/Podgorica	18000	Bountva|Budua|Buedua|Butua|Büdua|QBA|bu de wa|budabha|budava|budeuba|budiva|budovua|budva|bwdfa|bwdwa|bڈwa|Μπούντβα|Будва|بودفا|بودوا|بڈوا|बुद्वा|বুদভা|ਬੁੱਦਵਾ|ቡድቫ|ブドヴァ|布德瓦|부드바
 3204176	Bijelo Polje	ME	Bijelo Polje	43.03834	19.74758	Europe/Podgorica	15400	Bielo pole|Bielo-Pole|Opstina Bijelo Pole|Oпштина Бијело Поље|bijelo polaje|bijelo ፖልje|bijeroporye|byalw bwlya|byjylw pwljh|byjylw pwljې|byjylw pwljے|Биело поле|Биело-Поле|Бієло-Полє|بيالو بوليا|بيجيلو پولجې|بیجیلو پولجه|بیجیلو پولجے|बिजेलो पोलजे|বিজেলো পোলজে|ਬਿਜੇਲੋ ਪੋਲਜੇ|ቢጄሎ ፖልጄ|ビジェロポリェ
 3204509	Bar	ME	Bar	42.0937	19.09841	Europe/Podgorica	15868	Antibarium|Antivari|Bar - Bar|Baras|Bari vald|Tivari|ba er|baleu|bar|bara|bari|baru|br|Μπαρ|Бар|בר|بار|بار، مونته‌نگرو|بار، مونٹینیگرو|बार|বার|ਬਾਰ|ბარი|ባር|バール|巴尔|바르
-3578851	Marigot	MF	00	18.06819	-63.08302	America/Marigot	5700	MSB|Marigo|Marigoto|Marinko|Mariqo|Marygo|XCJ|ma li ge|ma ri ko|maligas|maligo|marigo|marikat|marygw|Μαριγκό|Мариго|Марыго|Маріго|ماریگاٹ|ماریگو|मारिगो|மரிகாட்|มารีโก|მარიგო|マリゴ|马里戈|마리갓|마리고
+3578851	Marigot	MF		18.06819	-63.08302	America/Marigot	5700	MSB|Marigo|Marigoto|Marinko|Mariqo|Marygo|XCJ|ma li ge|ma ri ko|maligas|maligo|marigo|marikat|marygw|Μαριγκό|Мариго|Марыго|Маріго|ماریگاٹ|ماریگو|मारिगो|மரிகாட்|มารีโก|მარიგო|マリゴ|马里戈|마리갓|마리고
 1053384	Toamasina	MG	Atsinanana	-18.1492	49.40234	Indian/Antananarivo	345107	TMM|Tamatave|Tuamasina|to'amasina|toamasina|touamashina|toʿemasina|tu a ma xi na|twamasyna|twamsyna|twmasyna|Τοαμασίνα|Тоамасина|Туамасина|Туамасіна|טומאסינה|توآمسینا|تواماسینا|توماسينا|तोअमासिना|তোআমাসিনা|ਤੋਅਮਾਸਿਨਾ|ტუამასინა|ቶአማሲና|トゥアマシナ|图阿马西纳|토아마시나
 1053507	Vondrozo	MG	Atsimo-Atsinanana	-22.81667	47.28333	Indian/Antananarivo	19949	
 1053765	Vohipeno	MG	Fitovinany Region	-22.35	47.83333	Indian/Antananarivo	15622	Vohipeao|wu xi pei nu|wwhypnw|ووهیپنو|武希佩努
@@ -21935,7 +21935,7 @@
 2032814	Arvayheer	MN	Övörhangay	46.26389	102.775	Asia/Ulaanbaatar	29420	AVK|Arbai Khere|Arbay Heere|Arbay Khere|Arbay hure|Arbayin Khure|Arbayin hure|Arubai gere|Arvajhehehr|Arvajkhehehr|Arwaikheer|Arwaïkheer|Obor Hangayin|Obor Khangai|Obör Hangayin|Ts'ai-ku-na Miao|Ts'ai-ku-na Ya-men|Ts’ai-ku-na Miao|Ts’ai-ku-na Ya-men|Ubur Khangaiin|Ubur Khangaun|Ubur Khangayin|Ubur Khangaün|Ubur-hangaajin|Ubur-hangayin|arava'ihira|arbha'ihiyara|arfayhyr|arubaiheru|arvayahira|arwayhyr|arwyہyr|Öbör Khangai|ʿerivayiheri|Арвайhээр|Арвайхээр|أرفايهير|اروايهير|اروایهیر|ارویہیر|अर्वायहीर|আর্ভাইহিয়ার|ਅਰਵਾਇਹੀਰ|አርቫይሄር|アルバイヘール
 7648817	Zuunmod	MN	Central Aimak	47.70693	106.95276	Asia/Ulaanbaatar	16953	Зуунмод
 1821263	Taipa	MO	Our Lady of Carmo	22.15583	113.55694	Asia/Macau	112051	Dangzai|Lin-chia-ts'un|Lin-chia-ts’un|Nossa Senhora do Carmo|Vila da Taipa|YFT|dang zi|Таипа|氹仔
-1821274	Macau	MO	02	22.20056	113.54611	Asia/Macau	649335	Aomen|Aomin'|Au-mun|Aumwnz|Aumyn|Cidade de Macau|Cidade do Santo Nome de Deus de Macau|MFM|Ma Cao|Macao|Macaum|Makaa|Makaaw|Makao|Makaou|Makau|Makaw|Makawo|Makaó|Makee|Makèë|Màkáù|O-muong|ao men|maka|maka'o|maka'u|makao|makavu|makaw|makayw|makkavu|mkaw|Àu-mûn|Ó̤-muòng|Μακάου|Аоминь|Аумын|Макаа|Макао|מקאו|ئاۋمېن|ماكاو|ماکائو|مکاؤ|މަކާއޫ|मकाउ|मकाओ|মাকাউ|ਮਕਾਉ|મકાઉ|மக்காவு|మకావు|ಮಕಾವು|മകൗ|เขตบริหารพิเศษมาเก๊า|မကာအို|მაკაო|マカオ|澳門|澳门|마카오
+1821274	Macau	MO		22.20056	113.54611	Asia/Macau	649335	Aomen|Aomin'|Au-mun|Aumwnz|Aumyn|Cidade de Macau|Cidade do Santo Nome de Deus de Macau|MFM|Ma Cao|Macao|Macaum|Makaa|Makaaw|Makao|Makaou|Makau|Makaw|Makawo|Makaó|Makee|Makèë|Màkáù|O-muong|ao men|maka|maka'o|maka'u|makao|makavu|makaw|makayw|makkavu|mkaw|Àu-mûn|Ó̤-muòng|Μακάου|Аоминь|Аумын|Макаа|Макао|מקאו|ئاۋمېن|ماكاو|ماکائو|مکاؤ|މަކާއޫ|मकाउ|मकाओ|মাকাউ|ਮਕਾਉ|મકાઉ|மக்காவு|మకావు|ಮಕಾವು|മകൗ|เขตบริหารพิเศษมาเก๊า|မကာအို|მაკაო|マカオ|澳門|澳门|마카오
 1821279	Lai Chi Van	MO	Saint Francis Xavier	22.11972	113.55111	Asia/Macau	22125	Lizhiwan|Lui-Tchi-Van|Povoacao de Lai Chi Van|Povoação de Lai Chi Van|li zhi wan|荔枝碗
 1821292	Luhuan	MO	Saint Francis Xavier	22.11806	113.55194	Asia/Macau	36384	Coloane|Sao Francisco Xavier|São Francisco Xavier|lu huan|sheng fang ji tang qu|聖方濟堂區|路环|路環
 1821294	Zhuojiacun	MO	Our Lady of Carmo	22.16139	113.55639	Asia/Macau	24000	Cheoc Ca Chun|Cheoc Ca Chün|Tcheok-Ka-Tchin|Tcheok-La-Tchin|Ts'ao-chia-ts'un|Ts’ao-chia-ts’un|zhuo jia cun|卓家村
@@ -23150,7 +23150,7 @@
 2448024	Aguié	NE	Maradi Region	13.50601	7.77863	Africa/Niamey	23545	Aguie|Agye|Agyé
 2448085	Agadez	NE	Agadez	16.97333	7.99111	Africa/Niamey	149549	AJY|Agades|Agadesas|Agadèz|Ankantez|a jia de zi|agadeja|agadejeu|agadesi|agadesu|agadeza|agadyz|agadz|aghadys|ʿegadeዝ|Αγκαντέζ|Агадез|Агадес|אגדז|آگادز|أغاديس|اگاديز|اگادیز|अगादेज|अगादेज़|আগাডেজ|ਅਗਾਦੇਜ਼|აგადესი|አጋዴዝ|アガデス|阿加德茲|아가데즈
 2448245	Abalak	NE	Tahoua Region	15.4509	6.2793	Africa/Niamey	29561	Ebaka|Ibeka
-2161314	Kingston	NF	00	-29.05459	167.96628	Pacific/Norfolk	880	Kingston pa Norfolkoya|Kingston på Norfolkøya|Kingstona|Kingstonas|Kingstono|Kingstun|Kinqston|Pasjolak Kingstan|jin si dui|khing s tan|kincutan|kingseuteon|kingstana|kingusuton|kynghstwn|kyngstwn|Кингстон|Кингстън|Кінгстон|Пасёлак Кінгстан|كينغستون|کنگسٹن|کینگستون|किंग्स्टन|கிங்சுடன்|คิงส์ตัน|კინგსტონი|キングストン|金斯敦|킹스턴
+2161314	Kingston	NF		-29.05459	167.96628	Pacific/Norfolk	880	Kingston pa Norfolkoya|Kingston på Norfolkøya|Kingstona|Kingstonas|Kingstono|Kingstun|Kinqston|Pasjolak Kingstan|jin si dui|khing s tan|kincutan|kingseuteon|kingstana|kingusuton|kynghstwn|kyngstwn|Кингстон|Кингстън|Кінгстон|Пасёлак Кінгстан|كينغستون|کنگسٹن|کینگستون|किंग्स्टन|கிங்சுடன்|คิงส์ตัน|კინგსტონი|キングストン|金斯敦|킹스턴
 2317548	Zuru	NG	Kebbi	11.43522	5.23494	Africa/Lagos	24338	
 2317569	Zungeru	NG	Niger State	9.80726	6.15238	Africa/Lagos	24447	zong gai lu|zungeru|zwngrw|Зунгеру|זונגרו|ズンゲル|宗盖鲁
 2317765	Zaria	NG	Kaduna State	11.11128	7.7227	Africa/Lagos	980000	ZAR|Zarija|Zariya|Zarja|jalia|zari'a|zaria|zarya|zha li ya|Зариа|Заря|زاريا|ਜ਼ਾਰੀਆ|ザリア|扎里亚|자리아
@@ -23798,7 +23798,7 @@
 8410807	Triyuga	NP	Koshi	26.7919	86.699	Asia/Kathmandu	71405	
 8411054	Madhyapur Thimi	NP	Bagmati Province	27.68056	85.3875	Asia/Kathmandu	119955	Madkhjapur Timi|Thimi|madhyapura thimi|madhyapura thimi nagarapalika|thimi|Мадхяпур Тими|مدھیہپور تھمی|थिमि|मध्यपुर ठिमी नगरपालिका|मध्यपुर थिमि|マディヤプル・ティミ
 7626461	Yaren	NR	Yaren District	-0.55085	166.9252	Pacific/Nauru	1100	Giaren|INU|Jarehn|Jaren|Jarena|Jarenas|Jareno|Makwa|Moqua|Yaren District|Yareni ringkond|Yarèn|dahyt yaryn|iareni|ya lun qu|ya ren|yalen gu|yarana zil'ha|yaren de qu|yaren mavattam|yarn|Γιαρέν|Јарен|Ярен|Ярэн|Յարեն|יארן|ضاحية يارين|یارن|ਯਾਰਨ ਜ਼ਿਲ੍ਹਾ|யாரென் மாவட்டம்|ยาเรน|ཡ་རེན།|იარენი|ያሬን|ヤレン地区|亞倫區|야렌 구
-4036284	Alofi	NU	00	-19.05294	-169.91957	Pacific/Niue	624	Alofis|Alofo|Pasjolak Alofi|a luo fei|alaphi|allopi|alophi|alopi|alwfy|arofi|xalofi|Αλόφι|Алофи|Алофі|Пасёлак Алофі|الوفی|अलोफी|അലാഫി|อาโลฟี|ალოფი|アロフィ|阿洛菲|알로피
+4036284	Alofi	NU		-19.05294	-169.91957	Pacific/Niue	624	Alofis|Alofo|Pasjolak Alofi|a luo fei|alaphi|allopi|alophi|alopi|alwfy|arofi|xalofi|Αλόφι|Алофи|Алофі|Пасёлак Алофі|الوفی|अलोफी|അലാഫി|อาโลฟี|ალოფი|アロフィ|阿洛菲|알로피
 2179537	Wellington	NZ	Wellington Region	-41.28664	174.77557	Pacific/Auckland	381900	Hie-ling-dong|Hiê-lìng-dóng|Ouellin'nkton|Ouellinkton|Te Whanga-nui-a-Tara|Ueligitone|Uelingtun|Velingtan|Velington|Velingtona|Velingtonas|Velingtono|Vellington|Vellingtonia|Vellinqton|WLG|Welinton|Welintòn|Wellinton|Weolingtun|Weolingtūn|Whanga-nui-a-Tara|hui ling dun|oyelintana|raelintana|uelingtʼoni|uerinton|vailigatana|velingatana|velingtana|velingtoni|velintan|vellingtan|wei ling dun|wellingtan|wellingteon|wlyngtwn|wylynghtwn|wylynjtwn|Ουέλλιγκτον|Ουέλλινγκτον|Велингтон|Веллингтон|Веллінгтон|Велінгтан|Уелингтън|Վելինգտոն|ולינגטון|װעלינגטאן|ولینگتون|ويلينجتون|ويلينغتون|ویلنگٹن|ۋېللىنگتون|वेलिंगटन|वेलिंग्टन|वेलिङ्गटन|ওয়েলিংটন|ৱেলিংটন|ਵੈਲਿੰਗਟਨ|વેલિંગ્ટન|வெலிங்டன்|ವೆಲ್ಲಿಂಗ್ಟನ್|വെല്ലിംഗ്ടൺ|เวลลิงตัน|ཝེ་ལིང་ཐོན།|ဝယ်လင်တန်မြို့|ველინგთონი|უელინგტონი|ዌሊንግተን|ウェリントン|威靈頓|惠灵顿|웰링턴
 2179670	Whanganui	NZ	Manawatu-Wanganui	-39.93333	175.05	Pacific/Auckland	49200	Fanganui|Gouan'nkanoui|Uanganui|Vanaganuja|Vanganui|Vanganujis|WAG|Wanganui|distretto di Whanganui|oyengana'i|uonganui|vanganu'i|vanganuyi|vankannuyi|vhan'gami|vyangan'yu|wang a nu yi|wang ka nuy|wang-geonu-i|wanganui|wanjanwy|whanjanwy|Γουανγκανούι|Вангануи|Вангануї|Уангануі|Фангануи|וואנגנוי|وانجانوى|وانجانوي|وحانجانوی|वांगानुई|ওয়েঙ্গানাই|વ્હાન્ગાંઈ|வான்கான்நுயீ|వాంగానూయి|ವ್ಯಾಂಗನ್ಯು|වන්ගනුයි|วังกานุย|უონგანუი|ワンガヌイ|旺阿努伊|왕거누이
 2180118	Wainuiomata	NZ	Wellington Region	-41.26667	174.95	Pacific/Auckland	20450	Homedale
@@ -27282,62 +27282,62 @@
 2727234	Åkersberga	SE	Stockholm	59.47944	18.29967	Europe/Stockholm	32659	Akersberga|Okersberga|Okershberja|Okeršberga|awkshbqya|Акерсберга|Окерсберга|Окершберя|اوکشبقیا
 6619708	Majorna	SE	Västra Götaland	57.69195	11.91605	Europe/Stockholm	29254	
 7304427	Tensta	SE	Stockholm	59.3939	17.90111	Europe/Stockholm	17083	
-1880135	Yio Chu Kang	SG	00	1.39111	103.85139	Asia/Singapore	28350	Ioⁿ-chhu-kang|Iôⁿ-chhù-káng|Yio Chu Kang Village|yang cuo gang|杨厝港
-1880137	Yew Tee	SG	03	1.39665	103.74738	Asia/Singapore	39100	Yew Tee Village|Youchi|Yow Toe|Yóuchí|you chi|油池
-1880159	Ulu Bedok	SG	00	1.33333	103.93333	Asia/Singapore	276990	Ulu Bedok Village|Улу Бедок
-1880176	Toa Payoh New Town	SG	00	1.33611	103.85	Asia/Singapore	120650	Toa Pajokh Novyj gorod|Toa Payoh|da ba yao|Тоа Паёх Новый город|大巴窑
-1880177	Tiong Bahru Estate	SG	01	1.28333	103.83278	Asia/Singapore	15120	Tiong Baharu
-1880184	Thomson	SG	00	1.34917	103.84361	Asia/Singapore	29390	Thomson Rise Estate|Thomson Village
-1880214	Tanglin	SG	00	1.31667	103.81667	Asia/Singapore	21810	City West|Dongling|Dōnglíng|Tang-leng|Tang-lêng|dong ling|tanlin|தங்லின்|东陵
-1880216	Tampines Estate	SG	00	1.35806	103.94028	Asia/Singapore	265340	Tampines|Тампинес Естате
-1880226	Sungai Simpang	SG	03	1.43806	103.82667	Asia/Singapore	20000	Sungei Simpang Village|Xinbang|Xīnbāng|xin bang|新邦
+1880135	Yio Chu Kang	SG		1.39111	103.85139	Asia/Singapore	28350	Ioⁿ-chhu-kang|Iôⁿ-chhù-káng|Yio Chu Kang Village|yang cuo gang|杨厝港
+1880137	Yew Tee	SG		1.39665	103.74738	Asia/Singapore	39100	Yew Tee Village|Youchi|Yow Toe|Yóuchí|you chi|油池
+1880159	Ulu Bedok	SG		1.33333	103.93333	Asia/Singapore	276990	Ulu Bedok Village|Улу Бедок
+1880176	Toa Payoh New Town	SG		1.33611	103.85	Asia/Singapore	120650	Toa Pajokh Novyj gorod|Toa Payoh|da ba yao|Тоа Паёх Новый город|大巴窑
+1880177	Tiong Bahru Estate	SG		1.28333	103.83278	Asia/Singapore	15120	Tiong Baharu
+1880184	Thomson	SG		1.34917	103.84361	Asia/Singapore	29390	Thomson Rise Estate|Thomson Village
+1880214	Tanglin	SG		1.31667	103.81667	Asia/Singapore	21810	City West|Dongling|Dōnglíng|Tang-leng|Tang-lêng|dong ling|tanlin|தங்லின்|东陵
+1880216	Tampines Estate	SG		1.35806	103.94028	Asia/Singapore	265340	Tampines|Тампинес Естате
+1880226	Sungai Simpang	SG		1.43806	103.82667	Asia/Singapore	20000	Sungei Simpang Village|Xinbang|Xīnbāng|xin bang|新邦
 1880252	Singapore	SG		1.28967	103.85007	Asia/Singapore	5638700	Danmaxi|Dānmǎxī|Garden City|Little Red Dot|SG|SIN|Sin-ka-po|Singapore City|Singapour|Singapur|Singapura|Sinkapoure|Syonan-to|Sîn-kâ-po|Temasek|Tumasik|cinkappur|prathes singkhpor|shingaporu|sigapura|sing-gapol|sing-gapoleu|singapura|singkh por|sngapwr|snghafwrt|syngpwr|xin jia po|xing jia po|Σιγκαπούρη|Сингапур|Сінгапур|סינגפור|سنغافورة|سنگاپور|सिंगापुर|सिंगापूर|ਸਿੰਗਾਪੁਰ|சிங்கப்பூர்|ประเทศสิงคโปร์|สิงค์โปร|ປະເທດສງກະໂປ|ປະເທດສິງກະໂປ|စငကာပနငင|စင်ကာပူနိုင်ငံ|សងហបរ|សិង្ហបុរី|シンガポール|新加坡|星架坡|싱가포르|싱가폴
-1880268	Serangoon Garden	SG	00	1.36389	103.8575	Asia/Singapore	36080	Taman Serangoon|hong sha li|shi long gang hua yuan|实龙岗花园|红砂厘
-1880271	Serangoon	SG	00	1.36278	103.8975	Asia/Singapore	116900	Serangoon Village|Serangun|Серангун
-1880283	Sembawang Estate	SG	00	1.45083	103.82861	Asia/Singapore	110090	Sanbawang|Sembavang Estate|Sembawang|Sembawang Village|Tambuwang|san ba wang|Сембаванг Естате|三巴旺
-1880348	Punggol	SG	02	1.41444	103.90694	Asia/Singapore	204150	Bang'e|Bǎng'é|Ponggol|Punggol Village|bang e|ponkol|pwngl|Пунггол|پونگل|பொங்கோல்|榜鹅
-1880398	Paya Lebar	SG	00	1.35389	103.89056	Asia/Singapore	16920	
-1880463	Matilda Estate	SG	00	1.39944	103.90278	Asia/Singapore	52200	
-1880469	Marsiling	SG	03	1.43254	103.77407	Asia/Singapore	22000	ma xi ling|马西岭
-1880486	Loyang	SG	00	1.37861	103.97167	Asia/Singapore	15340	Lokvang|Lokyang|Lokyang Village
-1880517	Keat Hong Village	SG	00	1.37778	103.74417	Asia/Singapore	39370	Keat Hong|ji feng|吉丰
-1880574	Kampong Pasir Ris	SG	00	1.37833	103.93194	Asia/Singapore	144260	Baisha|Baxili|Báishā|Bāxīlì|Pacir ris|Pasir Ris|Pācir ris|ba xi li|bai sha|pacir ris|Кампонг Пасир Рис|பாசிர் ரிஸ்|巴西立|白沙
-1880586	Kampong Loyang	SG	00	1.37778	103.95944	Asia/Singapore	15340	Kampong Loya|Loyang|luo yang|洛阳|洛陽
-1880594	Kembangan	SG	00	1.32228	103.91135	Asia/Singapore	130252	Кембанган
-1880628	Kallang	SG	00	1.33333	103.86667	Asia/Singapore	101290	Ga-laahng|Gā-láahng|Jialeng|Jiālěng|Ka-leng|Ka-léng|Kalang|jia leng|Калланг|加冷
-1880650	Hong Kah	SG	00	1.35944	103.72278	Asia/Singapore	26150	Hong Kah Village
-1880668	Geylang	SG	00	1.31953	103.88689	Asia/Singapore	110201	Gejlang|Geylang Serai|Geylang Serai Village|geiran|gylang|ya long|Гейланг|گیلانگ|ゲイラン|芽笼
-1880744	Bukit Timah	SG	00	1.328	103.791	Asia/Singapore	85900	Bukit Timah Estate|Bukit Timah Village|wu ji zhi ma|武吉知马
-1880750	Bukit Merah Estate	SG	00	1.28417	103.82306	Asia/Singapore	151250	Bukit Merakh Estate|Букит Мерах Естате
-1880756	Brickworks Estate	SG	00	1.28722	103.80833	Asia/Singapore	19820	
-1880761	Boon Lay	SG	00	1.311	103.694	Asia/Singapore	29510	Bun Le|Bûn Lé|pun le|wen li/wen li|பூன் லே|文礼/文禮
-1881919	Bishan New Town	SG	00	1.3504	103.84875	Asia/Singapore	87320	Bishan
-1881921	Bukit Batok New Town	SG	00	1.35903	103.76368	Asia/Singapore	158030	Bu-kit Ba-tok|Bukit Batok|Bukit Batok Novyj gorod|wu ji ba du|wujibadu|Букит Баток Новый город|武吉巴督
-1881948	Hougang New Town	SG	00	1.35667	103.89083	Asia/Singapore	227560	Hougang|Khougang Novyj gorod|Хоуганг Новый город
-1881952	Jurong East	SG	04	1.32888	103.73995	Asia/Singapore	72960	Jurong East New Town|yu lang dong|裕廊东
-1881953	Jurong Town	SG	05	1.33417	103.72278	Asia/Singapore	262730	Bandar Baharu Jurong|Dzhurong|Jurong|Jurong New Town|Jurong Village|Yulang|Yùláng|juron|yu lang|Джуронг|ஜூரோங்|裕廊
-1881955	Jurong West	SG	00	1.35028	103.72278	Asia/Singapore	253840	Dzhurong Vest|Jurong West New Town|yu lang xi|Джуронг Вест|裕廊西
-1881957	Kaki Bukit Estate	SG	00	1.3375	103.90917	Asia/Singapore	37150	Kaki Bukit
-1882033	MacPherson	SG	01	1.32713	103.88413	Asia/Singapore	26850	MacPherson Estate|Maiboshen|Màibōshēn|mai bo shen|makpercon|மக்பெர்சொன்|麦波申
-1882044	Outram Park	SG	00	1.2825	103.83806	Asia/Singapore	18340	
-1882101	Serangoon New Town	SG	00	1.35083	103.87083	Asia/Singapore	116900	Serangoon|Serangun Novyj gorod|Shilonggang|Серангун Новый город
-1882103	Simei New Town	SG	00	1.34111	103.95611	Asia/Singapore	39450	Simei|Simei Estate
-1882115	Tampines New Town	SG	00	1.34917	103.94972	Asia/Singapore	259900	Tampines|Tampines Novyj gorod|dan bin ni|Тампинес Новый город|淡滨尼
-1882155	Yishun New Town	SG	03	1.43333	103.83111	Asia/Singapore	228730	Dzhishun Novyj gorod|Nee Soon|Yishun|yi shun|yicun putiya nakaram|Джишун Новый город|யீசூன் புதிய நகரம்|义顺|義順
-1882316	Woodlands	SG	03	1.43801	103.78877	Asia/Singapore	254440	Vudlands|Woodlands New Town|WuLan|wu lan|Вудландс|兀兰
-1882402	Kangkar	SG	00	1.37611	103.90167	Asia/Singapore	32290	
-1882778	Marine Parade	SG	03	1.30306	103.90778	Asia/Singapore	47180	MP|Ma-lim Pah-liat|Malin Bailie|Marine Parade Estate|Má-lîm Pah-lia̍t|Mǎlín Bǎiliè|ma lin bai lie|marin paret|maryn pryd  sngapwr|مارین پرید، سنگاپور|மரின் பரேட்|馬林百列|马林百列
-1884365	Ang Mo Kio New Town	SG	02	1.38028	103.83972	Asia/Singapore	159340	AMK|Ang Mo Kio|Ang Mo Kio Novyj gorod|hong mao qiao|Анг Мо Кио Новый город|宏茂桥|宏茂橋
-1884367	Bukit Panjang New Town	SG	05	1.37972	103.76472	Asia/Singapore	138050	BP|Bt Panjang|Bukit Panjang|Bukit Panjang Novyj gorod|Wujibanrang|Wǔjíbānràng|pukkittu pancan|wu ji ban rang|Букит Панянг Новый город|புக்கித்து பஞ்சாங்|武吉班让
-1884382	Bedok New Town	SG	04	1.32639	103.94167	Asia/Singapore	276990	Bedok|Bedok Novyj gorod|Bedok Village|Pitok|Piṭōk|pitok|wu luo|Бедок Новый город|பிடோக்|勿洛
-1884384	Clementi Housing Estate	SG	00	1.31583	103.76472	Asia/Singapore	92420	Clementi|Clementi New Town|Sit Estate
-1884385	Pasir Ris New Town	SG	04	1.37222	103.94778	Asia/Singapore	54420	Pasir Ris|Pasir Ris Village
-1884386	Queenstown Estate	SG	00	1.29417	103.8025	Asia/Singapore	101480	Kueenstovn Estate|Queenstown|Queenstown New Town|nu huang zhen|Куеенстовн Естате|女皇镇
-1884403	Telok Blangah	SG	00	1.27472	103.81167	Asia/Singapore	19320	Telok Blanga|Telok Blangah Estate|Telok Blangah New Town|Teluk Blangah|teluk pilanka|zhi luo bu lan ya|தெலுக் பிளாங்கா|直落布兰雅
-1884737	Choa Chu Kang New Town	SG	03	1.3825	103.74972	Asia/Singapore	187550	CCK|Cai Cuo Gang|Chhoa Chhu Kang|Chhòa Chhù Káng|Choa Chu Kang|Choa Chu Kang Novyj gorod|Chua Chu Kang|Cài Cuò Gǎng|cai cuo gang|cuva cu kan|Чоа Чу Канг Новый город|சுவா சூ காங்|蔡厝港
-7281987	Novena	SG	02	1.31697	103.8438	Asia/Singapore	53160	novina|nuo wei na|நொவீணா|诺维娜
+1880268	Serangoon Garden	SG		1.36389	103.8575	Asia/Singapore	36080	Taman Serangoon|hong sha li|shi long gang hua yuan|实龙岗花园|红砂厘
+1880271	Serangoon	SG		1.36278	103.8975	Asia/Singapore	116900	Serangoon Village|Serangun|Серангун
+1880283	Sembawang Estate	SG		1.45083	103.82861	Asia/Singapore	110090	Sanbawang|Sembavang Estate|Sembawang|Sembawang Village|Tambuwang|san ba wang|Сембаванг Естате|三巴旺
+1880348	Punggol	SG		1.41444	103.90694	Asia/Singapore	204150	Bang'e|Bǎng'é|Ponggol|Punggol Village|bang e|ponkol|pwngl|Пунггол|پونگل|பொங்கோல்|榜鹅
+1880398	Paya Lebar	SG		1.35389	103.89056	Asia/Singapore	16920	
+1880463	Matilda Estate	SG		1.39944	103.90278	Asia/Singapore	52200	
+1880469	Marsiling	SG		1.43254	103.77407	Asia/Singapore	22000	ma xi ling|马西岭
+1880486	Loyang	SG		1.37861	103.97167	Asia/Singapore	15340	Lokvang|Lokyang|Lokyang Village
+1880517	Keat Hong Village	SG		1.37778	103.74417	Asia/Singapore	39370	Keat Hong|ji feng|吉丰
+1880574	Kampong Pasir Ris	SG		1.37833	103.93194	Asia/Singapore	144260	Baisha|Baxili|Báishā|Bāxīlì|Pacir ris|Pasir Ris|Pācir ris|ba xi li|bai sha|pacir ris|Кампонг Пасир Рис|பாசிர் ரிஸ்|巴西立|白沙
+1880586	Kampong Loyang	SG		1.37778	103.95944	Asia/Singapore	15340	Kampong Loya|Loyang|luo yang|洛阳|洛陽
+1880594	Kembangan	SG		1.32228	103.91135	Asia/Singapore	130252	Кембанган
+1880628	Kallang	SG		1.33333	103.86667	Asia/Singapore	101290	Ga-laahng|Gā-láahng|Jialeng|Jiālěng|Ka-leng|Ka-léng|Kalang|jia leng|Калланг|加冷
+1880650	Hong Kah	SG		1.35944	103.72278	Asia/Singapore	26150	Hong Kah Village
+1880668	Geylang	SG		1.31953	103.88689	Asia/Singapore	110201	Gejlang|Geylang Serai|Geylang Serai Village|geiran|gylang|ya long|Гейланг|گیلانگ|ゲイラン|芽笼
+1880744	Bukit Timah	SG		1.328	103.791	Asia/Singapore	85900	Bukit Timah Estate|Bukit Timah Village|wu ji zhi ma|武吉知马
+1880750	Bukit Merah Estate	SG		1.28417	103.82306	Asia/Singapore	151250	Bukit Merakh Estate|Букит Мерах Естате
+1880756	Brickworks Estate	SG		1.28722	103.80833	Asia/Singapore	19820	
+1880761	Boon Lay	SG		1.311	103.694	Asia/Singapore	29510	Bun Le|Bûn Lé|pun le|wen li/wen li|பூன் லே|文礼/文禮
+1881919	Bishan New Town	SG		1.3504	103.84875	Asia/Singapore	87320	Bishan
+1881921	Bukit Batok New Town	SG		1.35903	103.76368	Asia/Singapore	158030	Bu-kit Ba-tok|Bukit Batok|Bukit Batok Novyj gorod|wu ji ba du|wujibadu|Букит Баток Новый город|武吉巴督
+1881948	Hougang New Town	SG		1.35667	103.89083	Asia/Singapore	227560	Hougang|Khougang Novyj gorod|Хоуганг Новый город
+1881952	Jurong East	SG		1.32888	103.73995	Asia/Singapore	72960	Jurong East New Town|yu lang dong|裕廊东
+1881953	Jurong Town	SG		1.33417	103.72278	Asia/Singapore	262730	Bandar Baharu Jurong|Dzhurong|Jurong|Jurong New Town|Jurong Village|Yulang|Yùláng|juron|yu lang|Джуронг|ஜூரோங்|裕廊
+1881955	Jurong West	SG		1.35028	103.72278	Asia/Singapore	253840	Dzhurong Vest|Jurong West New Town|yu lang xi|Джуронг Вест|裕廊西
+1881957	Kaki Bukit Estate	SG		1.3375	103.90917	Asia/Singapore	37150	Kaki Bukit
+1882033	MacPherson	SG		1.32713	103.88413	Asia/Singapore	26850	MacPherson Estate|Maiboshen|Màibōshēn|mai bo shen|makpercon|மக்பெர்சொன்|麦波申
+1882044	Outram Park	SG		1.2825	103.83806	Asia/Singapore	18340	
+1882101	Serangoon New Town	SG		1.35083	103.87083	Asia/Singapore	116900	Serangoon|Serangun Novyj gorod|Shilonggang|Серангун Новый город
+1882103	Simei New Town	SG		1.34111	103.95611	Asia/Singapore	39450	Simei|Simei Estate
+1882115	Tampines New Town	SG		1.34917	103.94972	Asia/Singapore	259900	Tampines|Tampines Novyj gorod|dan bin ni|Тампинес Новый город|淡滨尼
+1882155	Yishun New Town	SG		1.43333	103.83111	Asia/Singapore	228730	Dzhishun Novyj gorod|Nee Soon|Yishun|yi shun|yicun putiya nakaram|Джишун Новый город|யீசூன் புதிய நகரம்|义顺|義順
+1882316	Woodlands	SG		1.43801	103.78877	Asia/Singapore	254440	Vudlands|Woodlands New Town|WuLan|wu lan|Вудландс|兀兰
+1882402	Kangkar	SG		1.37611	103.90167	Asia/Singapore	32290	
+1882778	Marine Parade	SG		1.30306	103.90778	Asia/Singapore	47180	MP|Ma-lim Pah-liat|Malin Bailie|Marine Parade Estate|Má-lîm Pah-lia̍t|Mǎlín Bǎiliè|ma lin bai lie|marin paret|maryn pryd  sngapwr|مارین پرید، سنگاپور|மரின் பரேட்|馬林百列|马林百列
+1884365	Ang Mo Kio New Town	SG		1.38028	103.83972	Asia/Singapore	159340	AMK|Ang Mo Kio|Ang Mo Kio Novyj gorod|hong mao qiao|Анг Мо Кио Новый город|宏茂桥|宏茂橋
+1884367	Bukit Panjang New Town	SG		1.37972	103.76472	Asia/Singapore	138050	BP|Bt Panjang|Bukit Panjang|Bukit Panjang Novyj gorod|Wujibanrang|Wǔjíbānràng|pukkittu pancan|wu ji ban rang|Букит Панянг Новый город|புக்கித்து பஞ்சாங்|武吉班让
+1884382	Bedok New Town	SG		1.32639	103.94167	Asia/Singapore	276990	Bedok|Bedok Novyj gorod|Bedok Village|Pitok|Piṭōk|pitok|wu luo|Бедок Новый город|பிடோக்|勿洛
+1884384	Clementi Housing Estate	SG		1.31583	103.76472	Asia/Singapore	92420	Clementi|Clementi New Town|Sit Estate
+1884385	Pasir Ris New Town	SG		1.37222	103.94778	Asia/Singapore	54420	Pasir Ris|Pasir Ris Village
+1884386	Queenstown Estate	SG		1.29417	103.8025	Asia/Singapore	101480	Kueenstovn Estate|Queenstown|Queenstown New Town|nu huang zhen|Куеенстовн Естате|女皇镇
+1884403	Telok Blangah	SG		1.27472	103.81167	Asia/Singapore	19320	Telok Blanga|Telok Blangah Estate|Telok Blangah New Town|Teluk Blangah|teluk pilanka|zhi luo bu lan ya|தெலுக் பிளாங்கா|直落布兰雅
+1884737	Choa Chu Kang New Town	SG		1.3825	103.74972	Asia/Singapore	187550	CCK|Cai Cuo Gang|Chhoa Chhu Kang|Chhòa Chhù Káng|Choa Chu Kang|Choa Chu Kang Novyj gorod|Chua Chu Kang|Cài Cuò Gǎng|cai cuo gang|cuva cu kan|Чоа Чу Канг Новый город|சுவா சூ காங்|蔡厝港
+7281987	Novena	SG		1.31697	103.8438	Asia/Singapore	53160	novina|nuo wei na|நொவீணா|诺维娜
 7289731	Eunos	SG		1.32252	103.89822	Asia/Singapore	32820	Geylang East|Geylang Timur|kelan kilakku|ya long dong|கேலாங் கிழக்கு|芽笼东|芽籠東
-7289760	Sengkang New Town	SG	02	1.39167	103.89444	Asia/Singapore	267600	Sengkang|Sengkang Novyj gorod|Sheng Gang|Shèng Gǎng|cenkan|sheng gang|Сенгканг Новый город|செங்காங்|盛港
+7289760	Sengkang New Town	SG		1.39167	103.89444	Asia/Singapore	267600	Sengkang|Sengkang Novyj gorod|Sheng Gang|Shèng Gǎng|cenkan|sheng gang|Сенгканг Новый город|செங்காங்|盛港
 13100482	Fajar	SG		1.38436	103.77059	Asia/Singapore	26420	Dawn|Fajia|fa jia|法嘉
 13100483	Saujana	SG		1.38254	103.7679	Asia/Singapore	25000	sang jia na|桑加那
 13100484	Bangkit	SG		1.37982	103.77251	Asia/Singapore	21010	Rise|Wanji|wan ji|万吉
@@ -27704,7 +27704,7 @@
 934985	Mbabane	SZ	Hhohho Region	-26.31667	31.13333	Africa/Mbabane	76218	Embabane|Mabane|Mbaban|Mbabaneh|Mbabano|Mbabanė|Mbabàn|Mpampane|QMN|ababane|ambabane|ambabany|eumbabane|impapan|mbaban|mbabane|mbabanh|mbabyn|mbbnh|mo ba ben|mubabane|xam ba bane|Μπαμπάνε|Мбабане|Мбабанэ|Մբաբանե|מבאבאנע|מבבנה|امبابانی|مبابان|مبابانه|مبابانێ|مبابین|अंबाबाने|ਅੰਬਾਬਾਨੇ|இம்பபான்|อัมบาบาเน|མ་པ་པན།|მბაბანე|ምባባኔ|ムババーネ|墨巴本|음바바네
 934995	Manzini	SZ	Manzini Region	-26.49884	31.38004	Africa/Mbabane	110537	Bremersdorp|MTS|Maneini|Manzinis|Manêini|man qi ni|manajini|manazini|manizini|manjini|manzyny|mnzyny|Μανζίνι|Манзини|Манзіні|מנזיני|مانزيني|مانزینی|منزيني|منزینی|मंजिनी|মানজিনি|ਮਾਨਜ਼ਿਨੀ|ማንዚኒ|マンジニ|曼齐尼|만지니
 935048	Lobamba	SZ	Hhohho Region	-26.46667	31.2	Africa/Mbabane	4557	Labamba|Lobambo|Lobomba|lobamba|luo ban ba|lwbama|lwbamba|lwbmbh|robanba|Лабамба|Лобамба|לובמבה|لوباما|لوبامبا|لۆبامبا|ლობამბა|ロバンバ|洛班巴|로밤바
-3576994	Cockburn Town	TC	00	21.46122	-71.14188	America/Grand_Turk	3720	Kobern Taun|Kobern Taunas|Kobern-Taun|Kobərn Taun|Kokburn Taun|Kokburno|Kokmpern Taoun|kakpern nakaram|ke bo en cheng|kh xk beir ntha wn|kobeontaun|kokabarna ta'una|kokkubantaun|kwk brn tawn  bahama|Κόκμπερν Τάουν|Коберн Таун|Коберн-Таун|Коберн-Таўн|Кокбърн Таун|קוקבורן טאון|کاک برن ٹاؤن|کوک برن تاون، باهاما|कॉकबर्न टाउन|காக்பேர்ண் நகரம்|ค็อกเบิร์นทาวน์|კოკბერნ-ტაუნი|コックバーンタウン|科伯恩城|코번타운
+3576994	Cockburn Town	TC		21.46122	-71.14188	America/Grand_Turk	3720	Kobern Taun|Kobern Taunas|Kobern-Taun|Kobərn Taun|Kokburn Taun|Kokburno|Kokmpern Taoun|kakpern nakaram|ke bo en cheng|kh xk beir ntha wn|kobeontaun|kokabarna ta'una|kokkubantaun|kwk brn tawn  bahama|Κόκμπερν Τάουν|Коберн Таун|Коберн-Таун|Коберн-Таўн|Кокбърн Таун|קוקבורן טאון|کاک برن ٹاؤن|کوک برن تاون، باهاما|कॉकबर्न टाउन|காக்பேர்ண் நகரம்|ค็อกเบิร์นทาวน์|კოკბერნ-ტაუნი|コックバーンタウン|科伯恩城|코번타운
 11703857	Providenciales	TC		21.78254	-72.25206	America/Grand_Turk	23769	Provo
 243590	Iriba	TD	Wadi Fira	15.11667	22.25	Africa/Ndjamena	47972	aryba|hryba|iriba|Ириба|إريبا|اريبا|هریبا|ہریبا|イリバ
 243787	Goz Beida	TD	Sila	12.22643	21.40983	Africa/Ndjamena	58941	Goz Beïda|Goz-Beida|Goz-Bejda|goja be'ida|goza be'ida|gozu・beida|goዝ beyida|gwz byda|gwz byڈa|qwz albyd|qwz byda|qwz bydt|qwzbydt|Гоз-Бейда|قوز ألبيض|قوز بيدا|قوز بيضة|قوزبيضة|گوز بیدا|گوز بیڈا|गोज़ बेईदा|গোজ বেইডা|ਗੋਜ਼ ਬੇਈਦਾ|ጎዝ ቤይዳ|ゴズ・ベイダ
@@ -33363,7 +33363,7 @@
 3804949	Guasdualito	VE	Apure	7.24241	-70.73235	America/Caracas	64608	GDO|Guasdalito
 3805673	San Fernando de Apure	VE	Apure	7.88963	-67.47181	America/Caracas	229197	SFD|San Fernando|San Fernando Apure|San-Fernando-de-Apure|saina pharanando di apure|saina pharnando di apure|san frnandw dy abwry|san frnandw dy apwrh|san frnandw ڈy apywr|sana pharnando di ayapuyara|sani ፌrinanido di ʿeፑre|san・ferunando・de・apure|Сан-Фернандо-де-Апуре|سان فرناندو دي أبوري|سان فرناندو دی آپوره|سان فرناندو ڈی اپیور|सैन फर्नांडो डी अपूरे|সান ফার্নান্দো ডি অ্যাপুয়ার|ਸੈਨ ਫਰਨਾਂਡੋ ਡੀ ਅਪੁਰੇ|ሳን ፌርናንዶ ዲ አፑሬ|サン・フェルナンド・デ・アプーレ
 7909705	Santa Cruz de los Taques	VE	Falcón	11.8235	-70.25637	America/Caracas	25047	
-3577430	Road Town	VG	00	18.42693	-64.62079	America/Tortola	8449	Rod Taunas|Rod-Taun|Rod-Tauno|Rod-Taŭno|Roount Taoun|Roud Taun|lodeutaun|luo de cheng|rodotaun|rotu tavun|rwd tawn|Ρόουντ Τάουν|Род-Таун|Род-Таўн|Роуд Таун|רואוד טאון|رود تاون|روڈ ٹاون|ரோடு டவுன்|როუდ-ტაუნი|ロードタウン|罗德城|로드타운
+3577430	Road Town	VG		18.42693	-64.62079	America/Tortola	8449	Rod Taunas|Rod-Taun|Rod-Tauno|Rod-Taŭno|Roount Taoun|Roud Taun|lodeutaun|luo de cheng|rodotaun|rotu tavun|rwd tawn|Ρόουντ Τάουν|Род-Таун|Род-Таўн|Роуд Таун|רואוד טאון|رود تاون|روڈ ٹاون|ரோடு டவுன்|როუდ-ტაუნი|ロードタウン|罗德城|로드타운
 4795467	Charlotte Amalie	VI	Saint Thomas Island	18.3419	-64.9307	America/St_Thomas	20000	Amalienborg|Amalienburg|Carlota Amalia|Carlotamalio|Charlotte Amalia|Charlotte Amalie pa Dei amerikanske Jomfruoyane|Charlotte Amalie på Dei amerikanske Jomfruøyane|Di Dorp|Dorp|Het Dorp|Saint Thomas|Saint Thomas City|Sanct Thomas|Sarlot Amali|Sarlote Amalija|Sarlotta Amaliya|Savan|Scharlotte Amelia|Sharlot Amali|Sharlota Amalija|Sharlota-Amalija|Sharlotta-Amalija|Tap House|Tap Hus|Taphuis|Taphus|Taphuus|Taphys|Tappus|Wirtshaus|Zapfhaus|charlxttxa mali|sarlata ameli|sharlwt amaly|srlwt ʼmʼly|syalleos-amallie|xia luo te a ma li ya|Ĉarlotamalio|Şarlotta Amaliya|Šarlotė Amalija|Σαρλότ Αμαλί|Шарлот Амали|Шарлота Амалия|Шарлота Амалија|Шарлота-Амалія|Шарлотта-Амалия|Шарлотта-Амалія|שרלוט אמאלי|شارلوت آمالی|شارلوت أمالي|شارلٹ ایملی|शार्लट आमेली|ชาร์ลอตต์อะมาลี|შარლოტა-ამალია|シャーロット・アマリー|夏洛特阿马利亚|샬럿아말리에
 4796512	Saint Croix	VI	Saint Croix Island	17.72751	-64.74698	America/St_Thomas	50601	Agay|Ay Ay|Ay-Ay|Ayay|Cibuguiera|Cibuquiera|Eylandet Saint Croix|L'Isle de Sainte Croix|STX|Sainte Croix|Sainte-Croix|Sanct Croix|Sancta Crux|Santa Cruz|Sent-Kroj|St Croix|Sənt Krua|The Quiet Virgin|sant krwa|seniti kirukisi|senta krau'ikasa|senta kraya|senta kro'iksa|sento・kuroi|snt krwa|synٹ krwa|synټ krwa|Сент-Крой|سانت كروا|سنت کروا|سینٹ کروا|سینټ کروا|सेंट क्रॉइक्स|সেন্ট ক্রয়|ਸੇਂਟ ਕ੍ਰੌਈਕਸ|ሴንት ክሩክስ|セント・クロイ
 1560037	Yên Vinh	VN	Nghệ An Province	18.66667	105.66667	Asia/Bangkok	107082	En Vinkh|Yen Vinh|Ен Винх
@@ -33645,7 +33645,7 @@
 10126715	Gành Hào	VN	Ca Mau	9.02827	105.42116	Asia/Ho_Chi_Minh	31552	Ganh Hao
 10182229	Cửa Nam	VN	Hanoi	21.02115	105.85231	Asia/Bangkok	52750	Cua Nam
 11496088	Kiên Hải	VN	An Giang	9.97274	104.8475	Asia/Ho_Chi_Minh	23179	GJac khu Kien Hai|Kien Hai|Đặc khu Kiên Hải
-12166273	Quận Đức Thịnh	VN	00	10.30989	105.73855	Asia/Ho_Chi_Minh	132000	GJuc Thinh Sa GJec|Kuan Zuk Tinkh|Quan GJuc Thinh|Đức Thịnh Sa Đéc|Куан Зук Тинх
+12166273	Quận Đức Thịnh	VN		10.30989	105.73855	Asia/Ho_Chi_Minh	132000	GJuc Thinh Sa GJec|Kuan Zuk Tinkh|Quan GJuc Thinh|Đức Thịnh Sa Đéc|Куан Зук Тинх
 12217184	Huyện Lâm Hà	VN	Lam Dong	11.81554	108.21444	Asia/Ho_Chi_Minh	144707	Huyen Lam Ha|Khuen Lam Kha|Lam Ha|Lam Ha District|Lâm Hà|Хуен Лам Ха
 12253704	Phú Quốc	VN	An Giang	10.28715	104.01047	Asia/Ho_Chi_Minh	179480	Fu Kuok|Phu Quoc|Фу Куок
 12261368	thị xã Quảng Trị	VN	Quang Tri	16.75083	107.18278	Asia/Ho_Chi_Minh	23356	Quang Tri|Quảng Trị|thi xa Quang Tri

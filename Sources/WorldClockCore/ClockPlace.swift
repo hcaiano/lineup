@@ -98,8 +98,7 @@ public struct ClockCatalog: Sendable {
         return entries.compactMap { entry -> (Entry, Int)? in
             guard !ids.contains(entry.place.id) else { return nil }
             let matches = entry.names.contains { name in
-                let text = name + " " + entry.context
-                return words.allSatisfy { text.contains($0) }
+                words.allSatisfy { name.contains($0) || entry.context.contains($0) }
             }
             guard matches else { return nil }
             let rank: Int

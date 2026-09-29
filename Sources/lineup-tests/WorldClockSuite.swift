@@ -156,6 +156,16 @@ private func runWorldClockOrderingTests() {
 }
 
 private func runWorldClockResourceTests() throws {
+    let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("lineup/Resources/WorldClock/cities.tsv")
+    let shipped = try String(contentsOf: source, encoding: .utf8)
+    let catalog = ClockCatalog(tsv: shipped, timeZoneIDs: [])
+    check(catalog.cityCount == shipped.split(separator: "\n").count && catalog.cityCount > 0,
+          "every shipped city record can be loaded on the supported platform")
+    check(catalog.search("Porto").first?.timeZoneID == "Europe/Lisbon",
+          "the shipped catalog resolves a known city to its IANA zone")
+    check(catalog.search("Oranjestad").first?.region == "Aruba",
+          "cities without a named region show the country without raw administrative codes")
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lineup-clock-resources-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let city = "2735943\tPorto\tPT\tPorto\t41.15\t-8.61\tEurope/Lisbon\t250000\tOporto\n"
@@ -165,7 +175,7 @@ private func runWorldClockResourceTests() throws {
         try FileManager.default.createDirectory(at: resource, withIntermediateDirectories: true)
         try city.write(to: resource.appendingPathComponent("cities.tsv"), atomically: true, encoding: .utf8)
         check(ClockCatalog.bundled(in: [root])?.search("Oporto").first?.name == "Porto",
-              "\(build) resource bundle supplies real searchable city data")
+              "\(build) resource bundle supplies searchable city data from its fixture")
     }
     check(ClockCatalog.bundled(in: [directory.appendingPathComponent("missing")]) == nil,
           "missing resource bundle returns no city data without trapping")

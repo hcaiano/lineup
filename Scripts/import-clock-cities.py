@@ -15,7 +15,7 @@ def main():
     cities, regions = map(Path, sys.argv[1:])
     destination = Path(__file__).resolve().parents[1] / "Sources/lineup/Resources/WorldClock"
     region_names = {}
-    for line in regions.read_text().splitlines():
+    for line in regions.read_text(encoding="utf-8").splitlines():
         fields = line.split("\t")
         region_names[fields[0]] = fields[1]
     with zipfile.ZipFile(cities) as archive:
@@ -27,11 +27,11 @@ def main():
             raise ValueError("Unexpected GeoNames row")
         aliases = sorted(set([fields[2]] + fields[3].split(",")) - {"", fields[1]})
         rows.append("\t".join([
-            fields[0], fields[1], fields[8], region_names.get(fields[8] + "." + fields[10], fields[10]),
+            fields[0], fields[1], fields[8], region_names.get(fields[8] + "." + fields[10], ""),
             fields[4], fields[5], fields[17], fields[14], "|".join(aliases),
         ]))
     destination.mkdir(parents=True, exist_ok=True)
-    (destination / "cities.tsv").write_text("\n".join(rows) + "\n")
+    (destination / "cities.tsv").write_text("\n".join(rows) + "\n", encoding="utf-8")
     attribution = """City data © GeoNames contributors, licensed under CC BY 4.0.
 https://www.geonames.org/
 https://creativecommons.org/licenses/by/4.0/
@@ -43,9 +43,9 @@ Changes: selected fields, joined region names, sorted/deduplicated alternate nam
 Rebuild: python3 Scripts/import-clock-cities.py <cities15000.zip> <admin1CodesASCII.txt>
 
 """
-    for path in [cities, regions]:
-        attribution += f"{path.name} SHA-256: {hashlib.sha256(path.read_bytes()).hexdigest()}\n"
-    (destination / "GeoNames-NOTICE.txt").write_text(attribution)
+    for name, path in [("cities15000.zip", cities), ("admin1CodesASCII.txt", regions)]:
+        attribution += f"{name} SHA-256: {hashlib.sha256(path.read_bytes()).hexdigest()}\n"
+    (destination / "GeoNames-NOTICE.txt").write_text(attribution, encoding="utf-8")
     print(f"Wrote {len(rows)} cities to {destination}")
 
 

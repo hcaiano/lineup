@@ -21,11 +21,13 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
 
     func attach(_ services: ToolServices) {
         self.services = services
+        model.sharedConfigBlockedMessage = { [weak services] in services?.config.blockedMessage }
         do {
             let settings = try services.config.load(WorldClockSettings.self) ?? WorldClockSettings()
-            model.configure(settings: settings, blockedMessage: services.config.blockedMessage)
+            model.configure(settings: settings, sectionLoadError: nil)
         } catch {
-            model.configure(settings: WorldClockSettings(), blockedMessage:
+            services.log.error("World Clock settings failed to load: \(error.localizedDescription, privacy: .public)")
+            model.configure(settings: WorldClockSettings(), sectionLoadError:
                 "World Clock settings couldn’t be read and were left untouched. Restore valid settings or update Lineup to edit places.")
         }
         model.save = { [weak self] settings in
@@ -171,8 +173,8 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
     }
 
     var warnings: [ToolWarning] {
-        guard let message = model.blockedMessage else { return [] }
-        return [ToolWarning(id: "worldClock.config", text: "World Clock settings couldn’t be read", detailLines: [message])]
+        guard let message = model.sectionLoadError else { return [] }
+        return [ToolWarning(id: "worldClock.config", text: "⚠︎ World Clock settings couldn’t be read", detailLines: [message])]
     }
 
     func makeSettingsPane() -> AnyView {

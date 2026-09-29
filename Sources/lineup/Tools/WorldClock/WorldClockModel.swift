@@ -9,7 +9,8 @@ final class WorldClockModel: ObservableObject {
     @Published private(set) var now = Date()
     @Published private(set) var timeline = ClockTimeline(now: Date())
     @Published var error: String?
-    @Published var blockedMessage: String?
+    @Published private(set) var sectionLoadError: String?
+    var sharedConfigBlockedMessage: (() -> String?)?
     @Published var isRunning = false
     @Published private(set) var searchResults: [ClockPlace] = []
     @Published private(set) var catalogLoading = false
@@ -24,14 +25,15 @@ final class WorldClockModel: ObservableObject {
     private var solarCache: [String: SolarSummary] = [:]
 
     var canEdit: Bool { blockedMessage == nil && save != nil }
+    var blockedMessage: String? { sharedConfigBlockedMessage?() ?? sectionLoadError }
     var selectedDate: Date { timeline.date(now: now) }
     var orderedRows: [ClockRow] {
         ClockOrdering.rows(places: settings.places, at: selectedDate, localZone: .autoupdatingCurrent)
     }
 
-    func configure(settings: WorldClockSettings, blockedMessage: String?) {
+    func configure(settings: WorldClockSettings, sectionLoadError: String?) {
         self.settings = settings
-        self.blockedMessage = blockedMessage
+        self.sectionLoadError = sectionLoadError
     }
 
     func tick(now: Date = Date()) {
@@ -155,9 +157,8 @@ final class WorldClockModel: ObservableObject {
     func cancelSearch() {
         searchTask?.cancel()
         searchTask = nil
-        catalogTask?.cancel()
-        catalogTask = nil
-        catalogLoading = false
+        // Finish one catalog load into the cache, even if the panel closes in the meantime.
+        // Reopening reuses it rather than starting another detached parse.
         query = ""
         searchResults = []
         searching = false

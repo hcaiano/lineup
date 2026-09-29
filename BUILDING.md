@@ -201,6 +201,13 @@ version without changing the shared envelope schema. Unreadable or future settin
 Unknown settings, place and coordinate fields survive supported edits. Removing a pinned place
 also clears the pin in the same atomic save.
 
+The parsed city catalog stays cached for the app session so reopening search does not reload it.
+A load already in progress finishes into that cache when the panel closes. Search cancellation
+discards stale results. If the shared configuration is reset after a failed load, editing becomes
+available immediately. An unreadable World Clock section is left intact: restore its valid saved
+data and relaunch, or open it with a newer compatible version of Lineup. There is no section-reset
+action in this release.
+
 ### Downgrading from 2.0 to 1.9.x
 
 Because 2.0 never touches `zones.json`, rolling back to a 1.9.x build (or older) just works: 1.9.x
