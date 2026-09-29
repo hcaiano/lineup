@@ -16,6 +16,7 @@ let package = Package(
         // Pure Hyper-key persisted settings (TriggerKey + HyperKeySettings). Split out of
         // CyclerCore so Cycler and Hyperkey are independent tools. No dependencies by design.
         .target(name: "HyperkeyCore"),
+        .target(name: "WorldClockCore"),
         // Region geometry, recognition order and cancellation tokens for local text capture.
         .target(name: "TextCaptureCore"),
         // Pure cycle-order math + the legacy ~/.config/cycler/bindings.json model.
@@ -24,7 +25,7 @@ let package = Package(
         .target(name: "CyclerCore", dependencies: ["HyperkeyCore"]),
         // Product identity, tool identity, and the unified ~/.config/lineup/config.json
         // envelope + legacy import. Needs all three tool models to do the import.
-        .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore"]),
+        .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore"]),
         // Thin executable: AppKit agent shell + the tools. AX window writes,
         // Carbon hotkeys, CGEventTap.
         .executableTarget(
@@ -34,6 +35,7 @@ let package = Package(
                 "ZonesCore",
                 "CyclerCore",
                 "HyperkeyCore",
+                "WorldClockCore",
                 "TextCaptureCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
@@ -41,7 +43,7 @@ let package = Package(
             // `.process`) so the folder shape inside lineup_lineup.bundle is predictable.
             // Scripts/build-app.sh must copy that bundle into Contents/Resources, where the
             // app's non-trapping tool-icon loader looks for it.
-            resources: [.copy("Resources/ToolIcons")],
+            resources: [.copy("Resources/ToolIcons"), .copy("Resources/WorldClock")],
             // The bundled app loads Sparkle.framework from Contents/Frameworks; SwiftPM only
             // adds an rpath into .build, so add the bundle-relative one for the shipped app.
             linkerSettings: [
@@ -52,7 +54,7 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "TextCaptureCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore", "TextCaptureCore"]
         ),
     ]
 )

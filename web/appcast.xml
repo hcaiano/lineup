@@ -7,6 +7,49 @@
     <description>Updates for Lineup, a macOS utilities suite.</description>
     <language>en</language>
     <item>
+      <title>Lineup 2.2.0</title>
+      <link>https://lineup.caiano.com/</link>
+      <sparkle:version>23</sparkle:version>
+      <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
+      <sparkle:releaseNotesLink>https://lineup.caiano.com/release-notes/2.2.0</sparkle:releaseNotesLink>
+      <description><![CDATA[
+        <h2>Lineup 2.2.0</h2>
+        <p>Adds Keep Awake, an optional tool for preventing idle sleep during a timed session.
+        Enable it in Settings, then start a 15-minute, 30-minute, 1-hour or 2-hour session
+        from Settings or the menu bar. See the remaining time and stop whenever you want.</p>
+        <p>Keeping the display on is a separate option, off by default. Changing that option
+        preserves the remaining time. Sessions end on expiry, disable, quit or explicit sleep,
+        and never resume automatically after wake or relaunch.</p>
+        <p>While Zones is running, apps return to their last successfully used zone when they
+        relaunch. Placements made with Lineup shortcuts and Shift-drag are remembered; existing
+        windows are left alone when Zones starts.</p>
+      ]]></description>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 29 Sep 2026 16:31:12 +0000</pubDate>
+      <enclosure url="https://lineup.caiano.com/downloads/Lineup-2.2.0.dmg" type="application/octet-stream" sparkle:edSignature="WJOqNUrEYG2oHQd8zlNNoigAb3DwuVTBIVoxGq6XIXLiOjS5Wp5oTLSVnlXpHjkUFYxq0Vo41x3QR1ZNMgLwAw==" length="6968108" />
+    </item>
+    <item>
+      <title>Lineup 2.1.0</title>
+      <link>https://lineup.caiano.com/</link>
+      <sparkle:version>22</sparkle:version>
+      <sparkle:shortVersionString>2.1.0</sparkle:shortVersionString>
+      <sparkle:releaseNotesLink>https://lineup.caiano.com/release-notes/2.1.0</sparkle:releaseNotesLink>
+      <description><![CDATA[
+        <h2>Lineup 2.1.0</h2>
+        <p>Adds World Clock, an optional tool with its own menu-bar panel. Enable it in Settings to
+        search cities and time zones offline, compare their hours, and pin one place's live time
+        in the menu bar.</p>
+        <p>Scroll up to 24 hours backwards or forwards, or enter an exact local time. Local stays
+        among the other clocks in chronological order. Reopening returns to Now, and the pinned
+        menu-bar time always stays live.</p>
+        <p>Cities include estimates for the next sunrise or sunset. All clocks follow your Mac's
+        12- or 24-hour format. No location permission or network connection is required.</p>
+      ]]></description>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 29 Sep 2026 14:59:26 +0000</pubDate>
+      <enclosure url="https://lineup.caiano.com/downloads/Lineup-2.1.0.dmg" type="application/octet-stream" sparkle:edSignature="YKN7+Fp3h6t1wXcvNMFTumi7TrwV4iVvM9wDxGOfB2MKfc2q/JSMF5W1c8V5sLnqeuZwYOJYK+i7L1BEPa3PCg==" length="6795635" />
+    </item>
+    <item>
       <title>Lineup 2.0.3</title>
       <link>https://lineup.caiano.com/</link>
       <sparkle:version>21</sparkle:version>

@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.3</string>
+	<string>2.2.0</string>
 	<key>CFBundleVersion</key>
-	<string>21</string>
+	<string>23</string>
 	<key>LineupBuildChannel</key>
 	<string>stable</string>
 	<key>LSMinimumSystemVersion</key>

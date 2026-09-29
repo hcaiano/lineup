@@ -27,6 +27,7 @@ func runAppTests() throws {
     try runEnvelopeTests()
     try runUpdateChannelTests()
     try runStoreTests()
+    try runAppPlacementPersistenceTests()
     try runLegacyImportTests()
     try runIdentityTests()
     try runReleaseToolingTests()
@@ -712,13 +713,13 @@ private func runIdentityTests() throws {
     check(derived == literal, "the FourCharCode derived from Product.hotkeySignatureString is 'LNUP'")
     check(derived == 0x4C4E_5550, "'LNUP' is 0x4C4E5550, byte-identical to the 1.x registry")
 
-    check(plistString("CFBundleShortVersionString") == "2.0.3", "Info.plist ships 2.0.3")
+    check(plistString("CFBundleShortVersionString") == "2.2.0", "Info.plist ships 2.2.0")
     check(plistString("LineupBuildChannel") == "stable", "Info.plist marks the public build Stable")
     // Sparkle offers an update only when the appcast's sparkle:version (CFBundleVersion) sorts
-    // ABOVE the running app's. 2.0.2 shipped as build 20, so a 2.0.3 that reused 20 would be
+    // ABOVE the running app's. 2.1.0 shipped as build 22, so a 2.2.0 that reused 22 would be
     // invisible to every existing user. The build number must stay strictly monotonic.
-    check(plistString("CFBundleVersion") == "21", "Info.plist ships build 21")
-    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 20, "build number is above 2.0.2's build 20")
+    check(plistString("CFBundleVersion") == "23", "Info.plist ships build 23")
+    check(Int(plistString("CFBundleVersion") ?? "0") ?? 0 > 22, "build number is above 2.1.0's build 22")
 }
 
 private func runReleaseToolingTests() throws {
@@ -2695,4 +2696,59 @@ private func runVisualDesignTests() throws {
           "the app picker focuses its search field on open")
     check(picker.contains(".onSubmit { pickFirstMatch() }") && picker.contains("private func pickFirstMatch()"),
           "Return picks the first match, and does nothing when there is none")
+}
+
+private func runAppPlacementPersistenceTests() throws {
+    try withTempDir("app-placements") { dir in
+        let url = dir.appendingPathComponent("config.json")
+        let legacy = dir.appendingPathComponent("zones.json")
+        let legacyBytes = Data("legacy import source".utf8)
+        try legacyBytes.write(to: legacy)
+        let store = LineupAppConfigStore(url: url)
+        store.load()
+        try store.setSettings(HyperKeySettings(enabled: true, triggerKey: .f12), for: .hyperkey)
+        let sibling = store.config.tools[ToolID.hyperkey.rawValue]
+        let screen = ScreenInfo(key: "display-uuid", label: "External", pixelsWide: 1000,
+                                pixelsHigh: 800, keyIsStable: true)
+        let frame = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        var zones = LineupConfig().setting(layout: .halves, for: screen, now: nil)
+        let saved = AppZonePlacement(screenKey: screen.key, layout: .halves,
+                                     target: CGRect(x: 500, y: 0, width: 500, height: 800),
+                                     frame: frame, visibleFrame: frame, pixelsWide: 1000)
+        zones.rememberPlacement(saved, for: "app.one")
+        try store.setSettings(zones, for: .zones)
+        let restarted = LineupAppConfigStore(url: url)
+        restarted.load()
+        let loaded = try restarted.config.settings(LineupConfig.self, for: .zones)
+        check(loaded?.appPlacements?["app.one"] == saved,
+              "placement persistence: shared-store save survives a Lineup restart")
+        let retainedLegacy = try Data(contentsOf: legacy)
+        check(restarted.config.tools[ToolID.hyperkey.rawValue] == sibling && retainedLegacy == legacyBytes,
+              "placement persistence: sibling settings and read-only legacy bytes remain intact")
+        // Force an actual atomic-write failure without changing the accepted in-memory store.
+        let obstructed = dir.appendingPathComponent("not-a-directory")
+        try Data("file".utf8).write(to: obstructed)
+        let failing = LineupAppConfigStore(url: obstructed.appendingPathComponent("config.json"), config: restarted.config)
+        zones.appPlacements = nil
+        do {
+            try failing.setSettings(zones, for: .zones)
+            check(false, "placement persistence: refused save must throw")
+        } catch {
+            let retained = try failing.config.settings(LineupConfig.self, for: .zones)
+            check(retained?.appPlacements?["app.one"] == saved,
+                  "placement persistence: failed atomic save keeps the last accepted association")
+        }
+        for bytes in [Data("broken JSON".utf8), Data(#"{"schemaVersion":999,"general":{},"tools":{}}"#.utf8)] {
+            try bytes.write(to: url)
+            let rejected = LineupAppConfigStore(url: url)
+            rejected.load()
+            do {
+                try rejected.setSettings(zones, for: .zones)
+                check(false, "placement persistence: rejected load blocks placement saves")
+            } catch {
+                check((try Data(contentsOf: url)) == bytes,
+                      "placement persistence: rejected or newer config bytes survive a placement save")
+            }
+        }
+    }
 }

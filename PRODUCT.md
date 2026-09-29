@@ -14,10 +14,30 @@ the only UI most users ever see is the on-screen layout editor (once) and the dr
 
 ## Product Purpose
 
-Lineup snaps windows into per-screen zones the user draws themselves. It replaces Magnet/Rectangle
-with something you can shape: recursive zone layouts per display, snapping by shift-drag or global
+Lineup combines independently enabled tools for window layouts, app cycling, a Hyperkey, world
+clocks and text capture. Zones snaps windows into per-screen zones the user draws themselves. It
+replaces Magnet/Rectangle with something you can shape: recursive zone layouts per display, snapping by shift-drag or global
 shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
 instructions, and the app then disappears into muscle memory.
+
+## World Clock
+
+World Clock is an optional menu-bar tool for checking colleagues' times and comparing nearby
+hours. Its own status item opens a compact native panel, independently of the main Lineup icon.
+The default is off. With no saved places, the panel shows Local and an add button.
+
+Local follows the Mac's time zone and sits among the other clocks in chronological order, from
+earlier to later local time. Sort by UTC offset at the selected instant, including daylight saving;
+Local comes first among equal offsets, then cities retain their saved order. Unavailable zones go last.
+Cities can be searched offline, renamed and removed inside the panel. Manual reordering only
+changes the order of cities with equal offsets. One pinned place replaces the status icon with its name and live time; unpinning
+restores the icon. The panel's ±24-hour time scroll changes every row to the same selected instant.
+Reopening always returns to Now; the pinned status time remains real during simulation.
+
+Follow the system appearance and hour format. Use aligned rows, readable numeric hours and one
+blue for selection. Use a pin rather than a heart. Keep the time controls visible when a long list
+scrolls. Show day changes explicitly. Solar estimates belong only to cities with coordinates;
+the next event follows the simulated time. No calendar, location permission or network service.
 
 ## Update Tracks
 
@@ -70,3 +90,13 @@ Every control carries an accessibility label (SF Symbol `accessibilityDescriptio
 Hover-revealed controls are also click-pinned so trackpad/switch users get a stable target. Esc
 always cancels; Return always confirms. Color is never the only signal (active zones also get
 thicker strokes). No motion beyond system defaults, so no reduced-motion variants are required.
+
+## Keep Awake
+
+Keep Awake is an independent, opt-in tool for timed idle-sleep prevention. Users start and stop
+sessions from the menu bar or Settings. The active menu-bar label and countdown show the current
+state. Keeping the display on is a separate preference, off by default.
+
+Sessions last 15, 30, 60, or 120 minutes. Changing duration restarts the timer; changing the display
+option preserves its deadline. Explicit sleep ends the session. Sessions never resume at wake or
+app launch. The tool does not change permanent power settings, screen locking, or closed-lid behavior.

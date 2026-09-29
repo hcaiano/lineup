@@ -24,7 +24,8 @@ import Sparkle
 /// ```
 /// A tool contributing exactly one item gets it inlined instead of a submenu.
 @MainActor
-final class StatusItemController: NSObject {
+final class StatusItemController: NSObject, NSMenuDelegate {
+    private var isTrackingMenu = false
     private var statusItem: NSStatusItem?
     private let registry: ToolRegistry
     private let permissions: PermissionCenter
@@ -52,10 +53,21 @@ final class StatusItemController: NSObject {
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.image = Brand.menuBarLogo()
-            item.button?.toolTip = "\(Product.name): window snapping, app cycling, hyper key, text capture"
+            item.button?.toolTip = "\(Product.name): window snapping, app cycling, Hyperkey, world clocks, Keep Awake, text capture"
             statusItem = item
         }
-        statusItem?.menu = buildMenu()
+        let awake = (registry.tool(.awake) as? AwakeTool)?.isActive == true
+        statusItem?.button?.title = awake ? " Awake" : ""
+        statusItem?.button?.toolTip = awake ? "Lineup: Keep Awake is active" : "Lineup"
+        if !isTrackingMenu { statusItem?.menu = buildMenu() }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) { isTrackingMenu = true }
+
+    func menuDidClose(_ menu: NSMenu) {
+        isTrackingMenu = false
+        // Let the selected action run before rebuilding.
+        DispatchQueue.main.async { [weak self] in self?.refresh() }
     }
 
     // MARK: - Menu
@@ -63,6 +75,7 @@ final class StatusItemController: NSObject {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
+        menu.delegate = self
 
         // Actionable problems ONLY, at the top. Healthy states show nothing.
         var warnings = shellWarnings()
@@ -93,7 +106,9 @@ final class StatusItemController: NSObject {
             if items.count == 1, let only = items.first {
                 menu.addItem(only)
             } else {
-                let parent = NSMenuItem(title: tool.displayName, action: nil, keyEquivalent: "")
+                let active = (tool as? AwakeTool)?.isActive == true
+                let parent = NSMenuItem(title: active ? "Keep Awake · Active" : tool.displayName,
+                                        action: nil, keyEquivalent: "")
                 parent.image = NSImage(systemSymbolName: tool.iconSymbol, accessibilityDescription: nil)?
                     .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
                 let submenu = NSMenu()

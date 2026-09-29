@@ -14,6 +14,7 @@ func isMigrated(_ o: LoadOutcome) -> Bool { if case .migrated = o { return true 
 func isFresh(_ o: LoadOutcome) -> Bool { if case .fresh = o { return true }; return false }
 
 func runZonesTests() throws {
+    try runAppPlacementTests()
     // ---- Coordinate flip ----
     let primaryMaxY: CGFloat = 1440
 

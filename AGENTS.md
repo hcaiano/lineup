@@ -1,11 +1,13 @@
 # Lineup
 
-Lineup is a native macOS 13+ menu-bar suite. It combines independent tools that users can enable
+Lineup is a native macOS 13+ menu-bar suite. Its tools can be enabled
 independently:
 
 - **Zones** arranges windows in per-screen layouts.
 - **Cycler** moves through apps and windows with global shortcuts.
 - **Hyperkey** maps one physical key to Control + Option + Shift + Command.
+- **World Clock** compares local and world times in its own menu-bar panel.
+- **Keep Awake** prevents idle sleep for a timed session, with a separate display option.
 - **Text Capture** copies locally recognized text from a selected screen region.
 
 Read [PRODUCT.md](PRODUCT.md) before changing user-visible behavior or design. Read
@@ -55,7 +57,8 @@ State which paths do not apply when their omission is not obvious.
 
 ## Where code lives
 
-- `Sources/ZonesCore`, `Sources/CyclerCore`, `Sources/HyperkeyCore`, and `Sources/TextCaptureCore` contain testable tool logic.
+- `Sources/ZonesCore`, `Sources/CyclerCore`, `Sources/HyperkeyCore`, `Sources/WorldClockCore`,
+  and `Sources/TextCaptureCore` contain testable tool logic.
 - `Sources/AppCore` owns product identity, shared configuration, migration, and tool metadata.
 - `Sources/lineup/App` contains the app shell and shared macOS services.
 - `Sources/lineup/Settings` contains the SwiftUI settings interface.
