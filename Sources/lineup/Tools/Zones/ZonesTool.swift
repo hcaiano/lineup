@@ -116,8 +116,8 @@ final class ZonesTool: Tool {
     private lazy var dragSnap = DragSnapController(
         configProvider: { [weak self] in self?.config ?? LineupConfig() },
         triggerProvider: { [weak self] in self?.dragSnapTrigger ?? .default },
-        onPlacement: { [weak self] window, screen, rect, succeeded in
-            self?.rememberPlacement(window, on: screen, rect: rect, succeeded: succeeded)
+        onPlacement: { [weak self] window, screen, rect in
+            self?.rememberPlacement(window, on: screen, rect: rect)
         })
 
     private lazy var launchPlacement = AppLaunchPlacementController(
@@ -276,19 +276,19 @@ final class ZonesTool: Tool {
         settingsModel?.refresh()
     }
 
-    private func rememberPlacement(_ window: AXUIElement, on screen: NSScreen, rect: CGRect, succeeded: Bool) {
+    private func rememberPlacement(_ window: AXUIElement, on screen: NSScreen, rect: CGRect) {
         var pid: pid_t = 0
         guard isRunning, AXUIElementGetPid(window, &pid) == .success else { return }
-        if succeeded { launchPlacement.cancel(pid) }
-        guard canWrite, let services,
+        launchPlacement.cancel(pid)
+        // Automatic learning must not create a section before a deferred legacy import.
+        guard canWrite, !usingDefaults, let services,
               let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return }
         var updated = preparedConfigForUserWrite
         let info = ScreenIdentity.info(for: screen)
         let placement = AppZonePlacement(screenKey: info.key, layout: updated.layout(forKey: info.key),
                                          target: rect, frame: screen.frame, visibleFrame: screen.visibleFrame,
                                          pixelsWide: info.pixelsWide)
-        updated.rememberPlacement(placement, for: bundleID, succeeded: succeeded)
-        guard succeeded else { return }
+        updated.rememberPlacement(placement, for: bundleID)
         guard updated != config else { return }
         do {
             try updated.validate()

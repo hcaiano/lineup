@@ -83,14 +83,14 @@ final class SnapMemory {
 /// thread, and both callers (the Zones hotkey actions and the drag monitor) are isolated there.
 @MainActor
 enum WindowMover {
-    typealias PlacementHandler = (AXUIElement, NSScreen, CGRect, Bool) -> Void
+    typealias PlacementHandler = (AXUIElement, NSScreen, CGRect) -> Void
 
     /// Snap the focused window via a quick-action id ("full"/"left"/.../"rightHalf"),
     /// resolved against the per-screen layout for the screen the window is on.
     /// Returns false (silently) if there's no focused window or AX isn't trusted.
     @discardableResult
     static func snapFocusedWindow(toQuickAction id: String, config: LineupConfig,
-                                  onPlacement: PlacementHandler? = nil) -> Bool {
+                                  onPlacement: PlacementHandler) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let window = focusedWindow() else { return false }
 
@@ -108,8 +108,8 @@ enum WindowMover {
         // Record where the window was steered (fixed-size windows get centered, not the
         // zone rect) so the unsnap match works against where it really ends up.
         let landed = setFrame(target, of: window)
-        onPlacement?(window, screen, target, landed != nil)
         guard let landed else { return false }
+        onPlacement(window, screen, target)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
@@ -212,7 +212,7 @@ enum WindowMover {
                                   on target: NSScreen,
                                   configKey: String,
                                   config: LineupConfig,
-                                  onPlacement: PlacementHandler? = nil) -> Bool {
+                                  onPlacement: PlacementHandler) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let window = focusedWindow() else { return false }
         guard let currentCocoa = currentCocoaFrame(of: window) else { return false }
@@ -225,8 +225,8 @@ enum WindowMover {
             frame: target.frame, visibleFrame: target.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
         let landed = setFrame(targetRect, of: window)
-        onPlacement?(window, target, targetRect, landed != nil)
         guard let landed else { return false }
+        onPlacement(window, target, targetRect)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return true
     }
@@ -234,7 +234,7 @@ enum WindowMover {
     /// Advance the left/right/center cycle for the focused window. Returns the new cycle
     /// state to carry forward (or the previous state unchanged if nothing could be moved).
     static func cycleFocusedWindow(_ side: Side, config: LineupConfig, now: Double, prev: CycleState?,
-                                   onPlacement: PlacementHandler? = nil) -> CycleState? {
+                                   onPlacement: PlacementHandler) -> CycleState? {
         guard AXIsProcessTrusted() else { return prev }
         guard let window = focusedWindow() else { return prev }
         guard let currentCocoa = currentCocoaFrame(of: window) else { return prev }
@@ -254,8 +254,8 @@ enum WindowMover {
                                  focusedFrame: currentCocoa, prev: prev, stepCount: steps.count)
         let target = steps[idx]
         let landed = setFrame(target, of: window)
-        onPlacement?(window, screen, target, landed != nil)
         guard let landed else { return prev }
+        onPlacement(window, screen, target)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
@@ -323,8 +323,8 @@ enum WindowMover {
     @discardableResult
     private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) -> CGRect? {
         var movable = DarwinBoolean(false)
-        guard AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &movable) == .success,
-              movable.boolValue else { return nil }
+        if AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &movable) == .success,
+           !movable.boolValue { return nil }
         let restoreEnhanced = suspendEnhancedUserInterface(of: window)
         defer { if let appEl = restoreEnhanced { setBool(appEl, enhancedUserInterfaceAttribute, true) } }
 
@@ -339,9 +339,9 @@ enum WindowMover {
 
         let before = axSize(window, kAXSizeAttribute)
         let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY())
-        let firstResize = setSize(window, kAXSizeAttribute, ax.size)
-        guard setPoint(window, kAXPositionAttribute, ax.origin) else { return nil }
-        let secondResize = setSize(window, kAXSizeAttribute, ax.size)
+        setSize(window, kAXSizeAttribute, ax.size)
+        let moved = setPoint(window, kAXPositionAttribute, ax.origin)
+        setSize(window, kAXSizeAttribute, ax.size)
 
         // Verify: apps with a minimum size accept the move but refuse the resize, leaving
         // the window hanging out of the zone. Re-place what we actually got — but ONLY on
@@ -353,7 +353,7 @@ enum WindowMover {
            abs(actual.width - before.width) <= 1, abs(actual.height - before.height) <= 1 {
             return place(size: actual, in: cocoa, of: window)
         }
-        guard firstResize || secondResize else { return nil }
+        guard moved || positionMatches(ax.origin, of: window) else { return nil }
         return cocoa
     }
 
@@ -364,8 +364,13 @@ enum WindowMover {
         let bounds = screen(for: zone)?.visibleFrame ?? zone
         let target = FixedPlacement.center(size: size, in: zone, boundedBy: bounds)
         let ax = Coord.axRect(fromCocoa: target, primaryMaxY: primaryMaxY())
-        guard setPoint(window, kAXPositionAttribute, ax.origin) else { return nil }
+        guard setPoint(window, kAXPositionAttribute, ax.origin) || positionMatches(ax.origin, of: window) else { return nil }
         return target
+    }
+
+    private static func positionMatches(_ target: CGPoint, of window: AXUIElement) -> Bool {
+        guard let actual = axPoint(window, kAXPositionAttribute) else { return false }
+        return abs(actual.x - target.x) <= 1 && abs(actual.y - target.y) <= 1
     }
 
     /// Resizable unless AX says otherwise; if the query itself fails, assume resizable

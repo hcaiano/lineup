@@ -110,8 +110,7 @@ final class DragSnapController {
         case .leftMouseUp:
             if armed, let win = captured, let rect = lastTargetRect,
                let screen = NSScreen.screens.first(where: { ScreenIdentity.info(for: $0).key == targetScreenKey }) {
-                let succeeded = WindowMover.snap(win, toCocoaRect: rect)
-                onPlacement(win, screen, rect, succeeded)
+                if WindowMover.snap(win, toCocoaRect: rect) { onPlacement(win, screen, rect) }
             }
             reset()
         default:

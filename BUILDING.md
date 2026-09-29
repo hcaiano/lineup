@@ -181,8 +181,9 @@ launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **neve
 
 Zones stores an optional `appPlacements` map in its existing settings section. Older files need no
 migration. The tool saves learned destinations through `ToolConfigScope` only after a successful
-explicit move, and updates its in-memory config only after the atomic save succeeds. The map uses
-bundle IDs and exact display keys. A target includes its layout tree and relative geometry, so it
+explicit move, and updates its in-memory config only after the atomic save succeeds. Learning waits
+while no Zones section exists, preserving a deferred legacy import. A fresh installation already
+has its default section seeded by the importer. The map uses bundle IDs and exact display keys. A target includes its layout tree and relative geometry, so it
 cannot follow a reused zone number. Layout editor saves preserve the latest learned associations
 and invalidate those on edited displays.
 
@@ -191,7 +192,8 @@ It ignores processes already running when Zones starts. For a new associated app
 windows, observes AX window creation and focus changes, and briefly probes for windows while the
 app initializes. Those probes stop after five seconds; a supported AX observer can continue waiting
 for the first document window. If the app supports neither notification, discovery ends after that
-initial period. AX calls have a short timeout, and an unresponsive process cancels its pending work.
+initial period. AX calls have a short timeout; startup timeouts retry within that discovery period,
+and an unresponsive process cancels its pending work once the deadline expires.
 Only non-modal standard windows qualify. The controller removes observation before the move attempt,
 including when the destination is unavailable. It does not subscribe to window movement or resizing.
 

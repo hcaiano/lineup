@@ -53,9 +53,8 @@ public struct AppZonePlacement: Codable, Equatable {
 extension LineupConfig {
     /// Only successful explicit placements teach a destination. Free movement and automatic
     /// restoration never call this path; a failed move leaves the previous association intact.
-    public mutating func rememberPlacement(_ placement: AppZonePlacement, for bundleID: String,
-                                           succeeded: Bool) {
-        guard succeeded, !bundleID.isEmpty, placement.isValid else { return }
+    public mutating func rememberPlacement(_ placement: AppZonePlacement, for bundleID: String) {
+        guard !bundleID.isEmpty, placement.isValid else { return }
         if appPlacements == nil { appPlacements = [:] }
         appPlacements?[bundleID] = placement
     }
@@ -85,10 +84,7 @@ public struct ZoneLaunchRestoration {
         return true
     }
 
-    public mutating func firstWindow(process: Int32, isRegular: Bool,
-                                     accessibilityTrusted: Bool) -> AppZonePlacement? {
-        guard accessibilityTrusted else { pending[process] = nil; return nil }
-        guard isRegular else { return nil }
+    public mutating func firstWindow(process: Int32) -> AppZonePlacement? {
         // Consume BEFORE target resolution or the AX write. Failure never selects a later window.
         return pending.removeValue(forKey: process)
     }
@@ -96,4 +92,13 @@ public struct ZoneLaunchRestoration {
     public func isPending(_ process: Int32) -> Bool { pending[process] != nil }
     public mutating func cancel(_ process: Int32) { pending[process] = nil }
     public mutating func terminated(_ process: Int32) { pending[process] = nil; seen.remove(process) }
+}
+
+/// AX attributes needed to distinguish a document window from transient or hidden windows.
+public enum LaunchWindowEligibility {
+    public static func isEligible(role: String?, subrole: String?, modal: Bool?,
+                                  minimized: Bool?, fullscreen: Bool?) -> Bool {
+        role == "AXWindow" && subrole == "AXStandardWindow" && modal != true
+            && minimized != true && fullscreen != true
+    }
 }

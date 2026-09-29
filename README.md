@@ -46,7 +46,8 @@ Destinations use the saved display identity, not shortcut numbers. If that displ
 the window stays where macOS opens it and the association is kept for a later launch. A changed
 layout is also skipped. Saving layout edits clears remembered placements for that display; place an
 app again to teach its new destination. Editing another display or changing display order does not
-affect it. Associations live in the shared `~/.config/lineup/config.json` file.
+affect it. Learning also waits while an old layout import is pending; reconnect that display first.
+Associations live in the shared `~/.config/lineup/config.json` file.
 
 ## World Clock
 

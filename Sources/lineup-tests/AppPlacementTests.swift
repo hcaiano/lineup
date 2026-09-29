@@ -14,12 +14,10 @@ func runAppPlacementTests() throws {
                                  frame: frame, visibleFrame: visible, pixelsWide: 2000)
     let second = AppZonePlacement(screenKey: screen.key, layout: .halves, target: right,
                                   frame: frame, visibleFrame: visible, pixelsWide: 2000)
-    config.rememberPlacement(first, for: "app.one", succeeded: true)
-    config.rememberPlacement(second, for: "app.two", succeeded: true)
+    config.rememberPlacement(first, for: "app.one")
+    config.rememberPlacement(second, for: "app.two")
     check(config.appPlacements?["app.one"] == first, "placement: explicit placement learns the application's destination")
-    config.rememberPlacement(second, for: "app.one", succeeded: false)
-    check(config.appPlacements?["app.one"] == first, "placement: failed movement keeps the previous destination")
-    config.rememberPlacement(second, for: "app.one", succeeded: true)
+    config.rememberPlacement(second, for: "app.one")
     check(config.appPlacements?["app.one"] == second && config.appPlacements?.count == 2,
           "placement: replacement keeps one destination per app and preserves other apps")
 
@@ -29,8 +27,6 @@ func runAppPlacementTests() throws {
     check(resolve(second, config) == right, "placement: restores the saved leaf on an offset display")
     check(resolve(second, config, key: "lookalike-uuid") == nil,
           "placement: a disconnected display never falls back to a lookalike or main display")
-    check(config.appPlacements?["app.one"] == second && resolve(second, config) == right,
-          "placement: disconnect preserves the association for a later launch after reconnect")
     var renumbered = config
     renumbered.screens[screen.key]?.shortcutOrder = 8
     let other = ScreenInfo(key: "other", label: "Other", pixelsWide: 2000, pixelsHigh: 1000, keyIsStable: true)
@@ -72,35 +68,39 @@ func runAppPlacementTests() throws {
           "launch: granting permission later does not reattempt that launch")
     check(sessions.launched(process: 13, placement: first, accessibilityTrusted: true),
           "launch: a new associated app waits for its first regular window")
-    check(sessions.firstWindow(process: 13, isRegular: false, accessibilityTrusted: true) == nil
-            && sessions.isPending(13), "launch: splash screens and sheets do not consume restoration")
-    check(sessions.firstWindow(process: 13, isRegular: true, accessibilityTrusted: true) == first,
+    check(sessions.firstWindow(process: 13) == first,
           "launch: first regular window consumes the saved destination")
-    check(sessions.firstWindow(process: 13, isRegular: true, accessibilityTrusted: true) == nil
+    check(sessions.firstWindow(process: 13) == nil
             && !sessions.launched(process: 13, placement: second, accessibilityTrusted: true),
           "launch: later windows and duplicate launch events cannot restore again, even after a failed move")
-    check(!sessions.isPending(13),
-          "launch: no pending restoration remains to enforce placement after free movement")
     _ = sessions.launched(process: 17, placement: first, accessibilityTrusted: true)
-    let unavailable = sessions.firstWindow(process: 17, isRegular: true, accessibilityTrusted: true)
+    let unavailable = sessions.firstWindow(process: 17)
     check(unavailable.flatMap { resolve($0, config, key: "other-display") } == nil
-            && sessions.firstWindow(process: 17, isRegular: true, accessibilityTrusted: true) == nil,
+            && sessions.firstWindow(process: 17) == nil,
           "launch: an unavailable destination consumes the attempt and leaves later windows alone")
     sessions.terminated(13)
     check(sessions.launched(process: 13, placement: second, accessibilityTrusted: true)
-            && sessions.firstWindow(process: 13, isRegular: true, accessibilityTrusted: true) == second,
+            && sessions.firstWindow(process: 13) == second,
           "launch: quit and relaunch uses the latest explicit destination, including PID reuse")
     _ = sessions.launched(process: 14, placement: first, accessibilityTrusted: true)
     sessions.cancel(14)
-    check(sessions.firstWindow(process: 14, isRegular: true, accessibilityTrusted: true) == nil,
+    check(sessions.firstWindow(process: 14) == nil,
           "launch: explicit user placement cancels a pending automatic placement")
-    _ = sessions.launched(process: 15, placement: first, accessibilityTrusted: true)
-    check(sessions.firstWindow(process: 15, isRegular: false, accessibilityTrusted: false) == nil
-            && !sessions.isPending(15), "launch: revoked Accessibility cancels even while waiting on a splash screen")
-    _ = sessions.launched(process: 16, placement: first, accessibilityTrusted: true)
-    sessions = ZoneLaunchRestoration(runningProcesses: [16])
-    check(sessions.firstWindow(process: 16, isRegular: true, accessibilityTrusted: true) == nil,
-          "launch: stop and re-enable drops pending work instead of replaying it")
+    for (role, subrole, modal, minimized, fullscreen, expected) in [
+        ("AXWindow", "AXStandardWindow", false, false, false, true),
+        ("AXWindow", "AXStandardWindow", nil, nil, nil, true),
+        ("AXWindow", "AXFloatingWindow", false, false, false, false),
+        ("AXSheet", "AXStandardWindow", false, false, false, false),
+        ("AXWindow", "AXStandardWindow", true, false, false, false),
+        ("AXWindow", "AXStandardWindow", false, true, false, false),
+        ("AXWindow", "AXStandardWindow", false, false, true, false),
+        (nil, "AXStandardWindow", false, false, false, false),
+        ("AXWindow", nil, false, false, false, false)
+    ] as [(String?, String?, Bool?, Bool?, Bool?, Bool)] {
+        check(LaunchWindowEligibility.isEligible(role: role, subrole: subrole, modal: modal,
+                                                minimized: minimized, fullscreen: fullscreen) == expected,
+              "launch eligibility: regular documents qualify; panels, sheets, modal, minimized and fullscreen windows do not")
+    }
 
     let old = Data(#"{"schemaVersion":3,"screens":{},"defaultLayout":{"type":"leaf"}}"#.utf8)
     check(try JSONDecoder().decode(LineupConfig.self, from: old).appPlacements == nil,

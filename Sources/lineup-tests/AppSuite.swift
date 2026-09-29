@@ -2715,7 +2715,7 @@ private func runAppPlacementPersistenceTests() throws {
         let saved = AppZonePlacement(screenKey: screen.key, layout: .halves,
                                      target: CGRect(x: 500, y: 0, width: 500, height: 800),
                                      frame: frame, visibleFrame: frame, pixelsWide: 1000)
-        zones.rememberPlacement(saved, for: "app.one", succeeded: true)
+        zones.rememberPlacement(saved, for: "app.one")
         try store.setSettings(zones, for: .zones)
         let restarted = LineupAppConfigStore(url: url)
         restarted.load()
@@ -2744,10 +2744,10 @@ private func runAppPlacementPersistenceTests() throws {
             rejected.load()
             do {
                 try rejected.setSettings(zones, for: .zones)
-                check(false, "placement persistence: rejected load blocks learning writes")
+                check(false, "placement persistence: rejected load blocks placement saves")
             } catch {
                 check((try Data(contentsOf: url)) == bytes,
-                      "placement persistence: rejected or newer config bytes survive a learning write")
+                      "placement persistence: rejected or newer config bytes survive a placement save")
             }
         }
     }

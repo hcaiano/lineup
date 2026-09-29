@@ -12,11 +12,14 @@ final class AppLaunchPlacementController {
     private var workspaceObservers: [NSObjectProtocol] = []
     private struct Watch {
         let app: AXUIElement
-        let observer: AXObserver?
-        var initialProbes = 0
+        var observer: AXObserver?
+        let probeDeadline: TimeInterval
+        var isProbing: Bool { ProcessInfo.processInfo.systemUptime < probeDeadline }
     }
     private var watches: [pid_t: Watch] = [:]
     private var initialProbeTimer: Timer?
+    private let probeInterval: TimeInterval = 0.25
+    private let initialProbeDuration: TimeInterval = 5
 
     init(placement: @escaping (String) -> AppZonePlacement?,
          restore: @escaping (AXUIElement, AppZonePlacement) -> Void) {
@@ -58,7 +61,7 @@ final class AppLaunchPlacementController {
         if let watch = watches.removeValue(forKey: pid), let observer = watch.observer {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         }
-        if !watches.values.contains(where: { $0.initialProbes < 20 }) {
+        if !watches.values.contains(where: { $0.isProbing }) {
             initialProbeTimer?.invalidate()
             initialProbeTimer = nil
         }
@@ -72,6 +75,20 @@ final class AppLaunchPlacementController {
         let pid = application.processIdentifier
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.25)
+        watches[pid] = Watch(app: app, observer: makeObserver(pid, app: app),
+                             probeDeadline: ProcessInfo.processInfo.systemUptime + initialProbeDuration)
+        inspect(pid)
+        // Some apps expose their AX windows just after the workspace launch notification.
+        // Bounded discovery covers this race and apps without notifications. Once settled,
+        // an installed observer can wait for a delayed first document without polling.
+        if watches[pid] != nil, initialProbeTimer == nil {
+            initialProbeTimer = Timer.scheduledTimer(withTimeInterval: probeInterval, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.probeInitialWindows() }
+            }
+        }
+    }
+
+    private func makeObserver(_ pid: pid_t, app: AXUIElement) -> AXObserver? {
         var observer: AXObserver?
         if AXObserverCreate(pid, { _, element, notification, context in
             guard let context else { return }
@@ -91,28 +108,23 @@ final class AppLaunchPlacementController {
                 observer = nil
             }
         }
-        watches[pid] = Watch(app: app, observer: observer)
-        inspect(pid)
-        // Some apps expose their AX windows just after the workspace launch notification.
-        // Bounded discovery covers this race and apps without notifications. Once settled,
-        // an installed observer can wait for a delayed first document without polling.
-        if watches[pid] != nil, initialProbeTimer == nil {
-            initialProbeTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.probeInitialWindows() }
-            }
-        }
+        return observer
     }
 
     private func probeInitialWindows() {
         for pid in Array(watches.keys) {
-            guard let watch = watches[pid], watch.initialProbes < 20 else { continue }
-            watches[pid]?.initialProbes += 1
+            guard let watch = watches[pid] else { continue }
+            guard watch.isProbing else {
+                if watch.observer == nil { cancel(pid) }
+                continue
+            }
+            if watch.observer == nil { watches[pid]?.observer = makeObserver(pid, app: watch.app) }
             inspect(pid)
-            if let current = watches[pid], current.initialProbes >= 20, current.observer == nil {
+            if let current = watches[pid], !current.isProbing, current.observer == nil {
                 cancel(pid)
             }
         }
-        if !watches.values.contains(where: { $0.initialProbes < 20 }) {
+        if !watches.values.contains(where: { $0.isProbing }) {
             initialProbeTimer?.invalidate()
             initialProbeTimer = nil
         }
@@ -126,13 +138,16 @@ final class AppLaunchPlacementController {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(watch.app, kAXWindowsAttribute as CFString, &value)
         if result == .success, let list = value as? [AXUIElement] { windows += list }
-        // An unresponsive or dead process must not stall the menu bar on every timer tick.
-        if result == .cannotComplete || result == .invalidUIElement { cancel(pid); return }
+        // Startup can temporarily time out. Retry discovery only within the bounded probe window.
+        if result == .invalidUIElement { cancel(pid); return }
+        if result == .cannotComplete {
+            if !watch.isProbing { cancel(pid) }
+            return
+        }
         for window in windows {
             AXUIElementSetMessagingTimeout(window, 0.25)
             guard isRegular(window) else { continue }
-            guard let target = sessions.firstWindow(process: pid, isRegular: true,
-                                                     accessibilityTrusted: AXIsProcessTrusted()) else { cancel(pid); return }
+            guard let target = sessions.firstWindow(process: pid) else { cancel(pid); return }
             cancel(pid)
             restore(window, target)
             return
@@ -145,10 +160,11 @@ final class AppLaunchPlacementController {
             guard AXUIElementCopyAttributeValue(window, name as CFString, &value) == .success else { return nil }
             return value
         }
-        guard attribute(kAXRoleAttribute) as? String == kAXWindowRole,
-              attribute(kAXSubroleAttribute) as? String == kAXStandardWindowSubrole,
-              attribute(kAXModalAttribute) as? Bool == false else { return false }
-        return attribute(kAXMinimizedAttribute) as? Bool != true
-            && attribute("AXFullScreen") as? Bool != true
+        return LaunchWindowEligibility.isEligible(
+            role: attribute(kAXRoleAttribute) as? String,
+            subrole: attribute(kAXSubroleAttribute) as? String,
+            modal: attribute(kAXModalAttribute) as? Bool,
+            minimized: attribute(kAXMinimizedAttribute) as? Bool,
+            fullscreen: attribute("AXFullScreen") as? Bool)
     }
 }
