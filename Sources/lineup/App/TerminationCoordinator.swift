@@ -46,6 +46,18 @@ final class TerminationCoordinator {
         }
     }
 
+    /// The recovery subprocess never creates the app shell. Keep its signal
+    /// registration here as well, without borrowing the main app's cleanup list.
+    nonisolated static func recoverySignal(_ number: Int32,
+                                           handler: @escaping () -> Void) -> DispatchSourceSignal {
+        precondition(CommandLine.arguments.dropFirst().first == "--menu-bar-recovery")
+        Darwin.signal(number, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: number, queue: .global(qos: .utility))
+        source.setEventHandler(handler: handler)
+        source.resume()
+        return source
+    }
+
     /// Registered by a tool in `start()`, removed in `stop()`.
     func addCleanup(_ id: ToolID, _ block: @escaping () -> Void) {
         removeCleanup(id)

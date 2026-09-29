@@ -112,6 +112,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.register(WorldClockTool())
         registry.register(AwakeTool())
         registry.register(TextCaptureTool())
+        registry.register(MenuBarTool())
         registry.startEnabledTools()
         statusItem.refresh()
 

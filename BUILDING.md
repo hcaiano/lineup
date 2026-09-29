@@ -132,7 +132,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting six independent tools, on top of six pure ("core") modules
+Lineup is one app shell hosting seven independent tools, on top of six pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -161,7 +161,9 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
   WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
   TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
-Sources/lineup/              AppKit agent (the app shell + the six tools)
+  MenuBarSettings.swift     Optional menuBar tool settings and group membership
+  MenuBarPreferences.swift  Validated macOS 27 tracked-app preference edits and recovery records
+Sources/lineup/              AppKit agent (the app shell + the seven tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -173,15 +175,54 @@ Sources/lineup/              AppKit agent (the app shell + the six tools)
   Tools/Awake/                 IOKit idle-sleep requests, menu countdown, session settings
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
   Tools/TextCapture/           ScreenCaptureKit selection/capture, Vision OCR, clipboard, Settings
+  Tools/MenuBar/               Menu bar inventory, native reorder, visibility and recovery helper
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
-  main.swift                  Orchestrates the seven suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift
+  main.swift                  Orchestrates the suites below
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / NightlyAutomationSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
 
+### Menu Bar runtime and recovery
+
+Menu Bar starts disabled and supports macOS 27 only. Its optional `tools.menuBar` section uses
+the existing config envelope without changing its schema. Malformed or newer tool settings
+block editing. The user's selected-file bookmark grants access only to the Control Center
+preferences file. The tool reads Accessibility menu extras without reading their menus and
+uses native Command-drag events for reorder operations initiated in Settings. The pane follows
+the observed macOS order instead of persisting a second layout. Reordering requires both item
+centers on the same connected display and menu-bar row, using global AX/Core Graphics bounds
+so displays left of or above the primary display retain their negative coordinates. Inventory scans
+run while the pane is visible, with a refresh on app launch/exit. A helper exit triggers restoration; a low-rate
+permission check runs only while items are hidden.
+
+Visibility changes use `CFPreferences` with the selected file's absolute preference domain.
+Writing the plist directly does not reliably notify the live menu bar. `MenuBarPreferences`
+validates the tracked-app array and changes only selected `isAllowed` fields, retaining unknown
+records and fields. The tool does not use the assessment-mode allow-list or hide system items.
+This preference format is OS-specific and must be revalidated before enabling another macOS
+major version. Other apps can edit the same preference; Lineup checks for an intervening edit
+before writing, but macOS does not expose a compare-and-swap operation for this shared key.
+
+Before hiding anything, Lineup writes `~/.config/lineup/menu-bar-recovery.json` atomically and
+starts its own executable with `--menu-bar-recovery`. The helper verifies its file access and
+acknowledges readiness before the parent writes. It has no app shell, updater, imported config,
+hotkeys or menu items. It restores recorded visibility when its parent exits, including SIGKILL.
+A session UUID and an advisory file lock prevent an old helper from restoring a newer session.
+Normal teardown restores first. A failed restoration keeps the journal for the next launch or
+the Settings recovery button. Revoking the file grant can prevent recovery until access returns.
+Granting access again renews the recovery record even if the main config is write-blocked. If
+both the app and helper are killed, restoration waits until Lineup next launches. The pane also
+links to macOS Menu Bar settings for manual recovery.
+
+For interactive review, a **debug** build accepts `LINEUP_MENU_BAR_REVIEW_DIR=<scratch-directory>`.
+It opens the real Menu Bar pane with `review-config.json` and `review-recovery.json` in that
+directory and does not run the main shell or other tools. Use an isolated review bundle identity
+and grant its permissions explicitly. An optional `control-center-access.bookmark` in the scratch
+directory seeds that review's first config. Never commit bookmarks, journals or review recordings.
+
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
-seven suites.
+registered suites.
 
 Text Capture uses a one-frame `SCStream` so the capture path also works on macOS 13. The filter
 excludes selection-window IDs before the overlays close. AppKit global coordinates become
@@ -208,7 +249,7 @@ The dependency-free suite checks geometry, reading order, settings persistence, 
 commit gate. It does not prove macOS permission prompts, live OCR quality, or compositor behavior.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`/`menuBar`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
 
 ### App launch placement

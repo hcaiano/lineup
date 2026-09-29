@@ -13,7 +13,7 @@
 
 ![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup combines six tools. Enable only the tools you need:
+Lineup combines seven tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
   Zone shortcuts are numbered across ALL your displays: each display's Settings group shows its
@@ -31,6 +31,8 @@ Lineup combines six tools. Enable only the tools you need:
   Choose separately whether the display should stay on.
 - **Text Capture:** Select a region on any display and copy its text, recognized locally in
   Portuguese and English.
+- **Menu Bar:** Reorder app icons and show or hide a selected group with one arrow. Requires
+  macOS 27 and is off by default.
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
@@ -125,6 +127,27 @@ Text Capture** in the menu to stop pending work. Display changes, disabling the 
 Lineup also cancel it. Captures stay in memory and are released after use; Lineup does not keep a
 capture history, log the recognized text, or send it to a service. The copied text remains on the
 system clipboard until another app or copy action replaces it.
+
+## Organize the menu bar
+
+On macOS 27, enable **Menu Bar** in Settings and grant access to the Control Center settings
+file shown by the file picker. Accessibility is needed to discover and reorder icons. Screen
+Recording and Full Disk Access are not required.
+
+Drag icons between **Visible Items** and **Hidden Items**, then click the arrow in the menu bar
+to collapse or expand the selected group. Drag within a group to place an icon before another,
+or use its context menu to move left or right. Command-dragging icons directly in the macOS
+menu bar also works. Reordering uses a brief native Command-drag.
+
+macOS 27 controls visibility per app: all icons from the same app hide together. System icons
+stay visible, and Lineup does not reveal apps you had already disabled in macOS settings.
+Lineup starts with the group expanded. Disabling Menu Bar or quitting restores the visibility
+Lineup changed. A separate recovery process restores it after a crash; if access has been
+revoked, grant it again and use **Restore Items**. Quit other menu bar managers before using
+Lineup to avoid competing changes.
+
+This tool depends on the macOS 27 Control Center preference format. Unrecognized formats block
+changes. Menu Bar is unavailable on other macOS versions; the other tools still support macOS 13+.
 
 ## Update tracks
 
