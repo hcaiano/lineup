@@ -13,7 +13,7 @@
 
 ![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup combines three tools. Enable only the tools you need:
+Lineup combines four tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
   Zone shortcuts are numbered across ALL your displays: each display's Settings group shows its
@@ -25,6 +25,8 @@ Lineup combines three tools. Enable only the tools you need:
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
+- **Keep Awake:** Prevent idle sleep for 15 minutes, 30 minutes, 1 hour, or 2 hours.
+  Choose separately whether the display should stay on.
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
@@ -35,6 +37,20 @@ Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 3. Allow Accessibility access when macOS asks. Lineup needs it to inspect and move windows.
 4. If you enable Hyperkey, allow Input Monitoring when macOS asks. The other tools do not request
    this permission.
+
+## Keep Awake
+
+Enable Keep Awake in Settings, then choose a duration from its menu-bar submenu or start a
+session in Settings. The menu bar shows "Awake" while a session is active. Open its submenu
+to see the remaining time or stop early.
+
+"Keep display on" is off by default. Turning it on or off during a session keeps the original
+deadline. Choosing another duration starts a new session. Expiration, stopping, disabling the
+tool, sleeping the Mac, or quitting Lineup releases its power requests. Waking or restarting
+Lineup never resumes a session. Only the duration and display preference are saved.
+
+Keep Awake needs no extra permissions and does not change permanent macOS power settings.
+You can still lock the screen or explicitly sleep the Mac. Closed-lid operation is not supported.
 
 ## Update tracks
 

@@ -10,8 +10,10 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
     public static let cycler = ToolID(rawValue: "cycler")
     public static let hyperkey = ToolID(rawValue: "hyperkey")
 
-    /// Registry/sidebar order. Fixed: Zones, Cycler, Hyperkey.
-    public static let all: [ToolID] = [.zones, .cycler, .hyperkey]
+    public static let awake = ToolID(rawValue: "awake")
+
+    /// Registry/sidebar order.
+    public static let all: [ToolID] = [.zones, .cycler, .hyperkey, .awake]
 }
 
 extension ToolID: CustomStringConvertible {

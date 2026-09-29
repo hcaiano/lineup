@@ -76,6 +76,7 @@ enum ToolIconLibrary {
         case .zones: return "square.grid.2x2.fill"
         case .cycler: return "arrow.triangle.2.circlepath"
         case .hyperkey: return "capslock.fill"
+        case .awake: return "sun.max.fill"
         default: return "wrench.and.screwdriver.fill"
         }
     }
