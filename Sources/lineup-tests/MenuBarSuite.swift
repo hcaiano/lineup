@@ -155,6 +155,14 @@ private func runMenuBarPreferenceTests() throws {
     let trayData = try PropertyListSerialization.data(fromPropertyList: withTray, format: .binary, options: 0)
     do {
         var trayDocument = try MenuBarPreferences(data: trayData)
+        let bundle = URL(fileURLWithPath: "/Applications/Synergy.app", isDirectory: true)
+        let helper = URL(fileURLWithPath: "/Applications/Synergy.app/Contents/MacOS", isDirectory: true)
+        check(trayDocument.originalFlags(for: ["synergy"], bundles: ["synergy": [bundle]]) == [trayURL: true],
+              "a selected parent app includes its executable-tracked tray in the recovery transaction")
+        check(trayDocument.originalFlags(for: ["synergy"], bundles: ["synergy": [bundle], "visible-helper": [helper]]).isEmpty,
+              "an executable owned by a more specific visible helper cannot hide with its parent app")
+        check(trayDocument.originalFlags(for: ["synergy"], bundles: ["synergy": [bundle], "visible-copy": [bundle]]).isEmpty,
+              "ambiguous executable ownership stays visible when one matching owner is visible")
         try trayDocument.setAllowed([trayURL: false])
         let edited = try PropertyListSerialization.propertyList(from: trayDocument.encoded(), format: nil) as! [Any]
         check((edited[original.count + 1] as! [String: Any])["isAllowed"] as? Bool == false

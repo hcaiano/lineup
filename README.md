@@ -139,6 +139,7 @@ collapses, and icons to its right stay visible. Click the arrow to show the hidd
 they hide again after 10 seconds, but not while the pointer is on the menu bar or one of their
 menus is open. The group starts collapsed. Lineup never moves your pointer or drags icons for you.
 **Settings › Menu Bar** shows both groups.
+Press Return in that pane to show or hide the icons without moving your pointer.
 
 macOS 27 hides whole apps: an app with an icon on each side of the arrow stays visible. System
 icons such as the clock and Control Center always stay visible. Disabling Menu Bar, quitting and
@@ -146,7 +147,7 @@ crashes restore the visibility flags changed by Lineup. Apps already hidden in m
 stay hidden. Quit other menu bar managers before using Lineup to avoid competing changes.
 
 The system clock, Notification Center and capture indicators stay usable while the group is
-hidden. Synergy's tray can belong to either group. If Settings requests **Grant Menu Bar Access**,
+hidden. Synergy's tray can belong to either group. If Settings requests **Allow Menu Bar Access**,
 choose the indicated settings file; Lineup changes only the visibility of your selected apps.
 
 This tool uses a private macOS 27 interface. If macOS no longer offers it, the arrow stays but

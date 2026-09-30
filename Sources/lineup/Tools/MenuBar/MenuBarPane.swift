@@ -30,7 +30,7 @@ struct MenuBarPane: View {
                 if tool.hasPendingRecovery {
                     SettingsSectionView("Recovery", caption: "Some hidden icons could not be restored. Restore them before hiding another group.") {
                         HStack {
-                            Button("Restore Icons") { tool.restoreLegacy() }
+                            Button("Restore Icons") { tool.restoreIcons() }
                             Button("Grant Access…") { tool.chooseAccess() }
                         }
                     }
@@ -54,6 +54,7 @@ struct MenuBarPane: View {
                                 Spacer()
                                 if tool.settings.preferencesBookmark != nil {
                                     Button(tool.collapsed ? "Show Icons" : "Hide Icons") { tool.toggleVisibility() }
+                                        .keyboardShortcut(.defaultAction)
                                         .disabled(!tool.isRunning || tool.busy || tool.hasPendingRecovery)
                                 }
                             }

@@ -51,6 +51,21 @@ public struct MenuBarPreferences {
         original.filter { $0.value && allowed[$0.key] == false && !$0.key.hasPrefix("com.apple.") }
     }
 
+    /// Select original flags for the hidden group, including executable-tracked trays.
+    package func originalFlags(for hiddenOwners: Set<String>, bundles: [String: [URL]]) -> [String: Bool] {
+        let hidden = hiddenOwners.filter { !$0.hasPrefix("com.apple.") }
+        let roots = bundles.flatMap { owner, urls in urls.map { (owner: owner, path: $0.standardizedFileURL.path) } }
+        return allowed.filter { key, enabled in
+            guard enabled else { return false }
+            if hidden.contains(key) { return true }
+            guard let url = URL(string: key), url.isFileURL else { return false }
+            let matching = roots.filter { url.standardizedFileURL.path.hasPrefix($0.path + "/") }
+            guard let longest = matching.map({ $0.path.count }).max() else { return false }
+            // A nested helper belongs to its own app. Ambiguous ownership fails open.
+            return matching.filter { $0.path.count == longest }.allSatisfy { hidden.contains($0.owner) }
+        }
+    }
+
     public mutating func setAllowed(_ values: [String: Bool]) throws {
         // System controls are outside this tool's authority, even if a caller supplies one.
         guard !values.contains(where: { id, allowed in
@@ -72,8 +87,8 @@ public struct MenuBarPreferences {
     }
 }
 
-/// Written by earlier versions before changing macOS. Launch and the recovery process
-/// use it, so apps hidden by a killed earlier version are shown again.
+/// Records flags before each native hide. Expansion, startup and the recovery process
+/// restore this transaction without revealing apps the user already hid in macOS.
 public struct MenuBarRecoveryRecord: Codable {
     public let session: UUID
     public let bookmark: Data

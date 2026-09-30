@@ -43,6 +43,8 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     private var rescan = false
     private var appInfo: [String: (name: String, icon: NSImage)] = [:]
     private let journal: URL
+    private enum CollapseRequest { case automatic, manual, idle }
+    private enum LayoutChange { case wake, display }
 
     init(recoveryURL: URL = Product.configURL.deletingLastPathComponent().appendingPathComponent("menu-bar-recovery.json")) {
         journal = recoveryURL
@@ -61,7 +63,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         } catch { sectionLoadError = error.localizedDescription }
         hiddenGroup = settings.hiddenOwners
         // Recovery is independent of enabled/config state, including a crash before disabling.
-        restoreLegacy()
+        restoreIcons()
     }
 
     func start(_ services: ToolServices) {
@@ -79,7 +81,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         services.termination.addCleanup(id) { [weak self] in self?.release() }
         let workspace = NSWorkspace.shared.notificationCenter
         observers.append((workspace, workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.displayChanged() }
+            MainActor.assumeIsolated { self?.layoutChanged(.wake) }
         }))
         observers.append((workspace, workspace.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -90,12 +92,12 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         }))
         let center = NotificationCenter.default
         observers.append((center, center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.displayChanged() }
+            MainActor.assumeIsolated { self?.layoutChanged(.display) }
         }))
         updateMonitoring()
         // Let the bar settle so the arrow and the other icons report their positions.
         layoutReadyAfter = ProcessInfo.processInfo.systemUptime + 1
-        collapse(quiet: true)
+        collapse(.automatic)
     }
 
     func stop() {
@@ -213,12 +215,12 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     // MARK: Visibility
 
     @objc func toggleVisibility() {
-        if collapsed { expand(autoHide: true) } else { collapse(quiet: false) }
+        if collapsed { expand(autoHide: true) } else { collapse(.manual) }
     }
 
-    /// `quiet` marks automatic collapses (launch, wake, auto-hide): they report only failures
-    /// the user has to act on.
-    private func collapse(quiet: Bool) {
+    /// Idle hides check interaction against the freshly observed group that will be hidden.
+    private func collapse(_ request: CollapseRequest) {
+        let quiet = request != .manual
         cancelRehide()
         guard isRunning, !collapsed, !busy, !hasPendingRecovery else { return }
         guard settings.preferencesBookmark != nil else {
@@ -230,7 +232,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         if remaining > 0 {
             settleTimer?.invalidate()
             settleTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated { self?.settleTimer = nil; self?.collapse(quiet: quiet) }
+                MainActor.assumeIsolated { self?.settleTimer = nil; self?.collapse(request) }
             }
             return
         }
@@ -258,18 +260,26 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
                 if !quiet { self.message = "The arrow's position cannot be read yet. Try again in a moment." }
                 return
             }
+            if request == .idle {
+                if self.isInteracting(with: hidden) {
+                    self.busy = false
+                    self.scheduleRehide(after: MenuBarAutoHide.retry)
+                    return
+                }
+            }
             guard self.remember(hidden) else { self.busy = false; return }
             guard !hidden.isEmpty else {
                 self.busy = false
                 if !quiet { self.message = "Hold Command and drag icons to the left of the arrow to hide them." }
                 return
             }
-            self.hide(hidden, revision: revision)
+            self.hide(hidden, revision: revision, request: request)
         }
     }
 
     /// Recovery must be running and acknowledge this exact journal before any icon hides.
-    private func hide(_ hidden: Set<String>, revision: Int) {
+    private func hide(_ hidden: Set<String>, revision: Int, request: CollapseRequest) {
+        let quiet = request != .manual
         guard let bookmark = settings.preferencesBookmark else {
             busy = false
             message = "Grant Menu Bar access to show and hide icons."
@@ -290,7 +300,8 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
                 let snapshot = try MenuBarPreferenceAccess.snapshot(bookmark: bookmark)
                 let original = originals(in: snapshot, hidden: hidden)
                 guard !original.isEmpty else {
-                    throw MenuBarPreferenceAccess.Failure(message: "No visible icon is in the hidden group yet.")
+                    if !quiet { message = "No visible icon is in the hidden group yet." }
+                    return
                 }
                 try MenuBarPreferenceAccess.prepare(MenuBarRecoveryRecord(session: session, bookmark: bookmark,
                     original: original), journal: journal)
@@ -322,6 +333,12 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
                       (try? String(contentsOf: ready)) == session.uuidString else {
                     throw MenuBarPreferenceAccess.Failure(message: "Recovery could not start. Your menu bar has been left visible.")
                 }
+                // The user can open a menu while the recovery process starts.
+                if request == .idle && isInteracting(with: hidden) {
+                    expand(autoHide: false)
+                    scheduleRehide(after: MenuBarAutoHide.retry)
+                    return
+                }
                 try MenuBarPreferenceAccess.hide(journal: journal, session: session)
                 collapsed = true
                 message = nil
@@ -344,13 +361,17 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     /// Resolve those URL records through the owning app bundle, including its tray helpers.
     private func originals(in snapshot: MenuBarPreferences, hidden: Set<String>) -> [String: Bool] {
         let owners = hidden.subtracting([own, Product.bundleID]).filter { !$0.hasPrefix("com.apple.") }
-        let roots = owners.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)?.path }
-        return snapshot.allowed.filter { key, allowed in
-            guard allowed else { return false }
-            if owners.contains(key) { return true }
-            guard let url = URL(string: key), url.isFileURL else { return false }
-            return roots.contains { url.path.hasPrefix($0 + "/") }
+        var bundles: [String: [URL]] = [:]
+        for app in NSWorkspace.shared.runningApplications {
+            if let owner = app.bundleIdentifier, let url = app.bundleURL {
+                bundles[owner, default: []].append(url)
+            }
         }
+        let registeredOwners = snapshot.allowed.keys.filter { URL(string: $0)?.isFileURL != true }
+        for owner in Set(registeredOwners).union(owners) where bundles[owner] == nil {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: owner) { bundles[owner] = [url] }
+        }
+        return snapshot.originalFlags(for: owners, bundles: bundles)
     }
 
     private func expand(autoHide: Bool) {
@@ -402,12 +423,15 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         }
     }
 
-    private func displayChanged() {
+    private func layoutChanged(_ change: LayoutChange) {
         guard isRunning else { return }
+        let wasCollapsed = collapsed
         expand(autoHide: false)
         cancelRehide()
         layoutReadyAfter = ProcessInfo.processInfo.systemUptime + 1
-        collapse(quiet: true)
+        if change == .wake { collapse(.automatic) }
+        else if wasCollapsed { collapse(.idle) }
+        else { scheduleRehide(after: MenuBarAutoHide.delay) }
     }
 
     private func scheduleRehide(after delay: TimeInterval) {
@@ -426,17 +450,16 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     private func rehide() {
         rehideTimer = nil
         guard isRunning, !collapsed else { return }
-        let hiddenPIDs = Set(NSWorkspace.shared.runningApplications.filter {
-            $0.bundleIdentifier.map(hiddenGroup.contains) == true
+        collapse(.idle)
+    }
+
+    private func isInteracting(with hidden: Set<String>) -> Bool {
+        let pids = Set(NSWorkspace.shared.runningApplications.filter {
+            $0.bundleIdentifier.map(hidden.contains) == true
         }.map(\.processIdentifier))
-        let pointer = CGEvent(source: nil)?.location ?? .zero
-        if NSEvent.pressedMouseButtons != 0
-            || MenuBarAutoHide.shouldWait(pointer: pointer, menuBars: MenuBarInventory.menuBars(),
-                                          windows: MenuBarInventory.windows(), hiddenPIDs: hiddenPIDs) {
-            scheduleRehide(after: MenuBarAutoHide.retry)
-            return
-        }
-        collapse(quiet: true)
+        return NSEvent.pressedMouseButtons != 0
+            || MenuBarAutoHide.shouldWait(pointer: CGEvent(source: nil)?.location ?? .zero,
+                menuBars: MenuBarInventory.menuBars(), windows: MenuBarInventory.windows(), hiddenPIDs: pids)
     }
 
     private func updateToggle() {
@@ -451,10 +474,10 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
 
     static let unavailableText = "This version of macOS does not let Lineup hide menu bar icons, so they stay visible."
 
-    // MARK: Recovery from earlier versions
+    // MARK: Recovery
 
     /// Recovery also runs when disabled or after a failed activation.
-    func restoreLegacy() {
+    func restoreIcons() {
         release()
         updateToggle()
     }
@@ -483,7 +506,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
                         self.settings = next
                     }
                     try MenuBarPreferenceAccess.renewAccess(bookmark, journal: self.journal)
-                    self.restoreLegacy()
+                    self.restoreIcons()
                 } catch { self.message = error.localizedDescription }
             }
         }

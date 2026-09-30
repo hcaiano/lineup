@@ -44,7 +44,7 @@ the next event follows the simulated time. No calendar, location permission or n
 Menu Bar is an optional tool for macOS 27. It adds one arrow to the menu bar, and the arrow is the
 boundary: icons the user Command-drags to its left hide when it collapses, and icons to its right
 stay visible. Clicking the arrow shows the hidden icons in place, beside the arrow, and they hide
-again after 10 seconds. Hiding waits while the pointer is on the menu bar or a hidden app's menu
+again after 10 seconds. Auto-hide waits while the pointer is on the menu bar or a hidden app's menu
 or popover is open. The group starts collapsed at launch and after wake.
 
 Lineup never moves the pointer or posts input events, including to arrange icons. Settings shows

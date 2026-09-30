@@ -132,8 +132,8 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting seven independent tools, on top of six pure ("core") modules,
-one Objective-C bridge and one AppKit executable:
+Lineup is one app shell hosting seven independent tools, on top of six pure ("core") modules
+and one AppKit executable:
 
 ```
 Sources/ZonesCore/          Pure, tested core for the Zones tool (no AppKit)
@@ -162,7 +162,7 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
   TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
   MenuBarSettings.swift     Menu Bar settings, arrow-boundary groups and auto-hide policy
-  MenuBarPreferences.swift  Restore-only model of the Control Center edits made by earlier versions
+  MenuBarPreferences.swift  Selective native visibility edits and recovery journal model
 Sources/lineup/              AppKit agent (the app shell + the seven tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
@@ -218,7 +218,8 @@ extend the same journal before their flags change; other new apps keep their nat
 Collapse happens at start, after wake, on the arrow, and 10 seconds after expansion.
 `MenuBarAutoHide.shouldWait` postpones it while the pointer is on a menu bar or a hidden app has
 a menu or popover below it, using window owner, layer and bounds without reading titles. Wake
-and display changes restore flags and wait one second before rescanning and collapsing.
+restores flags and waits one second before rescanning and collapsing. Display changes restore
+flags and rescan; an expanded group keeps its auto-hide delay, and hiding waits for interaction.
 Accessibility revocation restores the current transaction. Lineup never posts input events or
 moves the pointer; users arrange icons with Command-drag.
 
