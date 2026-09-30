@@ -2,8 +2,9 @@ import Foundation
 import CoreFoundation
 
 /// The macOS 27 tracked-app preference is a binary plist containing alternating
-/// encoded dictionary keys and values. Preserve records and location variants
-/// we do not own; an OS schema change must stop writes, not reset the preference.
+/// encoded dictionary keys and values. Bundle owners and executable-tracked trays can be
+/// changed selectively; unrecognized location variants remain untouched. An OS schema
+/// change must stop writes, not reset the preference.
 public struct MenuBarPreferences {
     private var entries: [Any]
     public private(set) var allowed: [String: Bool] = [:]
@@ -26,9 +27,16 @@ public struct MenuBarPreferences {
         for index in stride(from: 0, to: entries.count, by: 2) {
             guard let key = entries[index] as? [String: Any],
                   let record = entries[index + 1] as? [String: Any] else { throw Failure.unsupportedFormat }
-            // Other location kinds are retained, but are never editable by this tool.
-            guard let bundle = key["bundle"] as? [String: Any],
-                  let id = bundle["_0"] as? String else { continue }
+            let id: String
+            if let bundle = key["bundle"] as? [String: Any], let owner = bundle["_0"] as? String {
+                id = owner
+            } else if let binary = key["adhocBinary"] as? [String: Any],
+                      let encodedURL = binary["_0"] as? [String: Any], encodedURL.count == 1,
+                      let relative = encodedURL["relative"] as? String,
+                      let url = URL(string: relative), url.isFileURL, url.path.hasPrefix("/"),
+                      url.host == nil || url.host == "" || url.host == "localhost" {
+                id = url.absoluteString
+            } else { continue }
             guard !id.isEmpty, indices[id] == nil,
                   let flag = record["isAllowed"] as? NSNumber,
                   CFGetTypeID(flag) == CFBooleanGetTypeID(),
@@ -39,19 +47,16 @@ public struct MenuBarPreferences {
         }
     }
 
-    public static func isOrganizable(_ owner: String, excluding: Set<String>) -> Bool {
-        !owner.isEmpty && !owner.hasPrefix("com.apple.") && !excluding.contains(owner)
-    }
-
-    public func originalsToHide(selected: Set<String>, excluding: Set<String>) -> [String: Bool] {
-        allowed.filter { $0.value && selected.contains($0.key) && Self.isOrganizable($0.key, excluding: excluding) }
-    }
-
     public func changesToRestore(original: [String: Bool]) -> [String: Bool] {
         original.filter { $0.value && allowed[$0.key] == false && !$0.key.hasPrefix("com.apple.") }
     }
 
     public mutating func setAllowed(_ values: [String: Bool]) throws {
+        // System controls are outside this tool's authority, even if a caller supplies one.
+        guard !values.contains(where: { id, allowed in
+            !allowed && (id.hasPrefix("com.apple.")
+                || URL(string: id).map { $0.isFileURL && $0.standardizedFileURL.path.hasPrefix("/System/") } == true)
+        }) else { throw Failure.unsupportedFormat }
         for id in values.keys where indices[id] == nil { throw Failure.missingApplication(id) }
         for (id, value) in values {
             let index = indices[id]!
@@ -67,8 +72,8 @@ public struct MenuBarPreferences {
     }
 }
 
-/// Written before changing macOS. Both normal teardown and the separate recovery
-/// process use this record, so a killed parent cannot strand its hidden apps.
+/// Written by earlier versions before changing macOS. Launch and the recovery process
+/// use it, so apps hidden by a killed earlier version are shown again.
 public struct MenuBarRecoveryRecord: Codable {
     public let session: UUID
     public let bookmark: Data

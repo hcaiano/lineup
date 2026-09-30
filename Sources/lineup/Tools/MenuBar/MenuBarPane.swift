@@ -1,52 +1,81 @@
+import AppCore
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
+/// Shows the two groups as the menu bar arranges them. Arranging happens in the menu bar
+/// itself with Command-drag; Lineup never moves icons or the pointer.
 struct MenuBarPane: View {
     @ObservedObject var tool: MenuBarTool
+
+    private struct App: Identifiable {
+        let id: String
+        let name: String
+        let icon: NSImage
+        let running: Bool
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
                 if !tool.supported {
                     Text("Menu Bar currently supports macOS 27.").foregroundStyle(.secondary)
+                } else if !tool.available {
+                    Label(MenuBarTool.unavailableText, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 }
                 if let error = tool.sectionLoadError ?? tool.message {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 }
-                if tool.supported {
-                    if tool.settings.preferencesBookmark == nil && !tool.hasPendingRecovery {
-                        SettingsSectionView("Access", caption: "Choose the Control Center settings file once so Lineup can show and hide the apps you select.") {
-                            Button("Grant Access…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
+                if tool.hasPendingRecovery {
+                    SettingsSectionView("Recovery", caption: "Some hidden icons could not be restored. Restore them before hiding another group.") {
+                        HStack {
+                            Button("Restore Icons") { tool.restoreLegacy() }
+                            Button("Grant Access…") { tool.chooseAccess() }
                         }
                     }
-                    SettingsSectionView("Layout", caption: "Drag items to arrange them. Move an app between the two groups to choose what the arrow hides.") {
-                        group("Visible Items", hidden: false)
-                        group("Hidden Items", hidden: true)
-                        Text("macOS hides all menu bar items from the same app together. System items stay visible.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Button(tool.collapsed ? "Show Hidden Items" : "Hide Selected Items") { tool.toggleVisibility() }
-                            .disabled(!tool.isRunning || tool.busy || tool.settings.hiddenOwners.isEmpty)
-                        Spacer()
-                        Button("Refresh") { tool.refresh() }.disabled(!tool.isRunning || tool.busy)
-                    }
-                    Text("You can also hold Command and drag icons directly in the menu bar. Turning Menu Bar off restores the apps hidden by Lineup.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if !tool.isRunning {
-                        Text("Turn on Menu Bar to load the items from your running apps.").foregroundStyle(.secondary)
-                    }
                 }
-                HStack {
-                    Button("Restore Items") { tool.restore(); tool.refresh() }.disabled(tool.busy)
-                    if tool.settings.preferencesBookmark != nil || tool.hasPendingRecovery {
-                        Button("Grant Access Again…") { tool.chooseAccess() }.disabled(!tool.canGrantAccess)
+                if tool.supported && tool.available {
+                    if tool.settings.preferencesBookmark == nil && !tool.hasPendingRecovery {
+                        SettingsSectionView("One-time setup", caption: "Allow Lineup to show and hide the apps you choose.") {
+                            HStack {
+                                Button("Allow Menu Bar Access…") { tool.chooseAccess() }
+                                    .disabled(tool.busy)
+                                Spacer()
+                            }
+                        }
                     }
-                }
-                Button("Open macOS Menu Bar Settings…") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension*menubar")!)
+                    SettingsSectionView("Your menu bar", caption: "Hold ⌘ Command and drag icons in the menu bar. Left of the arrow hides; right stays visible.") {
+                        VStack(alignment: .leading, spacing: 18) {
+                            HStack {
+                                Text(!tool.isRunning ? "Turn on Menu Bar to add the arrow."
+                                     : tool.collapsed ? "Hidden icons are tucked away." : "Hidden icons are showing.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                Spacer()
+                                if tool.settings.preferencesBookmark != nil {
+                                    Button(tool.collapsed ? "Show Icons" : "Hide Icons") { tool.toggleVisibility() }
+                                        .disabled(!tool.isRunning || tool.busy || tool.hasPendingRecovery)
+                                }
+                            }
+                            group("Hidden by the arrow", hidden: true)
+                            group("Always visible", hidden: false)
+                            SettingsCaption(text: "Click the arrow to show hidden icons for \(Int(MenuBarAutoHide.delay)) seconds. They stay visible while you use their menus.")
+                            SettingsCaption(text: "The clock, Control Center and recording indicators always stay visible.")
+                        }
+                    }
+                    DisclosureGroup("More options") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            SettingsCaption(text: "macOS groups all icons from the same app. If an app has an icon on each side of the arrow, it stays visible.")
+                            if tool.settings.preferencesBookmark != nil {
+                                Button("Allow Menu Bar Access Again…") { tool.chooseAccess() }
+                                    .disabled(tool.busy)
+                            }
+                            Button("Open macOS Menu Bar Settings…") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension*menubar")!)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
                 }
             }
             .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
@@ -68,72 +97,53 @@ struct MenuBarPane: View {
     }
 
     private func group(_ title: String, hidden: Bool) -> some View {
-        let members = tool.items.filter { tool.settings.hiddenOwners.contains($0.owner) == hidden }
+        let members = apps(hidden: hidden)
         return VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.subheadline.weight(.medium))
-            ScrollView(.horizontal) {
-                HStack(spacing: 4) {
-                    ForEach(members) { item in
-                        tile(item, hidden: hidden, members: members)
+            HStack {
+                Text(title).font(.subheadline.weight(.medium))
+                Spacer()
+                Text(hidden ? "Left of the arrow" : "Right of the arrow")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(members) { app in
+                    HStack(spacing: 10) {
+                        Image(nsImage: app.icon).resizable().scaledToFit().frame(width: 20, height: 20)
+                            .accessibilityHidden(true)
+                        Text(app.name).lineLimit(1).help(app.name)
+                        Spacer()
+                        if !app.running {
+                            Text("Not running").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
-                    if members.isEmpty {
-                        Text(hidden ? "Drop apps here to hide them with the arrow" : "No visible apps")
-                            .font(.caption).foregroundStyle(.secondary).padding(16)
-                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .accessibilityElement(children: .combine)
                 }
-                .frame(minHeight: 64)
+                if members.isEmpty {
+                    Text(hidden ? "Move an icon left of the arrow to hide it."
+                         : tool.isRunning ? "No apps on this side of the arrow." : "Apps appear here when Menu Bar is on.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .padding(12)
+                }
             }
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.1)))
-            .onDrop(of: [.plainText], isTargeted: nil) { providers in
-                receive(providers) { id in
-                    guard let item = tool.items.first(where: { $0.id == id }) else { return }
-                    tool.setHidden(hidden, owner: item.owner)
-                }
+        }
+    }
+
+    /// macOS changes visibility per app, so show one named row even for apps with several icons.
+    private func apps(hidden: Bool) -> [App] {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        var result: [App] = []
+        for item in tool.items where tool.hiddenGroup.contains(item.owner) == hidden {
+            guard !result.contains(where: { $0.id == item.owner }) else { continue }
+            result.append(App(id: item.owner, name: item.appName, icon: item.icon, running: running.contains(item.owner)))
+        }
+        if hidden {
+            for app in tool.offscreenHiddenApps where !result.contains(where: { $0.id == app.owner }) {
+                result.append(App(id: app.owner, name: app.name, icon: app.icon, running: running.contains(app.owner)))
             }
-            .disabled(!tool.canEdit || !tool.isRunning)
         }
-    }
-
-    private func tile(_ item: MenuBarObservedItem, hidden: Bool, members: [MenuBarObservedItem]) -> some View {
-                        VStack(spacing: 4) {
-                            Image(nsImage: item.icon).resizable().scaledToFit().frame(width: 24, height: 24)
-                            Text(item.title).font(.caption2).lineLimit(1).frame(width: 72)
-                        }
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                        .help(item.appName + ": " + item.title)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(item.appName + ", " + item.title)
-                        .accessibilityAction(named: Text(hidden ? "Keep visible" : "Hide with arrow")) {
-                            tool.setHidden(!hidden, owner: item.owner)
-                        }
-                        .onDrag { NSItemProvider(object: item.id as NSString) }
-                        .onDrop(of: [.plainText], isTargeted: nil) { providers in
-                            receive(providers) { id in
-                                if let source = tool.items.first(where: { $0.id == id }),
-                                   tool.settings.hiddenOwners.contains(source.owner) != hidden {
-                                    tool.setHidden(hidden, owner: source.owner)
-                                } else { tool.move(id, before: item.id) }
-                            }
-                        }
-                        .contextMenu {
-                            Button(hidden ? "Keep Visible" : "Hide with Arrow") { tool.setHidden(!hidden, owner: item.owner) }
-                            if let index = members.firstIndex(where: { $0.id == item.id }), index > 0 {
-                                Button("Move Left") { tool.move(item.id, before: members[index - 1].id) }
-                            }
-                            if let index = members.firstIndex(where: { $0.id == item.id }), index + 1 < members.count {
-                                Button("Move Right") { tool.move(members[index + 1].id, before: item.id) }
-                            }
-                        }
-    }
-
-    private func receive(_ providers: [NSItemProvider], action: @escaping (String) -> Void) -> Bool {
-        guard tool.canEdit, let provider = providers.first, provider.canLoadObject(ofClass: NSString.self) else { return false }
-        _ = provider.loadObject(ofClass: NSString.self) { value, _ in
-            guard let id = value as? String else { return }
-            DispatchQueue.main.async { action(id) }
-        }
-        return true
+        return result
     }
 }

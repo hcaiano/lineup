@@ -12,6 +12,12 @@ final class MenuBarReview: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
+            // The isolated config does not isolate the system menu bar. Two managers create
+            // two arrows and competing groups, even when they use different bundle IDs.
+            guard !NSRunningApplication.runningApplications(withBundleIdentifier: Product.bundleID)
+                .contains(where: { !$0.isTerminated && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) else {
+                throw MenuBarPreferenceAccess.Failure(message: "Quit the installed Lineup before opening the Menu Bar review. Two copies would manage the same menu bar.")
+            }
             let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["LINEUP_MENU_BAR_REVIEW_DIR"]!, isDirectory: true)
             guard root.standardizedFileURL != Product.configURL.deletingLastPathComponent().standardizedFileURL else {
                 throw MenuBarPreferenceAccess.Failure(message: "The review must use a separate config directory.")
@@ -20,12 +26,7 @@ final class MenuBarReview: NSObject, NSApplicationDelegate {
             _ = store.load()
             guard store.canWrite else { throw MenuBarPreferenceAccess.Failure(message: "The review config cannot be loaded.") }
             if store.config.section(for: .menuBar) == nil {
-                var settings = MenuBarSettings()
-                let bookmark = root.appendingPathComponent("control-center-access.bookmark")
-                if FileManager.default.fileExists(atPath: bookmark.path) {
-                    settings.preferencesBookmark = try Data(contentsOf: bookmark)
-                }
-                try store.setSettings(settings, for: .menuBar)
+                try store.setSettings(MenuBarSettings(), for: .menuBar)
                 try store.setEnabled(true, for: .menuBar)
             }
             let registry = ToolRegistry(store: store)

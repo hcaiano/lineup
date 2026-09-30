@@ -31,8 +31,8 @@ Lineup combines seven tools. Enable only the tools you need:
   Choose separately whether the display should stay on.
 - **Text Capture:** Select a region on any display and copy its text, recognized locally in
   Portuguese and English.
-- **Menu Bar:** Reorder app icons and show or hide a selected group with one arrow. Requires
-  macOS 27 and is off by default.
+- **Menu Bar:** Hide the icons you place left of an arrow, and show them with one click.
+  Requires macOS 27 and is off by default.
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
@@ -130,24 +130,28 @@ system clipboard until another app or copy action replaces it.
 
 ## Organize the menu bar
 
-On macOS 27, enable **Menu Bar** in Settings and grant access to the Control Center settings
-file shown by the file picker. Accessibility is needed to discover and reorder icons. Screen
-Recording and Full Disk Access are not required.
+On macOS 27, enable **Menu Bar** in Settings. It adds an arrow to the menu bar. Accessibility is
+needed to see which side of the arrow each icon is on. Screen Recording and Full Disk Access are
+not required.
 
-Drag icons between **Visible Items** and **Hidden Items**, then click the arrow in the menu bar
-to collapse or expand the selected group. Drag within a group to place an icon before another,
-or use its context menu to move left or right. Command-dragging icons directly in the macOS
-menu bar also works. Reordering uses a brief native Command-drag.
+Hold Command (⌘) and drag icons in the menu bar: icons to the left of the arrow hide when it
+collapses, and icons to its right stay visible. Click the arrow to show the hidden icons in place;
+they hide again after 10 seconds, but not while the pointer is on the menu bar or one of their
+menus is open. The group starts collapsed. Lineup never moves your pointer or drags icons for you.
+**Settings › Menu Bar** shows both groups.
 
-macOS 27 controls visibility per app: all icons from the same app hide together. System icons
-stay visible, and Lineup does not reveal apps you had already disabled in macOS settings.
-Lineup starts with the group expanded. Disabling Menu Bar or quitting restores the visibility
-Lineup changed. A separate recovery process restores it after a crash; if access has been
-revoked, grant it again and use **Restore Items**. Quit other menu bar managers before using
-Lineup to avoid competing changes.
+macOS 27 hides whole apps: an app with an icon on each side of the arrow stays visible. System
+icons such as the clock and Control Center always stay visible. Disabling Menu Bar, quitting and
+crashes restore the visibility flags changed by Lineup. Apps already hidden in macOS settings
+stay hidden. Quit other menu bar managers before using Lineup to avoid competing changes.
 
-This tool depends on the macOS 27 Control Center preference format. Unrecognized formats block
-changes. Menu Bar is unavailable on other macOS versions; the other tools still support macOS 13+.
+The system clock, Notification Center and capture indicators stay usable while the group is
+hidden. Synergy's tray can belong to either group. If Settings requests **Grant Menu Bar Access**,
+choose the indicated settings file; Lineup changes only the visibility of your selected apps.
+
+This tool uses a private macOS 27 interface. If macOS no longer offers it, the arrow stays but
+nothing hides, and Settings says so. Menu Bar is unavailable on other macOS versions; the other
+tools still support macOS 13+.
 
 ## Update tracks
 
