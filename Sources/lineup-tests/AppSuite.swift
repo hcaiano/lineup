@@ -1003,7 +1003,9 @@ private func runSettingsWindowTests() throws {
           "the per-tool enable binding has exactly one owner (got \(paneOwners))")
 
     let pane = source("Sources/lineup/Settings/ToolPane.swift")
-    check(pane.contains("ToolIcon(id: id, size: 72)"), "the pane header shows a 72pt tool icon")
+    check(pane.range(of: #"ToolIcon\([^)]*\bsize:\s*72\b[^)]*\)"#,
+                     options: .regularExpression) != nil,
+          "the pane header shows a 72pt tool icon")
     // The switch is an overlay on the ICON row, not on the header block: pinned to the block's
     // corner it floats over the scroll area instead of reading as part of the header.
     check(pane.contains("toggleStyle(.switch)") && pane.contains("alignment: .trailing")
@@ -2479,7 +2481,8 @@ private func runVisualDesignTests() throws {
               "\(path) takes its section spacing and pane padding from SettingsMetrics")
     }
     check(source("Sources/lineup/Settings/ToolPane.swift")
-            .contains("ToolIcon(id: id, size: 72)\n                .padding(.bottom, 2)\n                .frame(width: SettingsMetrics.contentWidth)"),
+            .range(of: #"ToolIcon\([^)]*\bsize:\s*72\b[^)]*\)\s*\.padding\(\.bottom,\s*2\)\s*\.frame\(width:\s*SettingsMetrics.contentWidth\)"#,
+                   options: .regularExpression) != nil,
           "the hero enable switch hangs off the 540pt content gutter, not the pane edge")
 
     // ---- 5. Type hierarchy and section endings ----

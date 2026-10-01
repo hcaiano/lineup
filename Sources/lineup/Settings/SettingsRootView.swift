@@ -71,14 +71,11 @@ private struct HiddenSidebarToggle: ViewModifier {
 
 /// One tool in the sidebar: its app icon and its name.
 ///
-/// The icon is the real artwork (Lineup's own for Zones, Cycler's for Cycler, a drawn tile for
-/// Hyperkey) rather than an SF Symbol, so the Tools group reads as a list of small apps — the
-/// tools ARE three former apps. General and About keep plain symbols: they are parts of this
-/// window, not products.
+/// Feature artwork uses the same enamel family as each tool's header. General and About keep
+/// plain symbols because they describe the Settings window rather than individual tools.
 ///
-/// A tool that is switched off is muted — partly desaturated, not greyscale, so it reads as
-/// "off" rather than "broken". That is the at-a-glance answer to "what is actually running right
-/// now" now that the switch has moved into the pane.
+/// A switched-off tool uses the shared grayscale treatment. Its label remains readable and
+/// navigable, so the tool can still be configured before it is enabled.
 struct ToolSidebarRow: View {
     let row: ToolRow
 
@@ -90,9 +87,7 @@ struct ToolSidebarRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         } icon: {
-            ToolIcon(id: row.id, size: 20)
-                .saturation(row.isEnabled ? 1 : 0.35)
-                .opacity(row.isEnabled ? 1 : 0.5)
+            ToolIcon(id: row.id, size: 20, isEnabled: row.isEnabled)
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
