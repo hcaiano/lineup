@@ -12,7 +12,7 @@
       "asset": "feature-zones",
       "color": "2F6BFF",
       "subject": "Exactly three ivory white rounded window panes: one tall pane on the left, two equal stacked panes on the right. Clean even gutters.",
-      "master": "masters/zones-small-v1.png"
+      "master": "masters/zones.png"
     },
     {
       "id": "cycler",
@@ -20,7 +20,7 @@
       "asset": "feature-cycler",
       "color": "F2580E",
       "subject": "Exactly two chunky ivory white curved arrows chasing each other in a circular loop, with clear arrowheads and generous negative space in the center. The loop signifies cycling apps and windows. Keep both arrows bold and balanced. No letters.",
-      "master": "masters/cycler-small-v1.png"
+      "master": "masters/cycler.png"
     },
     {
       "id": "hyperkey",
@@ -28,7 +28,7 @@
       "asset": "feature-hyperkey",
       "color": "805AEF",
       "subject": "One large ivory white rounded keyboard keycap, gently raised above the violet tile. On the keycap a thick deep-violet Command symbol, the familiar four-loop Apple command knot, debossed with crisp edges. A single key unifies modifiers. The knot must stay open and legible at tiny sizes. No keyboard, labels or extra keys.",
-      "master": "masters/hyperkey-small-v1.png"
+      "master": "masters/hyperkey.png"
     },
     {
       "id": "worldClock",
@@ -36,7 +36,7 @@
       "asset": "feature-worldClock",
       "color": "0D8F9B",
       "subject": "One ivory white circular clock face, with a gently raised rim, two thick deep-teal hands indicating ten past ten, a central hub, and exactly four bold short hour ticks. No numbers. Bold, simple clock geometry, readable at 20 pixels. Do not include globe meridians, a map, extra dials, or letters.",
-      "master": "masters/worldClock-small-v1.png"
+      "master": "masters/world-clock-v2.png"
     },
     {
       "id": "awake",
@@ -44,7 +44,7 @@
       "asset": "feature-awake",
       "color": "C17F08",
       "subject": "One large ivory white sun with a solid gently domed circular center and exactly eight short thick rounded rays, evenly spaced, generous clear gaps. A warm awake daytime metaphor. No facial features, switches, clocks or letters.",
-      "master": "masters/awake-small-v1.png"
+      "master": "masters/awake.png"
     },
     {
       "id": "textCapture",
@@ -52,7 +52,7 @@
       "asset": "feature-textCapture",
       "color": "16856B",
       "subject": "Four bold ivory white rounded right-angle viewfinder corner brackets surround three short thick ivory horizontal text strokes; the middle stroke is shorter. Clear scan frame and abstract text lines, readable at 20 pixels. No actual letters, document sheet, magnifier or camera.",
-      "master": "masters/textCapture-small-v1.png"
+      "master": "masters/text-capture.png"
     },
     {
       "id": "menuBar",
@@ -60,8 +60,7 @@
       "asset": "feature-menuBar",
       "color": "4D617A",
       "subject": "One wide ivory white softly raised horizontal menu-bar strip, centered slightly above midpoint, with exactly three evenly spaced small deep-slate rounded squares inset in it. Beneath the strip, one bold ivory downward chevron centered, indicating show or hide. Keep two simple distinct shapes and high contrast. No desktop screen, tiny text or extra panels.",
-      "master": "masters/menuBar-small-v4.png"
+      "master": "masters/menu-bar.png"
     }
-  ],
-  "normalizeFraming": true
+  ]
 }
