@@ -2,8 +2,7 @@ import AppKit
 import AppCore
 import SwiftUI
 
-/// A rounded-square "app icon" tile drawn in code: the fallback for a tool that has no artwork,
-/// and the template every future tool starts from.
+/// A rounded-square fallback for a tool whose artwork is unavailable.
 ///
 /// Proportions follow the macOS app-icon idiom rather than SwiftUI defaults — corner radius at
 /// 22% of the side, glyph at ~52% — so a drawn tile sits next to a real `.icns` in the sidebar
@@ -29,21 +28,20 @@ struct AppStyleIcon: View {
     }
 }
 
-/// The icon for one tool, at any size: the real app artwork where it exists, a drawn tile where
-/// it does not.
-///
-/// - Zones is Lineup itself (window snapping was 1.x's whole product), so it uses the running
-///   app's own icon — correct in the bundle and in a bare `swift run`.
-/// - Cycler ships the standalone app's icon as a package resource.
-/// - Hyperkey never had an app, so it gets an `AppStyleIcon`.
-///
-/// Every branch falls back to a drawn tile, so a missing resource degrades to something that
-/// still reads as an icon instead of an empty gap.
+/// Shared feature artwork for navigation and headers, with legacy artwork and a drawn tile
+/// as fallbacks when the copied resource catalog is unavailable.
 struct ToolIcon: View {
     let id: ToolID
     var size: CGFloat
+    var isEnabled: Bool = true
 
     var body: some View {
+        artwork
+            .saturation(isEnabled ? 1 : 0)
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
         if let image = ToolIconLibrary.artwork(for: id) {
             Image(nsImage: image)
                 .resizable()
@@ -62,10 +60,11 @@ struct ToolIcon: View {
 /// Loads (once) the artwork behind `ToolIcon`.
 enum ToolIconLibrary {
     static func artwork(for id: ToolID) -> NSImage? {
+        if let image = featureArtwork[id] { return image }
         switch id {
         case .zones: return appIcon
         case .cycler: return cyclerIcon
-        default: return nil // Hyperkey and any future tool: drawn tile
+        default: return nil
         }
     }
 
@@ -93,16 +92,42 @@ enum ToolIconLibrary {
 
     private static let cyclerIcon: NSImage? = bundled("cycler-icon")
 
+    private static let featureArtwork: [ToolID: NSImage] = {
+        Dictionary(uniqueKeysWithValues: ToolID.all.compactMap { id in
+            featureIcon(for: id).map { (id, $0) }
+        })
+    }()
+
+    private static func featureIcon(for id: ToolID) -> NSImage? {
+        let name = "feature-\(id.rawValue)"
+        let image = NSImage(size: NSSize(width: 72, height: 72))
+        for scale in 1...3 {
+            let suffix = scale == 1 ? "" : "@\(scale)x"
+            for root in resourceRoots {
+                let url = root.appendingPathComponent("lineup_lineup.bundle/ToolIcons/FeatureIcons.xcassets/\(name).imageset/\(name)\(suffix).png")
+                if let data = try? Data(contentsOf: url), let rep = NSBitmapImageRep(data: data) {
+                    rep.size = image.size
+                    image.addRepresentation(rep)
+                    break
+                }
+            }
+        }
+        return image.representations.isEmpty ? nil : image
+    }
+
+    private static var resourceRoots: [URL] {
+        var roots: [URL] = []
+        if let resourceURL = Bundle.main.resourceURL { roots.append(resourceURL) }
+        roots.append(Bundle.main.bundleURL)
+        return roots
+    }
+
     private static func bundled(_ name: String) -> NSImage? {
         // Do not use SwiftPM's generated `Bundle.module` accessor here. It traps when the
         // resource bundle is missing, which turns an optional icon into a launch crash. The
         // assembled app stores the bundle in Contents/Resources; a bare `swift run` keeps it
         // beside the executable. Search both locations and let the caller draw its fallback.
-        var roots: [URL] = []
-        if let resourceURL = Bundle.main.resourceURL { roots.append(resourceURL) }
-        roots.append(Bundle.main.bundleURL)
-
-        for root in roots {
+        for root in resourceRoots {
             let bundle = root.appendingPathComponent("lineup_lineup.bundle", isDirectory: true)
             // `.copy("Resources/ToolIcons")` keeps ToolIcons; `.process` would flatten it.
             for relativePath in [

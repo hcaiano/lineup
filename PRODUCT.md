@@ -83,8 +83,19 @@ paste, translation, or network processing.
 ## Brand Personality
 
 Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
-`Sources/lineup/App/Brand.swift`) carries the identity; everything else defers to macOS conventions
-(system fonts, vibrancy, standard controls). The app should feel like Apple shipped it.
+`Sources/lineup/App/Brand.swift`) carries selection and controls; everything else defers to macOS
+conventions (system fonts, vibrancy, standard controls). Feature artwork uses one color per tool
+within the shared [enamel icon family](Design/FeatureIcons/README.md). The app should feel like
+Apple shipped it.
+
+Lineup currently reuses the selected Zones artwork as its application icon and the existing
+pane-grid silhouette in the menu bar. New logo work is deferred. The source and export contract
+live in the [app icon standard](Design/AppIcon/README.md). A future layered replacement follows
+Apple's native Icon Composer workflow.
+
+In Settings, enabled features retain their artwork's color. Disabled features are fully grayscale
+in both the sidebar and pane header, using the same `ToolIcon` renderer. The treatment follows
+the persisted enabled flag; a tool awaiting permission retains its enabled appearance.
 
 ## Anti-references
 
@@ -102,7 +113,8 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
    support, never substitute. Non-native English speakers must understand them.
 3. **Numbers users can act on.** Pixel readouts, placed where the eye already is; no unit soup.
 4. **Defer to the platform.** AppKit controls, system behaviors, native About/Settings idioms.
-5. **One blue.** Selection, highlight, accent, icon: all `Brand.blue`. No second accent.
+5. **One blue for controls.** Selection, highlight and control accents use `Brand.blue`.
+   Feature artwork uses its assigned hue, with a shared composition and material.
 
 ## Accessibility & Inclusion
 

@@ -1,0 +1,17 @@
+{
+  "style": "enamel-v1",
+  "color": "2F6BFF",
+  "reference": "../FeatureIcons/references/enamel-v1.png",
+  "referenceSHA256": "4b70a4012b67ce1e2a906d446969b0d5cdc030fb29ca4c8b09cf2d3d45ca961f",
+  "selected": "zones",
+  "selectedLogo": "zones",
+  "status": "Henrique selected the existing Zones icon for Lineup on 2026-10-01. Reuse the exact feature master for current PNG/ICNS exports and the pane-grid menu-bar template. New logo work is deferred.",
+  "candidates": [
+    {
+      "id": "zones",
+      "name": "Lineup / Zones",
+      "master": "../FeatureIcons/masters/zones.png",
+      "subject": "Reuse the existing Zones artwork unchanged: exactly three ivory rounded window panes, one tall pane on the left and two equal stacked panes on the right, on the approved blue enamel tile. Do not generate a new logo."
+    }
+  ]
+}

@@ -1,126 +1,226 @@
+#!/usr/bin/env swift
 import AppKit
+import CryptoKit
+import Foundation
 
-// Renders the Lineup app icon at 1024×1024 (gradient-glass squircle with three columns,
-// center gently highlighted) and writes a PNG. Usage: swift make-icon.swift out.png
-let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon.png"
-
-let S: CGFloat = 1024
-let rep = NSBitmapImageRep(
-    bitmapDataPlanes: nil, pixelsWide: Int(S), pixelsHigh: Int(S),
-    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-let ctx = NSGraphicsContext.current!.cgContext
-let rgb = CGColorSpaceCreateDeviceRGB()
-
-ctx.clear(CGRect(x: 0, y: 0, width: S, height: S))
-
-// Rounded-square ("squircle"-ish) body, centered with margin, Apple-ish corner radius.
-let margin: CGFloat = 92
-let body = CGRect(x: margin, y: margin, width: S - 2 * margin, height: S - 2 * margin)
-let radius = body.width * 0.2237
-let squircle = CGPath(roundedRect: body, cornerWidth: radius, cornerHeight: radius, transform: nil)
-
-// Soft drop shadow for depth.
-ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -16),
-              blur: 48, color: NSColor.black.withAlphaComponent(0.33).cgColor)
-ctx.addPath(squircle)
-ctx.setFillColor(NSColor.black.cgColor)
-ctx.fillPath()
-ctx.restoreGState()
-
-// Clip to the squircle and paint everything inside.
-ctx.saveGState()
-ctx.addPath(squircle)
-ctx.clip()
-
-// Vertical brand-blue gradient (bright azure at top, deep blue at the base) — the concept-1
-// look. Kept in the brand-blue family so the icon reads as the same product as the menu bar
-// and website accent.
-let bg = CGGradient(colorsSpace: rgb, colors: [
-    NSColor(srgbRed: 0.157, green: 0.604, blue: 0.988, alpha: 1).cgColor, // bright azure #289AFC
-    NSColor(srgbRed: 0.004, green: 0.447, blue: 0.988, alpha: 1).cgColor, // deep blue    #0172FC
-] as CFArray, locations: [0, 1])!
-func paintBody() {
-    ctx.drawLinearGradient(bg,
-        start: CGPoint(x: body.midX, y: body.maxY),
-        end: CGPoint(x: body.midX, y: body.minY), options: [])
+// Mechanical export only. Generate and refine artwork with imagegen.
+struct Candidate: Decodable {
+    let id: String, name: String, master: String, subject: String
 }
-paintBody()
+struct Manifest: Decodable {
+    let reference: String, referenceSHA256: String, selected: String
+    let candidates: [Candidate]
+}
+struct Failure: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
+let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+let design = repo.appendingPathComponent("Design/AppIcon")
+let iconset = repo.appendingPathComponent("Icon/AppIcon.iconset")
+let catalog = repo.appendingPathComponent("Icon/AppIcon.xcassets")
+let appiconset = catalog.appendingPathComponent("AppIcon.appiconset")
+let fm = FileManager.default
+let slots: [(points: Int, scale: Int)] = [(16, 1), (16, 2), (32, 1), (32, 2),
+    (128, 1), (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)]
 
-// Subtle top sheen (flat, not glossy — kept light per the concept board).
-let sheen = CGGradient(colorsSpace: rgb, colors: [
-    NSColor.white.withAlphaComponent(0.16).cgColor,
-    NSColor.white.withAlphaComponent(0.0).cgColor,
-] as CFArray, locations: [0, 1])!
-ctx.drawLinearGradient(sheen,
-    start: CGPoint(x: body.midX, y: body.maxY),
-    end: CGPoint(x: body.midX, y: body.midY), options: [])
-
-// The mark (concept-1): a white rounded "screen" framing three rounded zones — one tall pane
-// on the left, and a right column split into two stacked cells. The top-right cell is softly
-// highlighted (lighter azure) to read as the "active" zone. The left and bottom-right cells
-// are the body gradient showing through, so they sit on the same blue surface as the icon.
-// All-rounded filled cells (no thin lines) so the motif survives at 16 px.
-let screen = CGRect(x: body.minX + body.width * 0.129,
-                    y: body.minY + body.height * 0.181,
-                    width: body.width * 0.742,
-                    height: body.height * 0.638)
-let gutter = body.width * 0.043           // white gap: frame border == gutter between cells
-let screenRadius = screen.height * 0.135
-let cellRadius = gutter * 0.95
-func rrect(_ r: CGRect, _ rad: CGFloat) -> CGPath {
-    CGPath(roundedRect: r, cornerWidth: rad, cornerHeight: rad, transform: nil)
+func require(_ condition: Bool, _ message: String) throws {
+    if !condition { throw Failure(message) }
+}
+func pixels(_ url: URL) throws -> CGImage {
+    guard let rep = NSBitmapImageRep(data: try Data(contentsOf: url)), let image = rep.cgImage else {
+        throw Failure("Cannot decode PNG: \(url.path)")
+    }
+    return image
+}
+func bitmap(_ width: Int, _ height: Int) throws -> CGContext {
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
+        throw Failure("Cannot allocate sRGB RGBA bitmap")
+    }
+    return context
+}
+func checkAlpha(_ image: CGImage, _ label: String) throws {
+    let width = image.width, height = image.height
+    let context = try bitmap(width, height)
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let bytes = context.data!.assumingMemoryBound(to: UInt8.self)
+    var transparent = 0, opaque = 0
+    for pixel in 0..<(width * height) {
+        if bytes[pixel * 4 + 3] == 0 { transparent += 1 }
+        if bytes[pixel * 4 + 3] >= 250 { opaque += 1 }
+    }
+    try require(transparent > width * height / 10, "\(label): missing transparent surround")
+    try require(opaque > width * height / 3, "\(label): missing opaque tile or motif")
+    for pixel in [0, width - 1, (height - 1) * width, height * width - 1] {
+        try require(bytes[pixel * 4 + 3] == 0, "\(label): corners must be transparent")
+    }
+}
+func resized(_ image: CGImage, _ size: Int) throws -> CGImage {
+    let context = try bitmap(size, size)
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: 0, y: 0, width: size, height: size))
+    guard let result = context.makeImage() else { throw Failure("Cannot resize PNG") }
+    return result
+}
+func pngData(_ image: CGImage) throws -> Data {
+    guard let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+        throw Failure("Cannot encode PNG")
+    }
+    return data
+}
+func writePNG(_ image: CGImage, _ url: URL) throws {
+    try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try pngData(image).write(to: url, options: .atomic)
+}
+func filename(_ points: Int, _ scale: Int) -> String {
+    "icon_\(points)x\(points)" + (scale == 2 ? "@2x" : "") + ".png"
+}
+func imagesMetadata() -> [[String: String]] {
+    slots.map { ["filename": filename($0.points, $0.scale), "idiom": "mac",
+        "size": "\($0.points)x\($0.points)", "scale": "\($0.scale)x"] }
+}
+func export(_ image: CGImage) throws {
+    try writePNG(resized(image, 1024), repo.appendingPathComponent("Icon/icon-1024.png"))
+    for slot in slots {
+        let output = try resized(image, slot.points * slot.scale)
+        try writePNG(output, iconset.appendingPathComponent(filename(slot.points, slot.scale)))
+        try writePNG(output, appiconset.appendingPathComponent(filename(slot.points, slot.scale)))
+    }
+    let info: [String: Any] = ["info": ["author": "xcode", "version": 1]]
+    try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys])
+        .write(to: catalog.appendingPathComponent("Contents.json"), options: .atomic)
+    let metadata: [String: Any] = ["images": imagesMetadata(), "info": ["author": "xcode", "version": 1]]
+    try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys])
+        .write(to: appiconset.appendingPathComponent("Contents.json"), options: .atomic)
+    try verify(image)
+}
+func verify(_ source: CGImage) throws {
+    func check(_ url: URL, _ size: Int) throws {
+        let image = try pixels(url)
+        try require(image.width == size && image.height == size, "Incorrect dimensions: \(url.path)")
+        try checkAlpha(image, url.lastPathComponent)
+        let expected = try pngData(resized(source, size))
+        try require(Data(contentsOf: url) == expected, "Export differs from the selected master: \(url.path)")
+    }
+    try check(repo.appendingPathComponent("Icon/icon-1024.png"), 1024)
+    for slot in slots {
+        try check(iconset.appendingPathComponent(filename(slot.points, slot.scale)), slot.points * slot.scale)
+        try check(appiconset.appendingPathComponent(filename(slot.points, slot.scale)), slot.points * slot.scale)
+    }
+    let object = try JSONSerialization.jsonObject(with:
+        Data(contentsOf: appiconset.appendingPathComponent("Contents.json")))
+    guard let json = object as? [String: Any], let images = json["images"] as? [[String: String]] else {
+        throw Failure("Invalid macOS appiconset metadata")
+    }
+    try require(images == imagesMetadata(), "AppIcon requires all ten macOS size/scale entries")
+    print("Verified selected 1024 px PNG and ten macOS slots in iconset and appiconset; sRGB, alpha and master consistency.")
+}
+func preview(_ manifest: Manifest) throws {
+    let width = 1200, height = 1140
+    let context = try bitmap(width, height)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    defer { NSGraphicsContext.restoreGraphicsState() }
+    func text(_ value: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ dark: Bool) {
+        (value as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: [
+            .font: NSFont.systemFont(ofSize: size, weight: .medium),
+            .foregroundColor: dark ? NSColor.white : NSColor.black,
+        ])
+    }
+    for dark in [false, true] {
+        let origin: CGFloat = dark ? 340 : 740
+        (dark ? NSColor(srgbRed: 0.09, green: 0.1, blue: 0.12, alpha: 1) :
+            NSColor(srgbRed: 0.965, green: 0.969, blue: 0.98, alpha: 1)).setFill()
+        NSRect(x: 0, y: origin, width: CGFloat(width), height: 400).fill()
+        text(dark ? "Lineup / enamel / dark" : "Lineup / enamel / light", 26, origin + 364, 20, dark)
+        for (index, candidate) in manifest.candidates.enumerated() {
+            let x = CGFloat(index * 400) + (CGFloat(width) - CGFloat(manifest.candidates.count * 400)) / 2
+            guard let image = NSImage(contentsOf: design.appendingPathComponent(candidate.master)) else {
+                throw Failure("Cannot preview \(candidate.id)")
+            }
+            image.draw(in: NSRect(x: x + 112, y: origin + 180, width: 176, height: 176),
+                from: .zero, operation: .sourceOver, fraction: 1)
+            text(candidate.name, x + 120, origin + 157, 15, dark)
+            var sampleX = x + 42
+            for size in [16, 32, 64, 128] {
+                // Render actual pixel sizes, without a UI scale factor.
+                image.draw(in: NSRect(x: sampleX, y: origin + 22, width: CGFloat(size), height: CGFloat(size)),
+                    from: .zero, operation: .sourceOver, fraction: 1)
+                text("\(size)", sampleX, origin + 8, 10, dark)
+                sampleX += CGFloat(size + 24)
+            }
+        }
+    }
+    NSColor(srgbRed: 0.94, green: 0.95, blue: 0.97, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width, height: 340).fill()
+    text("Lineup + features / enamel-v1", 26, 295, 20, false)
+    guard let app = NSImage(contentsOf: repo.appendingPathComponent("Icon/icon-1024.png")) else {
+        throw Failure("Export the selected app icon first")
+    }
+    app.draw(in: NSRect(x: 30, y: 99, width: 176, height: 176), from: .zero, operation: .sourceOver, fraction: 1)
+    text("Lineup", 92, 76, 16, false)
+    let object = try JSONSerialization.jsonObject(with:
+        Data(contentsOf: repo.appendingPathComponent("Design/FeatureIcons/manifest.json")))
+    guard let featureManifest = object as? [String: Any],
+          let features = featureManifest["features"] as? [[String: String]] else {
+        throw Failure("Cannot read the feature family")
+    }
+    for (index, feature) in features.enumerated() {
+        guard let asset = feature["asset"], let name = feature["name"] else {
+            throw Failure("Missing feature metadata")
+        }
+        let url = repo.appendingPathComponent("Sources/lineup/Resources/ToolIcons/FeatureIcons.xcassets/\(asset).imageset/\(asset)@3x.png")
+        guard let image = NSImage(contentsOf: url) else { throw Failure("Cannot preview \(asset)") }
+        let x = CGFloat(245 + index * 132)
+        image.draw(in: NSRect(x: x, y: 132, width: 100, height: 100), from: .zero, operation: .sourceOver, fraction: 1)
+        text(name, x + 5, 108, 12, false)
+    }
+    try writePNG(context.makeImage()!, design.appendingPathComponent("preview.png"))
+    print("Saved Design/AppIcon/preview.png with 16/32/64/128 px samples and the feature family.")
 }
 
-// White screen panel.
-ctx.setFillColor(NSColor.white.cgColor)
-ctx.addPath(rrect(screen, screenRadius))
-ctx.fillPath()
-
-// Cell rects, inset from the panel by one gutter on every side and split by gutters.
-let content = screen.insetBy(dx: gutter, dy: gutter)
-let colW = (content.width - gutter) / 2     // equal left pane / right column
-let rowH = (content.height - gutter) / 2     // equal top / bottom right cells
-let leftCell = CGRect(x: content.minX, y: content.minY, width: colW, height: content.height)
-let rightX = content.minX + colW + gutter
-let bottomRight = CGRect(x: rightX, y: content.minY, width: colW, height: rowH)
-let topRight = CGRect(x: rightX, y: content.minY + rowH + gutter, width: colW, height: rowH)
-
-// Left pane + bottom-right cell: the body gradient showing through (clip, then repaint it).
-ctx.saveGState()
-ctx.addPath(rrect(leftCell, cellRadius))
-ctx.addPath(rrect(bottomRight, cellRadius))
-ctx.clip()
-paintBody()
-ctx.restoreGState()
-
-// Top-right highlight cell: a lighter azure, with a faint top-down sheen of its own.
-let hi = CGGradient(colorsSpace: rgb, colors: [
-    NSColor(srgbRed: 0.690, green: 0.831, blue: 0.992, alpha: 1).cgColor, // #B0D4FD
-    NSColor(srgbRed: 0.596, green: 0.769, blue: 0.988, alpha: 1).cgColor, // #98C4FC
-] as CFArray, locations: [0, 1])!
-ctx.saveGState()
-ctx.addPath(rrect(topRight, cellRadius))
-ctx.clip()
-ctx.drawLinearGradient(hi,
-    start: CGPoint(x: topRight.midX, y: topRight.maxY),
-    end: CGPoint(x: topRight.midX, y: topRight.minY), options: [])
-ctx.restoreGState()
-
-// Subtle inner edge for crispness.
-ctx.addPath(squircle)
-ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.14).cgColor)
-ctx.setLineWidth(3)
-ctx.strokePath()
-
-NSGraphicsContext.restoreGraphicsState()
-
-guard let data = rep.representation(using: .png, properties: [:]) else {
-    FileHandle.standardError.write(Data("failed to encode PNG\n".utf8)); exit(1)
+do {
+    let manifest = try JSONDecoder().decode(Manifest.self, from:
+        Data(contentsOf: design.appendingPathComponent("manifest.json")))
+    try require(manifest.reference == "../FeatureIcons/references/enamel-v1.png", "Use the versioned enamel-v1 reference")
+    let reference = try Data(contentsOf: design.appendingPathComponent(manifest.reference))
+    let hash = SHA256.hash(data: reference).map { String(format: "%02x", $0) }.joined()
+    try require(hash == manifest.referenceSHA256, "The versioned style reference changed")
+    var ids = Set<String>()
+    for candidate in manifest.candidates {
+        try require(ids.insert(candidate.id).inserted &&
+            candidate.id.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil, "Candidate IDs must be unique slugs")
+        let sharedZonesMaster = candidate.id == "zones" && candidate.master == "../FeatureIcons/masters/zones.png"
+        try require(!candidate.master.hasPrefix("/") &&
+            (!candidate.master.split(separator: "/").contains("..") || sharedZonesMaster),
+            "Master must be inside Design/AppIcon or use the shared Zones master")
+        try require(!candidate.subject.isEmpty && !candidate.name.isEmpty, "Name and subject are required")
+    }
+    guard let selected = manifest.candidates.first(where: { $0.id == manifest.selected }) else {
+        throw Failure("The selected logo must name a candidate")
+    }
+    let command = CommandLine.arguments.dropFirst().first ?? "export"
+    if command == "prompt" {
+        let template = try String(contentsOf: design.appendingPathComponent("prompt-template.txt"), encoding: .utf8)
+        print(template.replacingOccurrences(of: "{{subject}}", with: selected.subject))
+    } else {
+        let image = try pixels(design.appendingPathComponent(selected.master))
+        try require(image.width == image.height && image.width >= 1024, "Master must be square and at least 1024 px")
+        try checkAlpha(image, selected.id)
+        switch command {
+        case "export": try export(image)
+        case "verify": try verify(image)
+        case "preview": try verify(image); try preview(manifest)
+        default:
+            // Preserve the previous script's single-PNG output argument.
+            try require(command.hasSuffix(".png"), "Usage: swift Scripts/make-icon.swift [export|verify|preview|prompt|output.png]")
+            try writePNG(resized(image, 1024), URL(fileURLWithPath: command))
+        }
+    }
+} catch {
+    fputs("App icon: \(error)\n", stderr)
+    exit(1)
 }
-try! data.write(to: URL(fileURLWithPath: outPath))
-print("wrote \(outPath)")

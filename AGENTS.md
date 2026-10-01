@@ -16,6 +16,9 @@ Read [PRODUCT.md](PRODUCT.md) before changing user-visible behavior or design. R
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before preparing or reviewing a pull request; it owns the
 required evidence, review gates, and merge policy.
 
+For feature or app icon generation and refinements, use
+[lineup-icons](.agents/skills/lineup-icons/SKILL.md), which owns the enamel reference and platform exports.
+
 ## Protect user state and identity
 
 These contracts are more important than local convenience:

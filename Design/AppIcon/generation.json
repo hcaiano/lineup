@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-01",
+  "source": "Current app icon reuses the selected Zones feature master.",
+  "selected": "zones",
+  "status": "Selected by Henrique on 2026-10-01; exact Zones PNG/ICNS exports integrated locally. New logo work deferred.",
+  "currentSelection": {
+    "date": "2026-10-01",
+    "decision": "Reuse Zones unchanged",
+    "master": "../FeatureIcons/masters/zones.png",
+    "sourceRecord": "../FeatureIcons/generation.json",
+    "generation": "No new generation; deterministic export from the existing master",
+    "menuBar": "Existing three-pane monochrome template",
+    "exports": [
+      "Icon/icon-1024.png",
+      "Icon/AppIcon.xcassets/AppIcon.appiconset",
+      "Resources/AppIcon.icns"
+    ]
+  }
+}

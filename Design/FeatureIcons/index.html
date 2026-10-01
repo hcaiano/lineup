@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lineup · Icon family</title>
+<style>
+:root{color-scheme:light;--bg:#f6f7fa;--panel:white;--ink:#18202c;--muted:#657083;--line:#e1e5ec;--selected:#e7efff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px -apple-system,BlinkMacSystemFont,sans-serif;line-height:1.5}
+body.dark{color-scheme:dark;--bg:#171a20;--panel:#222730;--ink:#edf1f7;--muted:#abb5c6;--line:#373e4b;--selected:#24365b}
+main{max-width:1200px;margin:auto;padding:36px 28px 60px}header{display:flex;align-items:center;justify-content:space-between;gap:20px}h1{font-size:30px;letter-spacing:-.8px;margin:0}h2{font-size:20px;margin:32px 0 16px}p{color:var(--muted);margin:8px 0 20px}
+button{font:inherit;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 15px}button:focus-visible,a:focus-visible{outline:3px solid #2f6bff;outline-offset:3px}a{color:#2f6bff}
+.family{display:grid;grid-template-columns:repeat(7,1fr);gap:12px}.card{display:flex;flex-direction:column;align-items:center;gap:10px;background:var(--panel);padding:16px 8px;border:1px solid var(--line);border-radius:16px;text-align:center;font-size:13px}.card>img{width:112px;height:112px;object-fit:contain}.samples{display:flex;align-items:center;gap:20px;height:80px}.samples img{object-fit:contain}small{color:var(--muted)}
+.settings{display:grid;grid-template-columns:220px 1fr;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--panel);min-height:310px}.sidebar{padding:16px 12px;background:var(--bg);border-right:1px solid var(--line)}.sidebar button{display:flex;gap:9px;align-items:center;width:100%;padding:6px 9px;border:0;background:none;text-align:left}.sidebar button.selected{background:var(--selected)}.sidebar img{width:20px;height:20px}.pane{display:flex;align-items:center;justify-content:center;flex-direction:column;padding:30px}.pane img{width:72px;height:72px}.pane h3{font-size:22px;margin:10px 0 2px}.pane p{text-align:center;max-width:400px}.studies{display:flex;gap:16px;flex-wrap:wrap}.study{width:180px;padding:18px;background:var(--panel);border:1px solid var(--line);border-radius:16px;text-align:center}.study img{width:130px;height:130px;object-fit:contain}.study p{margin:8px 0 0;font-size:14px}.hint{font-size:13px}.off .family img,.off .settings img{filter:grayscale(1)}
+@media(max-width:950px){.family{grid-template-columns:repeat(4,1fr)}}@media(max-width:600px){main{padding:24px 16px}.family{grid-template-columns:repeat(2,1fr)}.settings{grid-template-columns:165px 1fr}header{align-items:start;flex-direction:column}.pane{padding:16px}.sidebar button{font-size:12px}}
+</style>
+<main>
+<header><div><h1>Lineup icon family</h1><p>Enamel v1 · Uma cor por feature · Alpha real</p></div><div><button id="theme">Fundo escuro</button> <button id="off" aria-pressed="false">Ver desativados</button></div></header>
+<h2>App icon · Zones</h2>
+<div id="app-icons" class="studies"></div>
+<p class="hint">Zones é o ícone escolhido para a app, em azul da marca. O trabalho de novos logos fica adiado. <a href="../AppIcon/preview.png">Comparar tamanhos e família</a> · <a href="../AppIcon/README.md">Padrão do app icon</a></p>
+<h2>Features</h2>
+<div id="family" class="family"></div>
+<p class="hint">Arte maior para comparar a família. As amostras abaixo de cada ícone estão a 72 e 20 px. Usa zoom a 100% para avaliar a leitura.</p>
+<h2>Sidebar e header</h2>
+<div class="settings"><nav id="sidebar" class="sidebar" aria-label="Features"></nav><div class="pane"><img id="hero" alt=""><h3 id="name"></h3><p id="summary"></p></div></div>
+<p class="hint">Preview de composição com os PNGs exportados. A app usa o componente partilhado ToolIcon. Este preview não executa os tools.</p>
+<h2>Estudos de acabamento</h2>
+<div class="studies"><div class="study"><img src="masters/zones.png" alt="Zones enamel"><p>Enamel · escolhido</p></div><div class="study"><img src="studies/zones-sculpted.png" alt="Zones sculpted"><p>Sculpted</p></div><div class="study"><img src="studies/zones-glass.png" alt="Zones glass"><p>Glass</p></div></div>
+<p class="hint">Processo e paletas em <a href="README.md">README.md</a>. Prompts e mestres preservados para a próxima iteração.</p>
+</main>
+<script>
+const summaries={zones:'Organiza janelas nos layouts que desenhas.',cycler:'Alterna entre apps e janelas com atalhos.',hyperkey:'Uma tecla reúne os quatro modificadores.',worldClock:'Compara a hora local com outras cidades.',awake:'Mantém o Mac acordado durante uma sessão.',textCapture:'Copia texto de uma região do ecrã.',menuBar:'Organiza e oculta grupos na barra de menus.'};
+const image=f=>`../../Sources/lineup/Resources/ToolIcons/FeatureIcons.xcassets/${f.asset}.imageset/${f.asset}@3x.png`;
+fetch('../AppIcon/manifest.json').then(r=>r.json()).then(({candidates,selected})=>{
+ const container=document.getElementById('app-icons');
+ candidates.forEach(c=>{
+  const card=document.createElement('div');card.className='study';
+  const img=document.createElement('img');img.src=`../AppIcon/${c.master}`;img.alt=c.name;
+  const label=document.createElement('p');label.textContent=c.name;
+  card.append(img,label);
+  if(c.id===selected){const note=document.createElement('small');note.textContent='Ícone escolhido e exportado';card.append(note)}
+  container.append(card)
+ })
+}).catch(()=>{document.getElementById('app-icons').textContent='Os estudos do app icon não estão disponíveis.'});
+fetch('manifest.json').then(r=>r.json()).then(({features})=>{
+ const family=document.getElementById('family'),sidebar=document.getElementById('sidebar');
+ features.forEach(f=>{
+  const card=document.createElement('div');card.className='card';
+  const large=document.createElement('img');large.src=image(f);large.alt=f.name;card.append(large);
+  const name=document.createElement('strong');name.textContent=f.name;card.append(name);
+  const samples=document.createElement('div');samples.className='samples';
+  [72,20].forEach(size=>{const img=document.createElement('img');img.src=image(f);img.alt=`${f.name}, ${size} px`;img.width=size;img.height=size;samples.append(img)});card.append(samples);
+  const label=document.createElement('small');label.textContent='72 px / 20 px';card.append(label);family.append(card);
+  const button=document.createElement('button'),icon=document.createElement('img');icon.src=image(f);icon.alt='';button.append(icon,document.createTextNode(f.name));
+  button.onclick=()=>{sidebar.querySelectorAll('button').forEach(b=>{b.classList.remove('selected');b.removeAttribute('aria-current')});button.classList.add('selected');button.setAttribute('aria-current','page');document.getElementById('hero').src=image(f);document.getElementById('hero').alt=f.name;document.getElementById('name').textContent=f.name;document.getElementById('summary').textContent=summaries[f.id]||f.subject};sidebar.append(button)
+ });sidebar.firstElementChild.click()
+}).catch(()=>{document.getElementById('family').textContent='Abre através de um servidor local. Exemplo: python3 -m http.server 8008 --bind 127.0.0.1, a partir da raiz do repo.'});
+document.getElementById('theme').onclick=()=>{document.body.classList.toggle('dark');document.getElementById('theme').textContent=document.body.classList.contains('dark')?'Fundo claro':'Fundo escuro'};
+document.getElementById('off').onclick=()=>{document.body.classList.toggle('off');document.getElementById('off').setAttribute('aria-pressed',document.body.classList.contains('off'));document.getElementById('off').textContent=document.body.classList.contains('off')?'Ver ativos':'Ver desativados'};
+</script>
+</html>

@@ -4,10 +4,8 @@ import AppCore
 /// Single source of brand visuals: the fixed brand colours (so the product reads as one brand
 /// regardless of the user's system accent) and the menu-bar logo.
 ///
-/// The menu-bar mark stays **Lineup's** pane-grid glyph — unchanged for every existing 1.x user,
-/// who is getting 2.0 as a silent auto-update and should not find a different icon in their menu
-/// bar. Cycler's "C" mark and its `trimmedToContent` bundle-image loader are not carried over;
-/// the per-tool identity lives in the accents and the SF Symbols instead.
+/// The app icon and template menu-bar mark share Zones' pane grid. Feature artwork uses the
+/// enamel family; the menu bar keeps only the silhouette so macOS can tint it naturally.
 enum Brand {
     /// #2F6BFF — the app accent, and the Zones tool's accent.
     static let blue = NSColor(srgbRed: 0.184, green: 0.420, blue: 1.0, alpha: 1)
@@ -39,8 +37,8 @@ enum Brand {
         }
     }
 
-    /// Monochrome **template** menu-bar mark: the app-icon motif (a tall pane on the left, a
-    /// right column split into two stacked cells) drawn as three solid rounded zones. Template
+    /// Monochrome **template** menu-bar mark: the Zones motif (one tall left pane and two
+    /// stacked right panes) drawn as three solid rounded pieces. Template
     /// = the system tints it (white on the dark menu bar, dark on light, highlighted when open).
     /// Solid fills with a small gutter so it reads at ~18 pt.
     static func menuBarLogo() -> NSImage {
@@ -51,7 +49,6 @@ enum Brand {
             let colW = (box.width - gap) / 2
             let rowH = (box.height - gap) / 2
             let radius: CGFloat = 1.3
-            // Left: one tall pane, full height. Right: two stacked cells.
             let leftPane = NSRect(x: box.minX, y: box.minY, width: colW, height: box.height)
             let rightX = box.minX + colW + gap
             let bottomRight = NSRect(x: rightX, y: box.minY, width: colW, height: rowH)

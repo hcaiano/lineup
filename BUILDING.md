@@ -121,6 +121,12 @@ ship an ad-hoc signature by accident.
 
 ## Package the installer
 
+For feature artwork and the application icon, use the repository's
+[lineup-icons skill](.agents/skills/lineup-icons/SKILL.md). `./Scripts/make-icns.sh` exports the
+selected master from `Design/AppIcon/manifest.json` to a 1024 px PNG, a macOS Xcode appiconset
+and `Resources/AppIcon.icns`. It does not redraw a missing master. See the
+[app icon standard](Design/AppIcon/README.md) for sizes, visual checks and provenance.
+
 ```sh
 REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist   # refuses to build an ad-hoc release
 ./Scripts/make-dmg.sh dist          # -> dist/Lineup-<version>.dmg; also rejects an ad-hoc app
