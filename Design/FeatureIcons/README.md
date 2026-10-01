@@ -99,3 +99,6 @@ shipping a visual change.
 
 The debug preview command also renders actual Settings panes in light and dark appearance,
 with enabled and disabled flags. See [BUILDING.md](../../BUILDING.md#preview-the-interface).
+
+The existing `swift run lineup-tests` runner also exports isolated, off-center tile fixtures through
+the real exporter. It checks both vertical directions for correct placement without clipping.

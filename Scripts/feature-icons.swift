@@ -125,8 +125,9 @@ func framed(_ image: CGImage, reference: CGRect, normalize: Bool) throws -> CGIm
     let width = CGFloat(image.width), height = CGFloat(image.height)
     let scaleX = reference.width / source.width
     let scaleY = reference.height / source.height
+    // Bitmap rows start at the top; drawing rectangles use a bottom-origin Y coordinate.
     let destination = CGRect(x: (reference.minX - source.minX * scaleX) * width,
-                             y: (reference.minY - source.minY * scaleY) * height,
+                             y: ((1 - reference.maxY) - (1 - source.maxY) * scaleY) * height,
                              width: width * scaleX, height: height * scaleY)
     let context = try bitmap(image.width, image.height)
     context.interpolationQuality = .high
