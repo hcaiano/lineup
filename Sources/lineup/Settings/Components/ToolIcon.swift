@@ -28,18 +28,12 @@ struct AppStyleIcon: View {
     }
 }
 
-/// Shared feature icons, with vector tiles in Settings and enamel artwork in onboarding.
-/// Legacy artwork and a drawn tile cover missing resource catalogs.
+/// Shared feature artwork for navigation and headers, with legacy artwork and a drawn tile
+/// as fallbacks when the copied resource catalog is unavailable.
 struct ToolIcon: View {
-    enum Style {
-        case artwork
-        case settings
-    }
-
     let id: ToolID
     var size: CGFloat
     var isEnabled: Bool = true
-    var style: Style = .artwork
 
     var body: some View {
         artwork
@@ -48,9 +42,7 @@ struct ToolIcon: View {
 
     @ViewBuilder
     private var artwork: some View {
-        if style == .settings {
-            SettingsIconTile(id: id, size: size)
-        } else if let image = ToolIconLibrary.artwork(for: id) {
+        if let image = ToolIconLibrary.artwork(for: id) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
@@ -61,67 +53,6 @@ struct ToolIcon: View {
             AppStyleIcon(symbol: ToolIconLibrary.fallbackSymbol(for: id),
                          tint: Brand.accent(for: id),
                          size: size)
-        }
-    }
-}
-
-/// Settings uses opaque vector tiles: no transparent margins or relief to shrink the motif.
-/// The same proportions work in navigation and headers, including on non-Retina displays.
-private struct SettingsIconTile: View {
-    let id: ToolID
-    let size: CGFloat
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.15, style: .continuous)
-            .fill(LinearGradient(
-                colors: [Color(nsColor: tint.blended(withFraction: 0.12, of: .white) ?? tint),
-                         Color(nsColor: tint)],
-                startPoint: .top, endPoint: .bottom))
-            .overlay {
-                motif
-                    .foregroundStyle(.white)
-                    .frame(width: size * 0.68, height: size * 0.68)
-            }
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var motif: some View {
-        switch id {
-        case .zones:
-            Image(nsImage: Brand.menuBarLogo())
-                .resizable()
-                .scaledToFit()
-        case .menuBar:
-            VStack(spacing: size * 0.08) {
-                HStack(spacing: size * 0.055) {
-                    ForEach(0..<3) { _ in
-                        RoundedRectangle(cornerRadius: size * 0.015)
-                            .fill(Color(nsColor: tint))
-                    }
-                }
-                .padding(size * 0.055)
-                .frame(height: size * 0.25)
-                .background(.white, in: RoundedRectangle(cornerRadius: size * 0.035))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: size * 0.23, weight: .bold))
-            }
-        default:
-            Image(systemName: id == .hyperkey ? "command" : ToolIconLibrary.fallbackSymbol(for: id))
-                .resizable()
-                .scaledToFit()
-                .fontWeight(.semibold)
-        }
-    }
-
-    private var tint: NSColor {
-        switch id {
-        case .worldClock: return NSColor(srgbRed: 13 / 255, green: 143 / 255, blue: 155 / 255, alpha: 1)
-        case .awake: return NSColor(srgbRed: 193 / 255, green: 127 / 255, blue: 8 / 255, alpha: 1)
-        case .textCapture: return NSColor(srgbRed: 22 / 255, green: 133 / 255, blue: 107 / 255, alpha: 1)
-        case .menuBar: return NSColor(srgbRed: 77 / 255, green: 97 / 255, blue: 122 / 255, alpha: 1)
-        default: return Brand.accent(for: id)
         }
     }
 }
@@ -194,8 +125,7 @@ enum ToolIconLibrary {
     private static var resourceURLs: [URL] {
         resourceRoots.flatMap { root in
             let bundle = root.appendingPathComponent("lineup_lineup.bundle", isDirectory: true)
-            // SwiftPM's native Xcode builder makes a macOS bundle with Contents/Resources;
-            // older builds place the copied resources directly in the bundle directory.
+            // Native Xcode builds use Contents/Resources; older SwiftPM builds use a flat bundle.
             return [Bundle(url: bundle)?.resourceURL, bundle].compactMap { $0 }
         }
     }

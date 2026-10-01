@@ -14,6 +14,7 @@ struct Feature: Decodable {
 }
 struct Manifest: Decodable {
     let size: Int
+    let normalizeFraming: Bool?
     let reference: String
     let referenceSHA256: String
     let features: [Feature]
@@ -113,6 +114,28 @@ func resized(_ image: CGImage, to size: Int) throws -> CGImage {
     return result
 }
 
+// Keep generated masters intact. Opt-in exports align their visible tile to the family reference.
+func framed(_ image: CGImage, reference: CGRect, normalize: Bool) throws -> CGImage {
+    guard normalize else { return image }
+    let source = try opaqueFrame(image)
+    try require(source.width >= 0.6 && source.height >= 0.6 &&
+                source.width <= 0.9 && source.height <= 0.9 &&
+                abs(source.width / source.height - 1) <= 0.1,
+                "Master framing is too different for mechanical normalization; refine the artwork")
+    let width = CGFloat(image.width), height = CGFloat(image.height)
+    let scaleX = reference.width / source.width
+    let scaleY = reference.height / source.height
+    let destination = CGRect(x: (reference.minX - source.minX * scaleX) * width,
+                             y: (reference.minY - source.minY * scaleY) * height,
+                             width: width * scaleX, height: height * scaleY)
+    let context = try bitmap(image.width, image.height)
+    context.interpolationQuality = .high
+    context.draw(image, in: destination)
+    guard let result = context.makeImage() else { throw Failure("Cannot normalize tile framing") }
+    try checkFraming(result, against: reference, "Normalized master")
+    return result
+}
+
 func filename(_ feature: Feature, _ scale: Int) -> String {
     feature.asset + (scale == 1 ? "" : "@\(scale)x") + ".png"
 }
@@ -125,8 +148,9 @@ func export(_ manifest: Manifest) throws {
         try require(image.width == image.height && image.width >= manifest.size * 3,
                     "\(feature.id): master must be square and at least \(manifest.size * 3) px")
         try checkAlpha(image, feature.id)
-        try checkFraming(image, against: reference, feature.id)
-        return (feature, image)
+        let source = try framed(image, reference: reference, normalize: manifest.normalizeFraming == true)
+        try checkFraming(source, against: reference, feature.id)
+        return (feature, source)
     }
     try fm.createDirectory(at: catalog, withIntermediateDirectories: true)
     let info: [String: Any] = ["info": ["author": "xcode", "version": 1]]
@@ -155,7 +179,10 @@ func verify(_ manifest: Manifest) throws {
     let reference = try opaqueFrame(referenceImage)
     var count = 0
     for feature in manifest.features {
-        try checkFraming(pixels(design.appendingPathComponent(feature.master)), against: reference, feature.id)
+        let master = try pixels(design.appendingPathComponent(feature.master))
+        let source = try framed(master, reference: reference, normalize: manifest.normalizeFraming == true)
+        try checkAlpha(source, feature.id)
+        try checkFraming(source, against: reference, feature.id)
         let set = catalog.appendingPathComponent(feature.asset + ".imageset")
         let data = try Data(contentsOf: set.appendingPathComponent("Contents.json"))
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
