@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import plistlib
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -39,6 +40,10 @@ def feed(*items):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_command_timeout_is_reported_as_a_retryable_error(self):
+        with self.assertRaisesRegex(RuntimeError, "timed out"):
+            service.command(sys.executable, "-c", "import time; time.sleep(30)", timeout=0.05)
+
     def test_only_app_or_package_changes_release(self):
         for paths, expected in [(["README.md", "web/appcast.xml"], False),
                                 (["Scripts/nightly-service.py", "Tests/nightly_automation_test.py"], False),
@@ -179,8 +184,10 @@ class PublicationFixture:
             return [[self.release] if self.release else []]
         raise AssertionError("unexpected API request " + endpoint)
 
-    def command(self, *args, cwd=None, env=None):
+    def command(self, *args, cwd=None, env=None, timeout=None):
         if args[:3] == ("gh", "api", "markdown"):
+            if timeout is None or timeout <= 0:
+                raise AssertionError("renderer must have a finite execution timeout")
             if self.render_failure:
                 raise RuntimeError("Markdown rendering unavailable")
             if ("text=" + self.notes.strip() not in args or "mode=gfm" not in args

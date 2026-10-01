@@ -19,7 +19,8 @@ Stable releases remain manual. No GitHub-hosted or self-hosted Actions runner ge
   publication and inlined in the feed. The update window shows headings, lists and clickable
   links, with long URLs wrapping to its width. The internal source marker stays in the GitHub
   release body and is excluded from the update window. If rendering fails, the job retries
-  before creating or publishing the release.
+  before creating or publishing the release. The rendering request times out after five minutes;
+  this limit does not apply to builds or notarization.
 
 The service does not commit or push to `main`, merge PRs, change app preferences, install Lineup,
 or launch the app. The version planner, clean source snapshots, signing, notarization and appcast
