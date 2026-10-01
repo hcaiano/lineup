@@ -93,6 +93,9 @@ pane-grid silhouette in the menu bar. New logo work is deferred. The source and 
 live in the [app icon standard](Design/AppIcon/README.md). A future layered replacement follows
 Apple's native Icon Composer workflow.
 
+Settings uses the shared enamel artwork at 24 pt in the sidebar and 80 pt in pane headers.
+Feature refinements keep the selected material, colors and motifs while improving small-size legibility.
+
 In Settings, enabled features retain their artwork's color. Disabled features are fully grayscale
 in both the sidebar and pane header, using the same `ToolIcon` renderer. The treatment follows
 the persisted enabled flag; a tool awaiting permission retains its enabled appearance.

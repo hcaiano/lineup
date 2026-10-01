@@ -103,8 +103,8 @@ enum ToolIconLibrary {
         let image = NSImage(size: NSSize(width: 72, height: 72))
         for scale in 1...3 {
             let suffix = scale == 1 ? "" : "@\(scale)x"
-            for root in resourceRoots {
-                let url = root.appendingPathComponent("lineup_lineup.bundle/ToolIcons/FeatureIcons.xcassets/\(name).imageset/\(name)\(suffix).png")
+            for root in resourceURLs {
+                let url = root.appendingPathComponent("ToolIcons/FeatureIcons.xcassets/\(name).imageset/\(name)\(suffix).png")
                 if let data = try? Data(contentsOf: url), let rep = NSBitmapImageRep(data: data) {
                     rep.size = image.size
                     image.addRepresentation(rep)
@@ -122,20 +122,27 @@ enum ToolIconLibrary {
         return roots
     }
 
+    private static var resourceURLs: [URL] {
+        resourceRoots.flatMap { root in
+            let bundle = root.appendingPathComponent("lineup_lineup.bundle", isDirectory: true)
+            // Native Xcode builds use Contents/Resources; older SwiftPM builds use a flat bundle.
+            return [Bundle(url: bundle)?.resourceURL, bundle].compactMap { $0 }
+        }
+    }
+
     private static func bundled(_ name: String) -> NSImage? {
         // Do not use SwiftPM's generated `Bundle.module` accessor here. It traps when the
         // resource bundle is missing, which turns an optional icon into a launch crash. The
         // assembled app stores the bundle in Contents/Resources; a bare `swift run` keeps it
         // beside the executable. Search both locations and let the caller draw its fallback.
-        for root in resourceRoots {
-            let bundle = root.appendingPathComponent("lineup_lineup.bundle", isDirectory: true)
+        for root in resourceURLs {
             // `.copy("Resources/ToolIcons")` keeps ToolIcons; `.process` would flatten it.
             for relativePath in [
                 "ToolIcons/\(name).png",
                 "Resources/ToolIcons/\(name).png",
                 "\(name).png",
             ] {
-                let url = bundle.appendingPathComponent(relativePath)
+                let url = root.appendingPathComponent(relativePath)
                 if let image = NSImage(contentsOf: url) { return image }
             }
         }
