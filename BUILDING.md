@@ -161,8 +161,8 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   LegacyImport.swift        Reads 1.x zones.json + standalone Cycler's bindings.json, once
   WorldClockSettings.swift  Versioned clock section; preserves unknown place/settings fields
   TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
-  MenuBarSettings.swift     Optional menuBar tool settings and group membership
-  MenuBarPreferences.swift  Validated macOS 27 tracked-app preference edits and recovery records
+  MenuBarSettings.swift     Menu Bar settings, arrow-boundary groups and auto-hide policy
+  MenuBarPreferences.swift  Selective native visibility edits and recovery journal model
 Sources/lineup/              AppKit agent (the app shell + the seven tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
@@ -175,7 +175,7 @@ Sources/lineup/              AppKit agent (the app shell + the seven tools)
   Tools/Awake/                 IOKit idle-sleep requests, menu countdown, session settings
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
   Tools/TextCapture/           ScreenCaptureKit selection/capture, Vision OCR, clipboard, Settings
-  Tools/MenuBar/               Menu bar inventory, native reorder, visibility and recovery helper
+  Tools/MenuBar/               Menu bar inventory, arrow, native visibility and recovery
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
   main.swift                  Orchestrates the suites below
   ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / NightlyAutomationSuite.swift
@@ -185,41 +185,53 @@ Scripts/                    build-app, setup-signing, make-dmg, icon and screens
 
 ### Menu Bar runtime and recovery
 
-Menu Bar starts disabled and supports macOS 27 only. Its optional `tools.menuBar` section uses
-the existing config envelope without changing its schema. Malformed or newer tool settings
-block editing. The user's selected-file bookmark grants access only to the Control Center
-preferences file. The tool reads Accessibility menu extras without reading their menus and
-uses native Command-drag events for reorder operations initiated in Settings. The pane follows
-the observed macOS order instead of persisting a second layout. Reordering requires both item
-centers on the same connected display and menu-bar row, using global AX/Core Graphics bounds
-so displays left of or above the primary display retain their negative coordinates. Inventory scans
-run while the pane is visible, with a refresh on app launch/exit. A helper exit triggers restoration; a low-rate
-permission check runs only while items are hidden.
+Menu Bar starts disabled and supports macOS 27 only. macOS 27 draws the whole menu bar in one
+`MenuBarAgent` window, so widening a spacer or moving item windows no longer works. The tool
+changes only selected `isAllowed` flags in Control Center's `trackedApplications` preference.
+It does not use assessment-mode restrictions: those also suppress the native audio/video capture
+control and block Notification Center.
 
-Visibility changes use `CFPreferences` with the selected file's absolute preference domain.
-Writing the plist directly does not reliably notify the live menu bar. `MenuBarPreferences`
-validates the tracked-app array and changes only selected `isAllowed` fields, retaining unknown
-records and fields. The tool does not use the assessment-mode allow-list or hide system items.
-This preference format is OS-specific and must be revalidated before enabling another macOS
-major version. Other apps can edit the same preference; Lineup checks for an intervening edit
-before writing, but macOS does not expose a compare-and-swap operation for this shared key.
+`MenuBarPreferenceAccess` validates the selected-file bookmark, then resolves the private Core
+Foundation container-preference functions at runtime. It reads and writes the
+`group.com.apple.controlcenter` domain in its group container. Passing the plist's absolute path
+as a preference domain can save flags without notifying MenuBarAgent. Missing functions or an
+unrecognized preference format block writes. Only the tracked-app key changes; unknown records
+and unrelated settings remain untouched. Bundle records are keyed by bundle ID, and supported
+`adhocBinary` records by their absolute executable URL. URL records inside a selected app's bundle
+include its tray helpers, so Synergy can be hidden or kept visible without affecting other apps.
 
-Before hiding anything, Lineup writes `~/.config/lineup/menu-bar-recovery.json` atomically and
-starts its own executable with `--menu-bar-recovery`. The helper verifies its file access and
-acknowledges readiness before the parent writes. It has no app shell, updater, imported config,
-hotkeys or menu items. It restores recorded visibility when its parent exits, including SIGKILL.
-A session UUID and an advisory file lock prevent an old helper from restoring a newer session.
-Normal teardown restores first. A failed restoration keeps the journal for the next launch or
-the Settings recovery button. Revoking the file grant can prevent recovery until access returns.
-Granting access again renews the recovery record even if the main config is write-blocked. If
-both the app and helper are killed, restoration waits until Lineup next launches. The pane also
-links to macOS Menu Bar settings for manual recovery.
+The arrow is the group boundary. `MenuBarLayout` reads Accessibility menu-extra frames from an
+expanded bar and compares them with the arrow's frame in the global top-left coordinates shared
+by AX and Core Graphics. An app with an icon on each side stays visible; apps absent from the
+arrow's display keep their remembered group. System owners never join the group. AX frames
+outside the arrow's row are ignored, and reads wait 0.6 seconds after expansion for settlement.
+The last group is saved atomically in `tools.menuBar.hiddenOwners` before hiding begins.
+
+Before any native flag changes, a journal records the original allowed flags and a separate
+`--menu-bar-recovery` process acknowledges its session. That helper restores only recorded flags
+when the parent exits, including SIGKILL. Normal expansion, disabling and quitting restore the
+same transaction. Startup restores an orphaned journal even when Menu Bar is disabled or config
+writes are blocked. A failed restoration retains the journal and offers Restore Icons and Grant
+Access. Apps already disabled by the user stay disabled. Newly registered hidden-app records
+extend the same journal before their flags change; other new apps keep their native visibility.
+
+Collapse happens at start, after wake, on the arrow, and 10 seconds after expansion.
+`MenuBarAutoHide.shouldWait` postpones it while the pointer is on a menu bar or a hidden app has
+a menu or popover below it, using window owner, layer and bounds without reading titles. Wake
+restores flags and waits one second before rescanning and collapsing. Display changes restore
+flags and rescan; an expanded group keeps its auto-hide delay, and hiding waits for interaction.
+Accessibility revocation restores the current transaction. Lineup never posts input events or
+moves the pointer; users arrange icons with Command-drag.
 
 For interactive review, a **debug** build accepts `LINEUP_MENU_BAR_REVIEW_DIR=<scratch-directory>`.
-It opens the real Menu Bar pane with `review-config.json` and `review-recovery.json` in that
-directory and does not run the main shell or other tools. Use an isolated review bundle identity
-and grant its permissions explicitly. An optional `control-center-access.bookmark` in the scratch
-directory seeds that review's first config. Never commit bookmarks, journals or review recordings.
+It opens the real Menu Bar pane with `review-config.json` in that directory and does not run the
+main shell or other tools. For an existing layout, use the production bundle identity in a signed
+review bundle so macOS can reuse the arrow's saved position. Keep the review configuration separate
+and run only one copy. A fresh bundle identity creates a separate arrow slot and needs manual
+arrangement and an explicit permission grant. Never commit review recordings.
+The review refuses to start alongside the installed Lineup, because its separate config cannot
+isolate the Mac's menu bar. Quit Lineup for the review session, with the maintainer's agreement
+to pause any live-build service that would reopen it. Restore the normal app after testing.
 
 Run the whole suite with `swift run lineup-tests`; it prints a combined pass/fail count across all
 registered suites.

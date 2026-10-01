@@ -41,14 +41,23 @@ the next event follows the simulated time. No calendar, location permission or n
 
 ## Menu bar organization
 
-Menu Bar is an optional tool for macOS 27. Its settings contain two horizontal groups, Visible
-Items and Hidden Items. Users drag items to arrange them and choose which apps the arrow hides.
-The arrow expands and collapses that group in the system menu bar. Items show their app icons
-and accessible names without requiring Screen Recording.
+Menu Bar is an optional tool for macOS 27. It adds one arrow to the menu bar, and the arrow is the
+boundary: icons the user Command-drags to its left hide when it collapses, and icons to its right
+stay visible. Clicking the arrow shows the hidden icons in place, beside the arrow, and they hide
+again after 10 seconds. Auto-hide waits while the pointer is on the menu bar or a hidden app's menu
+or popover is open. The group starts collapsed at launch and after wake.
 
-Keep the interaction explicit: launch expanded, restore visibility when disabled or stopped,
-and never change system-item visibility. macOS 27 groups visibility by app, so moving one item
-between groups moves all items from that app. A failed recovery stays actionable in Settings.
+Lineup never moves the pointer or posts input events, including to arrange icons. Settings shows
+the two groups read-only, with app icons and accessible names, without requiring Screen
+Recording. macOS 27 hides whole apps, so an app with an icon on each side stays visible. Never
+hide system items. Disabling the tool, quitting and crashes restore the flags changed by Lineup;
+apps the user already hid in macOS settings stay hidden.
+
+Hiding changes only the selected apps' native visibility flags. System controls, capture
+indicators and Notification Center keep working. Executable-tracked trays such as Synergy use
+the same group as their app. A recovery journal and separate process restore flags after a crash.
+Settings has one show/hide action and one named row per app in each group. Access is a one-time
+setup step; recovery appears only when needed. Secondary options stay in More options.
 
 ## Update Tracks
 

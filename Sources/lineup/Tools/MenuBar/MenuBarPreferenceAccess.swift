@@ -3,6 +3,8 @@ import Foundation
 import CoreFoundation
 import Darwin
 
+/// Changes only the selected native visibility flags. Use the domain and its container:
+/// treating the plist path as a domain can retain bytes without notifying MenuBarAgent.
 enum MenuBarPreferenceAccess {
     static var expectedURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
@@ -29,12 +31,35 @@ enum MenuBarPreferenceAccess {
         return try body(url)
     }
 
+    private enum ContainerPreferences {
+        typealias Copy = @convention(c) (CFString, CFString, CFString, CFString, CFString) -> Unmanaged<AnyObject>?
+        typealias Set = @convention(c) (CFString, CFPropertyList, CFString, CFString, CFString, CFString) -> Void
+        typealias Synchronize = @convention(c) (CFString, CFString, CFString, CFString) -> UInt8
+        static let copy = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_CFPreferencesCopyValueWithContainer")
+            .map { unsafeBitCast($0, to: Copy.self) }
+        static let set = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_CFPreferencesSetValueWithContainer")
+            .map { unsafeBitCast($0, to: Set.self) }
+        static let synchronize = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_CFPreferencesSynchronizeWithContainer")
+            .map { unsafeBitCast($0, to: Synchronize.self) }
+        static let domain = "group.com.apple.controlcenter" as CFString
+        static let key = "trackedApplications" as CFString
+
+        static func container(for url: URL) -> CFString {
+            url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().path as CFString
+        }
+    }
+
+    static var available: Bool {
+        ContainerPreferences.copy != nil && ContainerPreferences.set != nil && ContainerPreferences.synchronize != nil
+    }
+
     private static func read(at url: URL) throws -> Data {
-        let domain = url.deletingPathExtension().path as CFString
-        guard CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost),
-              let data = CFPreferencesCopyValue("trackedApplications" as CFString, domain,
-                kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? Data else {
-            throw Failure(message: "Control Center settings could not be read. Grant access again in Menu Bar settings.")
+        guard let copy = ContainerPreferences.copy, let synchronize = ContainerPreferences.synchronize,
+              synchronize(ContainerPreferences.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost,
+                          ContainerPreferences.container(for: url)) != 0,
+              let data = copy(ContainerPreferences.key, ContainerPreferences.domain, kCFPreferencesCurrentUser,
+                              kCFPreferencesAnyHost, ContainerPreferences.container(for: url))?.takeRetainedValue() as? Data else {
+            throw Failure(message: "Menu bar settings could not be read. Grant access again in Menu Bar settings.")
         }
         return data
     }
@@ -54,10 +79,13 @@ enum MenuBarPreferenceAccess {
             guard try read(at: url) == before else {
                 throw Failure(message: "Menu bar settings changed in another app. Try again.")
             }
-            let domain = url.deletingPathExtension().path as CFString
-            CFPreferencesSetValue("trackedApplications" as CFString, try document.encoded() as CFData,
-                                  domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-            guard CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) else {
+            guard let set = ContainerPreferences.set, let synchronize = ContainerPreferences.synchronize else {
+                throw Failure(message: "This version of macOS cannot change menu bar visibility safely.")
+            }
+            let container = ContainerPreferences.container(for: url)
+            set(ContainerPreferences.key, try document.encoded() as CFData, ContainerPreferences.domain,
+                kCFPreferencesCurrentUser, kCFPreferencesAnyHost, container)
+            guard synchronize(ContainerPreferences.domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost, container) != 0 else {
                 throw Failure(message: "macOS could not save the menu bar change.")
             }
             let verified = try MenuBarPreferences(data: read(at: url))
@@ -85,7 +113,7 @@ enum MenuBarPreferenceAccess {
         try FileManager.default.createDirectory(at: journal.deletingLastPathComponent(), withIntermediateDirectories: true)
         try withLock(journal) {
             guard !FileManager.default.fileExists(atPath: journal.path) else {
-                throw Failure(message: "Restore the previous menu bar session before hiding items again.")
+                throw Failure(message: "Restore the previous menu bar session before hiding icons again.")
             }
             try JSONEncoder().encode(record).write(to: journal, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
@@ -97,6 +125,19 @@ enum MenuBarPreferenceAccess {
             let record = try JSONDecoder().decode(MenuBarRecoveryRecord.self, from: Data(contentsOf: journal))
             guard record.session == session else { throw Failure(message: "The menu bar session changed. Try again.") }
             try set(record.original.mapValues { _ in false }, bookmark: record.bookmark)
+        }
+    }
+
+    /// Extend the same recovery transaction when a selected app gains a new native record.
+    static func extend(_ original: [String: Bool], journal: URL) throws {
+        guard !original.isEmpty else { return }
+        try withLock(journal) {
+            let old = try JSONDecoder().decode(MenuBarRecoveryRecord.self, from: Data(contentsOf: journal))
+            var merged = old.original
+            for (key, value) in original where merged[key] == nil { merged[key] = value }
+            let next = MenuBarRecoveryRecord(session: old.session, bookmark: old.bookmark, original: merged)
+            try JSONEncoder().encode(next).write(to: journal, options: .atomic)
+            try set(original.mapValues { _ in false }, bookmark: old.bookmark)
         }
     }
 
@@ -151,7 +192,8 @@ private final class MenuBarRecoveryLifetime {
 }
 
 /// The same signed executable runs this before creating NSApplication. It gets
-/// no app shell, config imports, shortcuts, updater or status items.
+/// no app shell, config imports, shortcuts, updater or status items. It restores the
+/// recorded native flags when its parent exits, including after SIGKILL.
 func runMenuBarRecoveryIfRequested() -> Bool {
     let args = CommandLine.arguments
     guard args.dropFirst().first == "--menu-bar-recovery" else { return false }
