@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import plistlib
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -39,6 +40,10 @@ def feed(*items):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_command_timeout_is_reported_as_a_retryable_error(self):
+        with self.assertRaisesRegex(RuntimeError, "timed out"):
+            service.command(sys.executable, "-c", "import time; time.sleep(30)", timeout=0.05)
+
     def test_only_app_or_package_changes_release(self):
         for paths, expected in [(["README.md", "web/appcast.xml"], False),
                                 (["Scripts/nightly-service.py", "Tests/nightly_automation_test.py"], False),
@@ -147,6 +152,19 @@ class PublicationFixture:
         self.fail_after = fail_after
         self.tag_sha = None
         self.immutable = True
+        self.notes = ("## What's Changed\n"
+                      "* fix(menu-bar): preserve capture indicators and simplify settings by @hcaiano "
+                      "in https://github.com/hcaiano/lineup/pull/85\n\n"
+                      "**Full Changelog**: https://github.com/hcaiano/lineup/compare/v2.2.0...v2.2.1\n")
+        self.rendered_notes = ("<h2>What's Changed</h2>\n<ul><li>fix(menu-bar): preserve capture indicators "
+                               "and simplify settings by <a href=\"https://github.com/hcaiano\">@hcaiano</a> "
+                               "in <a href=\"https://github.com/hcaiano/lineup/pull/85\">"
+                               "https://github.com/hcaiano/lineup/pull/85</a></li></ul>\n"
+                               "<p><strong>Full Changelog</strong>: "
+                               "<a href=\"https://github.com/hcaiano/lineup/compare/v2.2.0...v2.2.1\">"
+                               "https://github.com/hcaiano/lineup/compare/v2.2.0...v2.2.1</a></p>")
+        self.render_failure = False
+        self.existing_description = False
 
     def crash(self, point):
         if self.fail_after == point:
@@ -159,14 +177,23 @@ class PublicationFixture:
         if endpoint == "user":
             return {"login": "hcaiano"}
         if endpoint.endswith("/releases/generate-notes"):
-            return {"body": "Merged feature #80"}
+            return {"body": self.notes}
         if "/releases/tags/" in endpoint:
             return self.release
         if endpoint.endswith("/releases?per_page=100"):
             return [[self.release] if self.release else []]
         raise AssertionError("unexpected API request " + endpoint)
 
-    def command(self, *args, cwd=None, env=None):
+    def command(self, *args, cwd=None, env=None, timeout=None):
+        if args[:3] == ("gh", "api", "markdown"):
+            if timeout is None or timeout <= 0:
+                raise AssertionError("renderer must have a finite execution timeout")
+            if self.render_failure:
+                raise RuntimeError("Markdown rendering unavailable")
+            if ("text=" + self.notes.strip() not in args or "mode=gfm" not in args
+                    or "context=" + service.REPOSITORY not in args):
+                raise AssertionError("renderer must receive the release Markdown without its source marker")
+            return self.rendered_notes
         if args[:3] == ("git", "ls-remote", "--tags"):
             return "" if self.tag_sha is None else self.tag_sha + "\trefs/tags/" + self.plan["tag"]
         if args[:2] == ("git", "show"):
@@ -190,8 +217,10 @@ class PublicationFixture:
             if self.release["draft"] or not self.release.get("immutable") or self.tag_sha != SHA:
                 raise RuntimeError("public release verification failed")
         elif args[0] == "bash" and str(args[1]).endswith("sparkle-appcast.sh"):
-            (self.web / "appcast.xml").write_bytes(feed(entry(), entry(
-                self.plan["bundle_version"], self.plan["version"], True, self.plan["asset_url"])))
+            nightly = entry(self.plan["bundle_version"], self.plan["version"], True, self.plan["asset_url"])
+            if self.existing_description:
+                ET.SubElement(nightly, "description").text = "Old notes"
+            (self.web / "appcast.xml").write_bytes(feed(entry(), nightly))
         elif args[:3] == ("npx", "--yes", "wrangler@4.127.1"):
             self.deploys += 1
             self.live = (Path(cwd) / "appcast.xml").read_bytes()
@@ -215,6 +244,35 @@ class PublicationFixture:
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_nightly_feed_contains_formatted_release_notes(self):
+        for existing_description in [False, True]:
+            with self.subTest(existing_description=existing_description), tempfile.TemporaryDirectory() as directory:
+                fixture = PublicationFixture(Path(directory))
+                fixture.existing_description = existing_description
+                with fixture.connected() as runner:
+                    runner.release(SHA)
+                item = service.feed_items(fixture.live)[1][fixture.plan["bundle_version"]]
+                description = item.findtext("description")
+                self.assertIn(fixture.rendered_notes, description)
+                self.assertNotIn("<pre>", description)
+                self.assertNotIn("## What's Changed", description)
+                self.assertNotIn("lineup-nightly-source", description)
+                self.assertEqual(len(item.findall("description")), 1)
+                self.assertIn("lineup-nightly-source: " + SHA, fixture.release["body"])
+
+    def test_rendering_failure_stops_before_release_mutations_and_can_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = PublicationFixture(Path(directory))
+            fixture.render_failure = True
+            with fixture.connected() as runner:
+                with self.assertRaisesRegex(RuntimeError, "Markdown rendering unavailable"):
+                    runner.release(SHA)
+                self.assertEqual((fixture.creations, fixture.uploads, fixture.deploys), (0, 0, 0))
+                self.assertEqual(json.loads((fixture.job / "job.json").read_text())["phase"], "built")
+                fixture.render_failure = False
+                runner.release(SHA)
+            self.assertEqual(json.loads((fixture.job / "job.json").read_text())["phase"], "verified")
+
     def test_dry_run_never_advances_or_releases_and_pending_ci_stops_queue(self):
         runner = object.__new__(service.Service)
         runner.config = {"cursor": "c" * 40}

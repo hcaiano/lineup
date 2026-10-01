@@ -6,7 +6,6 @@ import copy
 import datetime
 import fcntl
 import hashlib
-import html
 import json
 import os
 from pathlib import Path
@@ -28,9 +27,12 @@ ET.register_namespace("sparkle", SPARKLE[1:-1])
 ET.register_namespace("dc", "http://purl.org/dc/elements/1.1/")
 
 
-def command(*args, cwd=None, env=None):
-    result = subprocess.run([str(a) for a in args], cwd=cwd, env=env,
-                            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def command(*args, cwd=None, env=None, timeout=None):
+    try:
+        result = subprocess.run([str(a) for a in args], cwd=cwd, env=env, timeout=timeout,
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"{args[0]} timed out after {timeout} seconds") from error
     if result.returncode:
         raise RuntimeError(f"{args[0]} failed ({result.returncode}): {result.stderr.strip()}")
     return result.stdout.strip()
@@ -329,6 +331,13 @@ class Service:
             generated = api(f"repos/{REPOSITORY}/releases/generate-notes", "-f", "tag_name=" + plan["tag"],
                             "-f", "target_commitish=" + sha)
             notes.write_text(generated["body"] + "\n\n" + marker + "\n")
+        # Sparkle displays HTML. Render GitHub's Markdown before any release mutation,
+        # excluding the ownership marker that must remain in the GitHub release body.
+        rendered_notes = command("gh", "api", "markdown", "-H", "Accept: text/html",
+                                 "-f", "mode=gfm", "-f", "context=" + REPOSITORY,
+                                 "-f", "text=" + notes.read_text().split(marker)[0].strip(), timeout=300)
+        notes_html = ("<style>body { font-family: -apple-system, sans-serif; "
+                      "overflow-wrap: anywhere; }</style>\n" + rendered_notes)
         existing = self.release_for_tag(plan["tag"])
         if self.ci(sha) != "passed":
             raise RuntimeError("source CI changed before release publication")
@@ -372,7 +381,11 @@ class Service:
         command("bash", source / "Scripts/sparkle-appcast.sh", "--nightly", dmg,
                 plan["asset_url"], plan["version"], plan["bundle_version"], cwd=source)
         root, items = feed_items((source / "web/appcast.xml").read_bytes())
-        ET.SubElement(items[plan["bundle_version"]], "description").text = "<pre>" + html.escape(notes.read_text().split(marker)[0]) + "</pre>"
+        item = items[plan["bundle_version"]]
+        description = item.find("description")
+        if description is None:
+            description = ET.SubElement(item, "description")
+        description.text = notes_html
         candidate = ET.tostring(root, encoding="utf-8", xml_declaration=True)
         (job / "appcast.xml").write_bytes(candidate)
         # Stage the current site's files, not an older queued app commit's website.
