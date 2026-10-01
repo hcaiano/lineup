@@ -163,6 +163,16 @@ private func runMenuBarPreferenceTests() throws {
               "an executable owned by a more specific visible helper cannot hide with its parent app")
         check(trayDocument.originalFlags(for: ["synergy"], bundles: ["synergy": [bundle], "visible-copy": [bundle]]).isEmpty,
               "ambiguous executable ownership stays visible when one matching owner is visible")
+        let nestedURL = "file:///Applications/Synergy.app/Contents/Helpers/Visible.app/Contents/MacOS/tray"
+        let nestedKey: [String: Any] = ["adhocBinary": ["_0": ["relative": nestedURL]]]
+        let nestedData = try PropertyListSerialization.data(fromPropertyList:
+            [nestedKey, ["location": nestedKey, "isAllowed": true]], format: .binary, options: 0)
+        let nestedDocument = try MenuBarPreferences(data: nestedData)
+        check(nestedDocument.originalFlags(for: ["synergy"], bundles: ["synergy": [bundle]]).isEmpty,
+              "an unresolved nested app stays visible even when it is stopped and only tracked by executable")
+        let nestedBundle = URL(fileURLWithPath: "/Applications/Synergy.app/Contents/Helpers/Visible.app", isDirectory: true)
+        check(nestedDocument.originalFlags(for: ["helper"], bundles: ["synergy": [bundle], "helper": [nestedBundle]]) == [nestedURL: true],
+              "a selected nested app still hides once its own bundle is identified")
         try trayDocument.setAllowed([trayURL: false])
         let edited = try PropertyListSerialization.propertyList(from: trayDocument.encoded(), format: nil) as! [Any]
         check((edited[original.count + 1] as! [String: Any])["isAllowed"] as? Bool == false

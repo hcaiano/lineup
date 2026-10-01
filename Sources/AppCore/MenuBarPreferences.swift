@@ -59,8 +59,12 @@ public struct MenuBarPreferences {
             guard enabled else { return false }
             if hidden.contains(key) { return true }
             guard let url = URL(string: key), url.isFileURL else { return false }
-            let matching = roots.filter { url.standardizedFileURL.path.hasPrefix($0.path + "/") }
+            let path = url.standardizedFileURL.path
+            let matching = roots.filter { path.hasPrefix($0.path + "/") }
             guard let longest = matching.map({ $0.path.count }).max() else { return false }
+            // A stopped, unresolved nested app must not inherit its parent's hidden group.
+            let directories = path.dropFirst(longest + 1).split(separator: "/").dropLast()
+            guard !directories.contains(where: { $0.lowercased().hasSuffix(".app") }) else { return false }
             // A nested helper belongs to its own app. Ambiguous ownership fails open.
             return matching.filter { $0.path.count == longest }.allSatisfy { hidden.contains($0.owner) }
         }

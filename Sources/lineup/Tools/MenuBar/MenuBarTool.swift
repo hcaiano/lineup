@@ -44,6 +44,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     private var appInfo: [String: (name: String, icon: NSImage)] = [:]
     private let journal: URL
     private enum CollapseRequest { case automatic, manual, idle }
+    private var pendingCollapse: CollapseRequest?
     private enum LayoutChange { case wake, display }
 
     init(recoveryURL: URL = Product.configURL.deletingLastPathComponent().appendingPathComponent("menu-bar-recovery.json")) {
@@ -223,13 +224,15 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         let quiet = request != .manual
         cancelRehide()
         guard isRunning, !collapsed, !busy, !hasPendingRecovery else { return }
+        pendingCollapse = nil
         guard settings.preferencesBookmark != nil else {
-            message = "Grant Menu Bar access to show and hide icons."
+            message = "Allow Menu Bar access to show and hide icons."
             if !quiet { chooseAccess() }
             return
         }
         let remaining = layoutReadyAfter - ProcessInfo.processInfo.systemUptime
         if remaining > 0 {
+            pendingCollapse = request
             settleTimer?.invalidate()
             settleTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated { self?.settleTimer = nil; self?.collapse(request) }
@@ -250,10 +253,12 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         }
         message = nil
         busy = true
+        pendingCollapse = request
         generation += 1
         let revision = generation
         MenuBarInventory.read { [weak self] observed in
             guard let self, self.generation == revision, self.isRunning else { return }
+            defer { if !self.busy { self.pendingCollapse = nil } }
             self.accept(observed)
             guard let hidden = self.arranged(observed) else {
                 self.busy = false
@@ -282,7 +287,8 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         let quiet = request != .manual
         guard let bookmark = settings.preferencesBookmark else {
             busy = false
-            message = "Grant Menu Bar access to show and hide icons."
+            pendingCollapse = nil
+            message = "Allow Menu Bar access to show and hide icons."
             updateToggle()
             return
         }
@@ -292,7 +298,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
             let ready = journal.appendingPathExtension(session.uuidString + ".ready")
             var helper: Process?
             defer {
-                if generation == revision { busy = false; work = nil; updateToggle() }
+                if generation == revision { busy = false; pendingCollapse = nil; work = nil; updateToggle() }
                 try? FileManager.default.removeItem(at: ready)
             }
             do {
@@ -391,6 +397,7 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
         generation += 1
         work?.cancel(); work = nil
         busy = false
+        pendingCollapse = nil
         do {
             try MenuBarPreferenceAccess.restore(journal: journal)
             collapsed = false
@@ -426,10 +433,12 @@ final class MenuBarTool: NSObject, Tool, ObservableObject {
     private func layoutChanged(_ change: LayoutChange) {
         guard isRunning else { return }
         let wasCollapsed = collapsed
+        let pending = pendingCollapse
         expand(autoHide: false)
         cancelRehide()
         layoutReadyAfter = ProcessInfo.processInfo.systemUptime + 1
         if change == .wake { collapse(.automatic) }
+        else if let pending { collapse(pending) }
         else if wasCollapsed { collapse(.idle) }
         else { scheduleRehide(after: MenuBarAutoHide.delay) }
     }
