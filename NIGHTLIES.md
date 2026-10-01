@@ -15,6 +15,11 @@ Stable releases remain manual. No GitHub-hosted or self-hosted Actions runner ge
   are skipped. Initialization starts at current `main`; it never publishes the historical backlog.
 - Only users who selected Nightly receive these updates. Stable keeps its current behavior.
   Publication makes the update available; it does not force an immediate installation.
+- Generated GitHub release notes are rendered as HTML through GitHub's Markdown API before
+  publication and inlined in the feed. The update window shows headings, lists and clickable
+  links, with long URLs wrapping to its width. The internal source marker stays in the GitHub
+  release body and is excluded from the update window. If rendering fails, the job retries
+  before creating or publishing the release.
 
 The service does not commit or push to `main`, merge PRs, change app preferences, install Lineup,
 or launch the app. The version planner, clean source snapshots, signing, notarization and appcast
@@ -111,6 +116,7 @@ in `web/downloads/`. A missing download blocks deployment rather than removing i
 `swift run lineup-tests` includes the Python standard-library publication tests. They use isolated
 temporary files and simulated GitHub/Cloudflare responses: exact-commit CI selection, publication
 filtering, retry after external mutations, tag/artifact ownership, immutable-release enforcement,
-exclusive locking, feed preservation, stale Nightlies and missing hosted assets. These tests do
-not contact GitHub, access Keychain, notarize, deploy, or launch Lineup. A real first Nightly still
+exclusive locking, feed preservation, formatted release notes and rendering failures, stale
+Nightlies and missing hosted assets. These tests do not contact GitHub, access Keychain, notarize,
+deploy, or launch Lineup. A real first Nightly still
 needs supervised end-to-end verification after activation is authorized.
