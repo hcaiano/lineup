@@ -71,7 +71,7 @@ private struct HiddenSidebarToggle: ViewModifier {
 
 /// One tool in the sidebar: its app icon and its name.
 ///
-/// Feature icons use the same enamel family as each tool's header. General and About keep
+/// Feature artwork uses the same enamel family as each tool's header. General and About keep
 /// plain symbols because they describe the Settings window rather than individual tools.
 ///
 /// A switched-off tool uses the shared grayscale treatment. Its label remains readable and
@@ -87,7 +87,7 @@ struct ToolSidebarRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         } icon: {
-            ToolIcon(id: row.id, size: 24, isEnabled: row.isEnabled)
+            ToolIcon(id: row.id, size: 20, isEnabled: row.isEnabled)
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())

@@ -3,7 +3,6 @@ import AppCore
 import ApplicationServices
 import os
 import Sparkle
-import SwiftUI
 import ZonesCore
 
 /// The one `NSApplicationDelegate`.
@@ -40,8 +39,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
-        // Isolated UI preview: `LINEUP_RENDER_PREVIEW=<dir> swift run lineup` writes PNGs of the
-        // onboarding, About and Settings from real views, then exits without starting tools.
+        // Offscreen UI preview: `LINEUP_RENDER_PREVIEW=<dir> swift run lineup` writes PNGs of the
+        // Welcome + About content from the real view code, then exits. Debug-only; never ships.
         if let dir = ProcessInfo.processInfo.environment["LINEUP_RENDER_PREVIEW"] {
             Self.renderPreviews(to: dir)
             NSApp.terminate(nil)
@@ -441,28 +440,16 @@ final class AppShell: NSObject, NSApplicationDelegate {
     }
 
     #if DEBUG
-    /// Render real views for visual QA without starting tools or loading the user's config.
+    /// Render the onboarding + About content views to PNGs for offscreen visual QA. Debug-only.
     private static func renderPreviews(to dir: String) {
         func write(_ view: NSView, _ name: String) {
             let win = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
-            win.title = "Lineup Settings Preview"
-            win.appearance = view.appearance
             win.contentView = view
-            win.orderBack(nil)
-            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
             view.layoutSubtreeIfNeeded()
             view.display()
-            let capture = Process()
-            capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            capture.arguments = ["-x", "-o", "-l", String(win.windowNumber), "\(dir)/\(name)"]
-            defer { win.orderOut(nil) }
-            do {
-                try capture.run()
-                capture.waitUntilExit()
-                if capture.terminationStatus != 0 {
-                    fputs("Could not capture \(name). Check Screen Recording access for the terminal.\n", stderr)
-                }
-            } catch { fputs("Could not capture \(name): \(error.localizedDescription)\n", stderr) }
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(dir)/\(name)"))
         }
         func sized(_ view: NSView, _ size: NSSize) -> NSView {
             view.frame = NSRect(origin: .zero, size: size)
@@ -472,43 +459,6 @@ final class AppShell: NSObject, NSApplicationDelegate {
         write(WhatsNewWindowController.makeEmbeddedContent(), "preview-whatsnew.png")
         write(sized(AboutWindowController.makeEmbeddedContent(size: AboutWindowController.naturalSize),
                     AboutWindowController.naturalSize), "preview-about.png")
-
-        let root = URL(fileURLWithPath: dir, isDirectory: true)
-            .appendingPathComponent("settings-\(UUID().uuidString)", isDirectory: true)
-        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
-            let name = appearance == .aqua ? "light" : "dark"
-            for enabled in [true, false] {
-                var config = LineupAppConfig()
-                for id in ToolID.all { config.setEnabled(enabled, for: id) }
-                let store = LineupAppConfigStore(url: root.appendingPathComponent("config.json"), config: config)
-                let registry = ToolRegistry(store: store)
-                registry.register(ZonesTool())
-                registry.register(CyclerTool())
-                registry.register(HyperkeyTool())
-                registry.register(WorldClockTool())
-                registry.register(AwakeTool())
-                registry.register(TextCaptureTool())
-                // Menu Bar's attach restores a crash journal even while disabled. Isolate it too.
-                registry.register(MenuBarTool(recoveryURL: root.appendingPathComponent("recovery.json")))
-                let model = SettingsStore(registry: registry, permissions: .shared,
-                    showMenuBarIcon: true, onMenuBarIconChange: { $0 })
-                let state = enabled ? "on" : "off"
-                for id in ToolID.all {
-                    model.selection = .tool(id)
-                    let view = NSHostingView(rootView: SettingsRootView(store: model)
-                        .environment(\.colorScheme, appearance == .aqua ? .light : .dark))
-                    view.appearance = NSAppearance(named: appearance)
-                    write(sized(view, NSSize(width: 820, height: 560)),
-                          "preview-settings-\(id.rawValue)-\(name)-\(state).png")
-                }
-                model.selection = .tool(.menuBar)
-                let view = NSHostingView(rootView: SettingsRootView(store: model)
-                    .environment(\.colorScheme, appearance == .aqua ? .light : .dark))
-                view.appearance = NSAppearance(named: appearance)
-                write(sized(view, NSSize(width: 760, height: 520)),
-                      "preview-settings-minimum-\(name)-\(state).png")
-            }
-        }
     }
     #endif
 }

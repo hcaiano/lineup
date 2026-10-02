@@ -64,9 +64,9 @@ struct ToolPane<Content: View>: View {
             // It sits on the 540pt CONTENT gutter, not on the pane edge. Pinned to the edge it
             // overhung the column every section below it lines up on by 55pt (measured), which is
             // what made it read as floating rather than as the header's own control.
-            ToolIcon(id: id, size: 80, isEnabled: isOn)
+            ToolIcon(id: id, size: 72, isEnabled: isOn)
                 .padding(.bottom, 2)
-                .frame(maxWidth: SettingsMetrics.contentWidth)
+                .frame(width: SettingsMetrics.contentWidth)
                 .overlay(alignment: .trailing) {
                     Toggle("", isOn: $isOn)
                         .labelsHidden()

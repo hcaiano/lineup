@@ -119,15 +119,6 @@ The same stable-signature rule applies to releases. Pass
 `REQUIRE_STABLE_SIGNATURE=1 ./Scripts/build-app.sh dist` to make a release build fail rather than
 ship an ad-hoc signature by accident.
 
-## Preview the interface
-
-For isolated visual review, `LINEUP_RENDER_PREVIEW=/tmp/lineup-preview swift run lineup` renders
-onboarding, About and every Settings pane in light/dark appearance with tools enabled and disabled.
-Create the output directory first. This debug-only mode uses temporary config and recovery paths,
-never starts tools and exits after capture. It briefly orders preview windows behind existing
-windows and uses `screencapture`, so the terminal needs Screen Recording access. It does not
-change the user's config, hotkeys or menu bar.
-
 ## Package the installer
 
 For feature artwork and the application icon, use the repository's
