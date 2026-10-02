@@ -171,7 +171,8 @@ Manual sliders need no extra permission. Saved preferences never reapply brightn
 at launch. Disabling the tool or quitting stops key interception and cancels pending commands.
 Sleep and connection changes cancel work; wake and reconnection trigger fresh detection.
 Black screens are not saved and clear on sleep, connection or preference changes, loss of
-Accessibility permission, shortcut recording, Secure Input, disabling or quitting. Lineup refuses
+Accessibility permission, shortcut recording, Secure Input, a failed brightness reading, disabling
+or quitting. Lineup refuses
 to cover a display if it cannot register the emergency Escape shortcut.
 
 Compatibility depends on the monitor and connection. Built-in and supported Apple displays use

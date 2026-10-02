@@ -711,9 +711,9 @@ only for system media events, separate from Hyperkey's existing keyboard/flags t
 shortcuts. Settings shortcut recording suspends fresh presses. A claimed repeat cannot move to
 another display or fall through halfway through the press. Optional key registration uses the shared
 Accessibility permission center; sliders do not need input permission. Normal adjustments use
-1/16 of the control's range; Option-Shift uses 1/64. Other modifier chords pass through. There is
-no Keyboard Remap tool in this checkout. Its future media-key clients must use this same
-ownership service.
+1/16 of the control's range; Option-Shift uses 1/64. Other modifier chords pass through. Keyboard
+Remap changes HID key maps and handles no media events; any future media-key client must use this
+same ownership service.
 
 Brightness keys default to the display under the pointer. Optional synchronization uses that
 destination as the reference and captures a group of compatible, uniquely identified displays

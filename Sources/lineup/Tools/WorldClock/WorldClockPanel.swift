@@ -9,6 +9,7 @@ struct WorldClockPanel: View {
     var close: () -> Void
     @State private var adding = false
     @State private var editing = false
+    @State private var editSession = PlaceEditSession()
     @State private var query = ""
     @FocusState private var searchFocused: Bool
 
@@ -38,7 +39,14 @@ struct WorldClockPanel: View {
         .frame(width: 352)
         .frame(maxHeight: maximumHeight)
         .onExitCommand {
-            if adding { adding = false } else if editing { editing = false } else { close() }
+            if adding {
+                adding = false
+            } else if editing {
+                editSession.cancelled = true
+                editing = false
+            } else {
+                close()
+            }
         }
     }
 
@@ -57,7 +65,10 @@ struct WorldClockPanel: View {
             PanelHeader(title: adding ? "Add a Place" : "World Clock") {
                 if !adding {
                     if !model.settings.places.isEmpty {
-                        Button(editing ? "Done" : "Edit") { editing.toggle() }
+                        Button(editing ? "Done" : "Edit") {
+                            editSession.cancelled = false
+                            editing.toggle()
+                        }
                             .buttonStyle(.borderless)
                             .disabled(!model.canEdit)
                     }
@@ -97,7 +108,8 @@ struct WorldClockPanel: View {
                             clockRow(id: "local", name: "Local", zone: .autoupdatingCurrent, place: nil)
                         case .place(let place):
                             if editing {
-                                ClockPlaceEditor(place: place, model: model, canPin: canPin)
+                                ClockPlaceEditor(place: place, model: model, canPin: canPin,
+                                                 session: editSession)
                                     .frame(height: Self.editingRowHeight)
                             } else {
                                 clockRow(id: place.id, name: place.name, zone: place.timeZone, place: place)
@@ -327,10 +339,17 @@ struct WorldClockPanel: View {
     }
 }
 
+/// Escape ends editing without saving typed names; Done keeps them. A reference, because the
+/// editors read it as they disappear, after the render that set it.
+private final class PlaceEditSession {
+    var cancelled = false
+}
+
 private struct ClockPlaceEditor: View {
     let place: ClockPlace
     @ObservedObject var model: WorldClockModel
     let canPin: Bool
+    let session: PlaceEditSession
     @State private var draft = ""
 
     var body: some View {
@@ -371,8 +390,8 @@ private struct ClockPlaceEditor: View {
         .disabled(!model.canEdit)
         .onAppear { draft = place.name }
         .onChange(of: place.name) { draft = $0 }
-        // Leaving edit mode keeps a typed name, as other macOS lists do.
-        .onDisappear(perform: commit)
+        // Done keeps a typed name, as other macOS lists do; Escape discards it.
+        .onDisappear { if !session.cancelled { commit() } }
     }
 
     private func commit() {

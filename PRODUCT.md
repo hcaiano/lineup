@@ -112,7 +112,8 @@ the shared permission and media-key services. Denial or revocation leaves manual
 Saved data contains routing, sync, calibration and black-screen preferences, never current brightness or
 volume levels. Startup and detection only read current levels. Sleep, display changes, disabling
 and quitting cancel pending writes and clear black covers. Preference changes, lost input
-permission, shortcut recording and Secure Input also clear them. A cover is refused if its
+permission, shortcut recording, Secure Input and a failed brightness reading also clear them, so a
+display Lineup can no longer read is never left hidden. A cover is refused if its
 emergency Escape shortcut cannot be registered. Wake and reconnection detect capabilities again.
 The optional black cover does not change gamma, display power or arrangement. Gradual software
 dimming, resolution changes, HDR and virtual-display controls are outside this tool's current scope.

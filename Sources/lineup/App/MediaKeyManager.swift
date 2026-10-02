@@ -218,11 +218,13 @@ final class MediaKeyManager {
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            claimedPresses.removeAll()
-            pressState.releaseAll()
             if AXIsProcessTrusted(), !isSleeping, !registrations.isEmpty, let tap {
+                // Keep claimed presses: a key held across the timeout stays with its display
+                // instead of falling through to macOS. The next fresh press clears a missed release.
                 CGEvent.tapEnable(tap: tap, enable: true)
             } else {
+                claimedPresses.removeAll()
+                pressState.releaseAll()
                 reconcile()
             }
             return Unmanaged.passUnretained(event)
