@@ -47,27 +47,39 @@ public struct ScrollPhase: Equatable, Sendable {
     var endsSequence: Bool { scroll == Self.cancelled || momentum == Self.momentumEnd }
 }
 
+/// Where a scroll event came from.
+public enum ScrollSource: Equatable, Sendable {
+    /// Posted by an app, with no HID event attached.
+    case software
+    /// A HID event whose sending service cannot be found.
+    case unresolved
+    /// A HID event from a known service; `nil` when it is neither a mouse nor a trackpad.
+    case device(ScrollDevice?)
+}
+
 /// Decides which axes of each scroll event to reverse. Owned by the event-tap thread.
 ///
 /// Each event is classified by the HID service that sent it. A gesture and its momentum keep the
-/// device that began the gesture, so inertia cannot change direction when one of its events lacks
-/// a recognizable sender. Any other unidentified event is left unchanged.
+/// device that began the gesture, so inertia cannot change direction when one of its HID events
+/// has an unresolved sender. Software events never join a gesture and are always left unchanged,
+/// as is every other unidentified event.
 public struct ScrollFilter: Sendable {
     private var gestureDevice: ScrollDevice?
 
     public init() {}
 
-    public mutating func axes(sender: ScrollDevice?, phase: ScrollPhase,
+    public mutating func axes(source: ScrollSource, phase: ScrollPhase,
                               reversal: ScrollReversal) -> ScrollAxes {
         let device: ScrollDevice?
-        if phase.startsGesture {
-            gestureDevice = sender
+        switch source {
+        case .software:
+            return []
+        case .device(let sender):
+            if phase.startsGesture || (phase.isPhased && sender != nil) { gestureDevice = sender }
             device = sender
-        } else if phase.isPhased {
-            device = sender ?? gestureDevice
-            if sender != nil { gestureDevice = sender }
-        } else {
-            device = sender
+        case .unresolved:
+            if phase.startsGesture { gestureDevice = nil }
+            device = phase.isPhased ? gestureDevice : nil
         }
         if phase.endsSequence { gestureDevice = nil }
         return device.map(reversal.axes(for:)) ?? []

@@ -44,31 +44,38 @@ func runScrollTests() throws {
     let both = ScrollReversal(mouse: [.vertical, .horizontal], trackpad: [.vertical])
     let began = ScrollPhase(scroll: 1), changed = ScrollPhase(scroll: 2), ended = ScrollPhase(scroll: 4)
     let momentum = ScrollPhase(momentum: 2), momentumEnd = ScrollPhase(momentum: 3)
+    let mouse = ScrollSource.device(.mouse), trackpad = ScrollSource.device(.trackpad)
     var filter = ScrollFilter()
-    check(filter.axes(sender: nil, phase: ScrollPhase(), reversal: both).isEmpty,
+    check(filter.axes(source: .unresolved, phase: ScrollPhase(), reversal: both).isEmpty
+            && filter.axes(source: .device(nil), phase: ScrollPhase(), reversal: both).isEmpty,
           "an unidentified wheel event keeps the system direction")
-    check(filter.axes(sender: .mouse, phase: ScrollPhase(), reversal: both) == [.vertical, .horizontal]
-            && filter.axes(sender: .trackpad, phase: began, reversal: both) == [.vertical],
+    check(filter.axes(source: mouse, phase: ScrollPhase(), reversal: both) == [.vertical, .horizontal]
+            && filter.axes(source: trackpad, phase: began, reversal: both) == [.vertical],
           "mouse and trackpad events use their own settings")
-    check(filter.axes(sender: .mouse, phase: ScrollPhase(), reversal: both) == [.vertical, .horizontal]
-            && filter.axes(sender: nil, phase: changed, reversal: both) == [.vertical],
+    check(filter.axes(source: mouse, phase: ScrollPhase(), reversal: both) == [.vertical, .horizontal]
+            && filter.axes(source: .unresolved, phase: changed, reversal: both) == [.vertical],
           "a mouse wheel between trackpad events does not change the trackpad gesture")
-    check(filter.axes(sender: .trackpad, phase: ended, reversal: both) == [.vertical]
-            && filter.axes(sender: nil, phase: momentum, reversal: both) == [.vertical]
-            && filter.axes(sender: nil, phase: momentumEnd, reversal: both) == [.vertical],
-          "inertia without a recognizable sender keeps the gesture's direction")
-    check(filter.axes(sender: nil, phase: momentum, reversal: both).isEmpty,
+    check(filter.axes(source: .software, phase: changed, reversal: both).isEmpty
+            && filter.axes(source: .software, phase: momentum, reversal: both).isEmpty
+            && filter.axes(source: .device(nil), phase: changed, reversal: both).isEmpty
+            && filter.axes(source: .unresolved, phase: changed, reversal: both) == [.vertical],
+          "app-posted and other-device events during a gesture are unchanged and leave the gesture intact")
+    check(filter.axes(source: trackpad, phase: ended, reversal: both) == [.vertical]
+            && filter.axes(source: .unresolved, phase: momentum, reversal: both) == [.vertical]
+            && filter.axes(source: .unresolved, phase: momentumEnd, reversal: both) == [.vertical],
+          "inertia with an unresolved sender keeps the gesture's direction")
+    check(filter.axes(source: .unresolved, phase: momentum, reversal: both).isEmpty,
           "the gesture's device is forgotten when its inertia ends")
-    _ = filter.axes(sender: .trackpad, phase: began, reversal: both)
-    check(filter.axes(sender: nil, phase: began, reversal: both).isEmpty
-            && filter.axes(sender: nil, phase: changed, reversal: both).isEmpty,
+    _ = filter.axes(source: trackpad, phase: began, reversal: both)
+    check(filter.axes(source: .unresolved, phase: began, reversal: both).isEmpty
+            && filter.axes(source: .unresolved, phase: changed, reversal: both).isEmpty,
           "a gesture that begins without a recognizable sender is left unchanged")
-    _ = filter.axes(sender: .trackpad, phase: began, reversal: both)
-    check(filter.axes(sender: nil, phase: changed, reversal: ScrollReversal()).isEmpty
-            && filter.axes(sender: nil, phase: changed, reversal: both) == [.vertical],
+    _ = filter.axes(source: trackpad, phase: began, reversal: both)
+    check(filter.axes(source: .unresolved, phase: changed, reversal: ScrollReversal()).isEmpty
+            && filter.axes(source: .unresolved, phase: changed, reversal: both) == [.vertical],
           "a settings change applies to the next event")
-    check(filter.axes(sender: nil, phase: ScrollPhase(scroll: 8), reversal: both) == [.vertical]
-            && filter.axes(sender: nil, phase: momentum, reversal: both).isEmpty,
+    check(filter.axes(source: .unresolved, phase: ScrollPhase(scroll: 8), reversal: both) == [.vertical]
+            && filter.axes(source: .unresolved, phase: momentum, reversal: both).isEmpty,
           "a cancelled gesture also ends the remembered device")
 
     // Reversal changes only the sign of the selected axis.

@@ -121,7 +121,7 @@ private final class TapSession {
         let hid = HIDEvent(event)
         let phase = ScrollPhase(scroll: event.getIntegerValueField(.scrollWheelEventScrollPhase),
                                 momentum: event.getIntegerValueField(.scrollWheelEventMomentumPhase))
-        let axes = filter.axes(sender: hid.flatMap { device(for: $0.senderID) },
+        let axes = filter.axes(source: hid.map { source(for: $0.senderID) } ?? .software,
                                phase: phase, reversal: reversal)
         guard !axes.isEmpty else { return }
         let deltas = ScrollDeltas(
@@ -151,13 +151,13 @@ private final class TapSession {
 
     /// Registry IDs are never reused while the Mac is running, so a cached answer stays valid
     /// across sleep and reconnection. A service that cannot be found yet is retried next event.
-    private func device(for senderID: UInt64) -> ScrollDevice? {
-        guard senderID != 0 else { return nil }
-        if let known = devices[senderID] { return known }
-        guard let descriptor = Self.descriptor(registryID: senderID) else { return nil }
+    private func source(for senderID: UInt64) -> ScrollSource {
+        guard senderID != 0 else { return .unresolved }
+        if let known = devices[senderID] { return .device(known) }
+        guard let descriptor = Self.descriptor(registryID: senderID) else { return .unresolved }
         if devices.count >= 64 { devices.removeAll() }
         devices.updateValue(descriptor.device, forKey: senderID) // also caches "not a mouse or trackpad"
-        return descriptor.device
+        return .device(descriptor.device)
     }
 
     private static func descriptor(registryID: UInt64) -> ScrollDeviceDescriptor? {

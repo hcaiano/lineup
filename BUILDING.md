@@ -479,9 +479,10 @@ produced the event. `IORegistryEntryIDMatching` finds the service; its driver cl
 `DeviceUsagePairs` and Apple vendor/product IDs decide mouse or trackpad in `ScrollDeviceDescriptor`.
 Magic Mouse is checked before the touchpad usage it can report; built-in trackpads also report a
 mouse usage. Answers are cached by registry ID, which macOS does not reuse while running, so the
-cache needs no invalidation after sleep or reconnection. Events without a HID sender, such as those
-posted by other apps, are never reversed. A phased gesture keeps the device that began it through
-its momentum, so inertia cannot flip direction if one event lacks a recognizable sender.
+cache needs no invalidation after sleep or reconnection. Events without HID data, such as those
+posted by other apps, are never reversed and never join a gesture. A phased gesture keeps the
+device that began it through its momentum, so inertia cannot flip direction if one of its HID
+events has an unresolved sender.
 
 Reversal negates the line, fixed-point and point deltas and the HID event's scroll values, which
 WebKit reads. The line delta is written first because Core Graphics recomputes the other two from
