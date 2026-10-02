@@ -9,6 +9,7 @@ func runKeyboardRemapTests() throws {
     try runKeyboardJournalTests()
     try runKeyboardTransactionTests()
     runKeyboardMaintenanceTests()
+    runKeyboardRefreshQueueTests()
     runKeyboardRuleSelectionTests()
     try runLegacyClaimTransferTests()
 }
@@ -61,9 +62,55 @@ private func runKeyboardRuleSelectionTests() {
           "ambiguous selectors still block only the affected devices and preserve independent keyboard rules")
 }
 
+private func runKeyboardRefreshQueueTests() {
+    var queue = KeyboardMappingRefreshQueue()
+    let first = queue.request()!
+    let repeated = (0..<5).map { _ in queue.request() }
+    let followUp = queue.complete(first, started: true)
+    check(repeated.allSatisfy { $0 == nil } && followUp != nil,
+          "refresh requests during an in-flight snapshot coalesce into one follow-up snapshot")
+    if let followUp {
+        check(queue.complete(followUp, started: true) == nil && queue.request() != nil,
+              "the follow-up finishes without repeating indefinitely and later manual refresh remains available")
+    }
+
+    var stopped = KeyboardMappingRefreshQueue()
+    let stoppedRequest = stopped.request()!
+    _ = stopped.request()
+    stopped.stop()
+    check(stopped.complete(stoppedRequest, started: false) == nil,
+          "shutdown discards a queued refresh instead of starting work from a late completion")
+    let restarted = stopped.request()!
+    _ = stopped.request()
+    let stale = stopped.complete(stoppedRequest, started: true)
+    check(stale == nil && stopped.complete(restarted, started: true) != nil,
+          "a completion from before shutdown cannot consume a newer lifetime's queued refresh")
+}
+
 private func runLegacyClaimTransferTests() throws {
     enum ProbeFailure: Error { case unreadable }
     let transfer = KeyboardLegacyClaimTransfer()
+    var inventoryJournal = KeyboardMappingJournal(bootSession: "same-boot")
+    let originalJournal = inventoryJournal
+    var inventoryReads = 0
+    var inventoryRecords = 0
+    let absentAcknowledged = try transfer.transfer(requested: true, mapping: capsToF18,
+        registryIDs: [], journal: inventoryJournal,
+        read: { _ in inventoryReads += 1; return [capsToF18, externalMapping] },
+        record: { inventoryJournal = $0; inventoryRecords += 1 })
+    check(!absentAcknowledged && inventoryReads == 0 && inventoryRecords == 0
+            && inventoryJournal == originalJournal,
+          "an empty keyboard inventory retains the explicit legacy claim without reading, recording or acknowledging it")
+    let appearedAcknowledged = try transfer.transfer(requested: true, mapping: capsToF18,
+        registryIDs: [5], journal: inventoryJournal,
+        read: { _ in inventoryReads += 1; return [capsToF18, externalMapping] },
+        record: { inventoryJournal = $0; inventoryRecords += 1 })
+    let appearedCleanup = try KeyboardMappingPlanner.plan(current: [capsToF18, externalMapping],
+        owned: inventoryJournal.mappings(for: 5), hyperkey: nil, remappings: [])
+    check(appearedAcknowledged && inventoryReads == 1 && inventoryRecords == 1
+            && appearedCleanup.table == [externalMapping] && appearedCleanup.owned.isEmpty,
+          "a keyboard appearing after an empty inventory supplies the evidence needed to journal and restore the pending legacy claim")
+
     var journal = KeyboardMappingJournal(bootSession: "same-boot")
     var records = 0
     _ = try transfer.transfer(requested: true, mapping: capsToF18, registryIDs: [1],

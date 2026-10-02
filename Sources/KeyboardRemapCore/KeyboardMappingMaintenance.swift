@@ -12,6 +12,53 @@ public enum KeyboardMappingMaintenance {
     }
 }
 
+/// Coalesces inventory demand while a snapshot is in flight. Request identifiers keep a
+/// completed snapshot from an earlier service lifetime from consuming a newer request.
+public struct KeyboardMappingRefreshQueue {
+    private enum State {
+        case idle
+        case running(UInt64)
+        case queued(UInt64)
+    }
+    private var state = State.idle
+    private var nextID: UInt64 = 0
+
+    public init() {}
+
+    /// Returns an identifier only when the caller should start a new snapshot.
+    public mutating func request() -> UInt64? {
+        switch state {
+        case .idle:
+            nextID += 1
+            state = .running(nextID)
+            return nextID
+        case .running(let current):
+            state = .queued(current)
+            return nil
+        case .queued:
+            return nil
+        }
+    }
+
+    /// Returns the identifier of a coalesced follow-up, if one is still required.
+    public mutating func complete(_ requestID: UInt64, started: Bool) -> UInt64? {
+        switch state {
+        case .running(let current):
+            guard current == requestID else { return nil }
+            state = .idle
+            return nil
+        case .queued(let current):
+            guard current == requestID else { return nil }
+            state = .idle
+            return started ? request() : nil
+        case .idle:
+            return nil
+        }
+    }
+
+    public mutating func stop() { state = .idle }
+}
+
 /// Resolves saved hardware selectors without treating an absent device as a conflicting map.
 public struct KeyboardRuleSelection: Sendable {
     public private(set) var mappings: [UInt64: [KeyMapping]] = [:]
@@ -42,7 +89,7 @@ public struct KeyboardLegacyClaimTransfer {
                          registryIDs: [UInt64], journal: KeyboardMappingJournal,
                          read: (UInt64) throws -> [KeyMapping],
                          record: (KeyboardMappingJournal) throws -> Void) throws -> Bool {
-        guard requested else { return false }
+        guard requested, !registryIDs.isEmpty else { return false }
         var migrated = journal
         for id in registryIDs {
             if try read(id).contains(mapping) {

@@ -36,7 +36,7 @@ final class KeyboardMappingService {
     private var pollTimer: Timer?
     private var started = false
     private var generation = 0
-    private var refreshPending = false
+    private var refreshQueue = KeyboardMappingRefreshQueue()
     private var reconciliationPending = false
 
     func observe(_ callback: @escaping () -> Void) -> UUID {
@@ -81,9 +81,17 @@ final class KeyboardMappingService {
 
     func refresh() {
         guard started else { start(); return }
-        guard !refreshPending else { return }
-        refreshPending = true
-        enqueue { [weak self] _ in self?.refreshPending = false }
+        guard let requestID = refreshQueue.request() else { return }
+        enqueueRefresh(requestID)
+    }
+
+    private func enqueueRefresh(_ requestID: UInt64) {
+        enqueue { [weak self] _ in
+            guard let self else { return }
+            if let next = self.refreshQueue.complete(requestID, started: self.started) {
+                self.enqueueRefresh(next)
+            }
+        }
     }
 
     func retry() { refresh() }
@@ -96,6 +104,7 @@ final class KeyboardMappingService {
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         wakeObserver = nil
         started = false
+        refreshQueue.stop()
         remapEnabled = false
         hyperkeyRequested = false
         hyperkeyReady = false
@@ -394,9 +403,10 @@ private final class KeyboardMappingBackend: @unchecked Sendable {
             if request.hyperkey { result.hyperkeyStatus = message }
             log.error("keyboard mapping recovery failed: \(message, privacy: .public)")
         }
-        result.capsLockRecoveryPending = !request.hyperkey
-            && !request.rules.flatMap(\.mappings).contains(Self.capsLockPair)
+        let pendingLegacyClaim = request.legacyClaim && !result.legacyTransferred
+        let pendingOwnedCapsLock = !request.rules.flatMap(\.mappings).contains(Self.capsLockPair)
             && (journal?.entries.contains { $0.mappings.contains(Self.capsLockPair) } ?? false)
+        result.capsLockRecoveryPending = !request.hyperkey && (pendingLegacyClaim || pendingOwnedCapsLock)
         return result
     }
 
