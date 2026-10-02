@@ -138,7 +138,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting seven independent tools, on top of six pure ("core") modules
+Lineup is one app shell hosting eight independent tools, on top of seven pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -158,6 +158,7 @@ Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
 Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
 Sources/TextCaptureCore/    Display-local capture geometry, reading order, and cancellation gate
+Sources/ScrollCore/         Scroll device classification, gesture continuity and per-axis reversal
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
   AwakeSession.swift        Timed power-request ownership and failure cleanup
   AwakeSettings.swift       Keep Awake preferences, with unknown-key preservation
@@ -169,7 +170,8 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
   MenuBarSettings.swift     Menu Bar settings, arrow-boundary groups and auto-hide policy
   MenuBarPreferences.swift  Selective native visibility edits and recovery journal model
-Sources/lineup/              AppKit agent (the app shell + the seven tools)
+  ScrollSettings.swift      Scroll device and direction preferences, with unknown-key preservation
+Sources/lineup/              AppKit agent (the app shell + the eight tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -182,9 +184,10 @@ Sources/lineup/              AppKit agent (the app shell + the seven tools)
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
   Tools/TextCapture/           ScreenCaptureKit selection/capture, Vision OCR, clipboard, Settings
   Tools/MenuBar/               Menu bar inventory, arrow, native visibility and recovery
+  Tools/Scroll/                Scroll event tap, device lookup and Settings
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
   main.swift                  Orchestrates the suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / NightlyAutomationSuite.swift
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / ScrollSuite.swift / NightlyAutomationSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
@@ -267,7 +270,7 @@ The dependency-free suite checks geometry, reading order, settings persistence, 
 commit gate. It does not prove macOS permission prompts, live OCR quality, or compositor behavior.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`/`menuBar`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`/`menuBar`/`scroll`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
 
 ### App launch placement
@@ -458,6 +461,47 @@ Two rules the feed depends on:
 
 The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) → `make-dmg.sh` →
 `notarize.sh` (DMG) → `sparkle-appcast.sh` → `wrangler deploy` → commit.
+
+## Scroll event tap
+
+Scroll installs one active session event tap for scroll-wheel events only, appended after other
+session taps, and only while the tool runs with a device and direction selected and Accessibility
+is granted. The tap's run-loop source lives on a dedicated thread: every scroll on the Mac waits
+for an active tap, so the main thread must not delay it. The callback always returns the original
+event, modified in place; it never posts events. When macOS disables the tap for a timeout, the
+callback re-enables it and events pass through unchanged meanwhile. A crash removes the tap with
+the process.
+
+Each event is attributed through its attached `IOHIDEvent`. `CGEventCopyIOHIDEvent` and
+`IOHIDEventGetSenderID` are private, resolved with `dlsym`; when either is missing the tool reports
+that it is unsupported and installs nothing. The sender is the registry ID of the HID service that
+produced the event. `IORegistryEntryIDMatching` finds the service; its driver class,
+`DeviceUsagePairs` and Apple vendor/product IDs decide mouse or trackpad in `ScrollDeviceDescriptor`.
+Magic Mouse is checked before the touchpad usage it can report; built-in trackpads also report a
+mouse usage. Answers are cached by registry ID, which macOS does not reuse while running, so the
+cache needs no invalidation after sleep or reconnection. Events without HID data, such as those
+posted by other apps, are never reversed and never join a gesture. A phased gesture keeps the
+device that began it through its momentum, so inertia cannot flip direction if one of its HID
+events has an unresolved sender.
+
+Reversal negates the line, fixed-point and point deltas and the HID event's scroll values, which
+WebKit reads. The line delta is written first because Core Graphics recomputes the other two from
+it. Accelerated and raw delta fields are left untouched, as in other scroll utilities.
+
+Accessibility grants and revocations are observed through the `com.apple.accessibility.api`
+notification, rechecked a second later, and on activation and wake. While access is missing, a
+two-second timer retries. Revocation removes the tap. The settings section uses the opaque tool
+envelope; an unreadable section intercepts nothing and blocks edits.
+
+For manual verification, use a wheel mouse, a Magic Mouse and a trackpad. With the defaults, record
+mouse wheel and trackpad scrolling alternating in one window, then enable Horizontal and include
+horizontal scrolling and a trackpad flick whose inertia keeps its direction. Repeat with the inverse
+combination and each direction alone. Confirm that pinch, rotation, three- and four-finger swipes,
+Mission Control and Notification Center behave as before, and that Safari's two-finger page swipe
+changes only when horizontal reversal applies to that device. Sleep and wake, disconnect and reconnect a mouse, then scroll
+again. Revoke Accessibility while scrolling: scrolling must keep working in the macOS direction, and
+Settings must show recovery. Disable the tool and quit Lineup during inertia; the next scroll must
+follow macOS.
 
 ## Keep Awake power requests
 
