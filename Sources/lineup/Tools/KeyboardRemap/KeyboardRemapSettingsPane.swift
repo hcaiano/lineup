@@ -47,13 +47,12 @@ struct KeyboardRemapSettingsPane: View {
     }
 
     private var canRetryMappings: Bool {
-        tool.canEdit && tool.message == nil
-            && (tool.recoveryMessage != nil || (tool.isRunning && tool.mappingMessage != nil))
+        tool.canRetryMappings && tool.message == nil && tool.saveMessage == nil
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if let message = tool.blockedMessage ?? tool.message ?? tool.recoveryMessage
+            if let message = tool.blockedMessage ?? tool.message ?? tool.saveMessage ?? tool.recoveryMessage
                 ?? (tool.isRunning ? tool.mappingMessage : nil) {
                 PinnedBannerStrip {
                     BlockedBanner(message: message, systemImage: "exclamationmark.triangle.fill",
@@ -156,6 +155,7 @@ struct KeyboardRemapSettingsPane: View {
         }
         .onAppear { tool.paneDidAppear(); labels.refresh() }
         .onDisappear { tool.paneDidDisappear() }
+        .onChange(of: selectedKeyboardID) { _ in tool.clearEditingMessage() }
         .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))) { _ in
             labels.refresh()
         }
@@ -245,7 +245,7 @@ private struct KeyboardMappingSheet: View {
             if source == destination {
                 Text("Choose two different keys.").font(.callout)
             }
-            if let message = tool.message {
+            if let message = tool.message ?? tool.saveMessage {
                 BlockedBanner(message: message, systemImage: "exclamationmark.triangle.fill")
             }
             HStack {
@@ -260,6 +260,10 @@ private struct KeyboardMappingSheet: View {
         }
         .padding(24)
         .frame(width: 480)
+        .onAppear { tool.clearEditingMessage() }
+        .onDisappear { tool.clearEditingMessage() }
+        .onChange(of: source) { _ in tool.clearEditingMessage() }
+        .onChange(of: destination) { _ in tool.clearEditingMessage() }
     }
 
     private func keyPicker(_ title: String, selection: Binding<UInt64>) -> some View {

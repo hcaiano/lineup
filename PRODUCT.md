@@ -30,7 +30,8 @@ names without HID codes. The collapsed Key labels option selects the layout used
 symbols; it changes labels without changing the macOS input layout or saved physical keys.
 
 Rules apply only to their selected keyboard. A disconnected keyboard retains its settings and
-receives them again when it reconnects. External keyboards use hardware identifiers rather than
+receives them again when it reconnects. Settings shows its disconnected status beside the
+keyboard selection. External keyboards use hardware identifiers rather than
 their product name alone. An ambiguous match waits for the user to choose a distinguishable
 device.
 
