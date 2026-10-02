@@ -24,9 +24,10 @@ instructions, and the app then disappears into muscle memory.
 
 Keyboard Remap is an optional tool, off by default. Settings lets users select the built-in
 keyboard or an external keyboard, add physical source and destination keys, and swap two keys.
-The built-in keyboard preset swaps the ISO section key and the grave accent key. Shift follows
-the destination key. Key labels show the symbols for the selected keyboard layout; changing
-that layout changes labels, while saved rules keep the same physical HID usages.
+The built-in keyboard preset appears below the keyboard selection and swaps the ISO section key
+and the grave accent key. Shift follows the destination key. Known keys show symbols and physical
+names without HID codes. The collapsed Key labels option selects the layout used for those
+symbols; it changes labels without changing the macOS input layout or saved physical keys.
 
 Rules apply only to their selected keyboard. A disconnected keyboard retains its settings and
 receives them again when it reconnects. External keyboards use hardware identifiers rather than

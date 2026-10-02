@@ -31,21 +31,32 @@ final class KeyboardLayoutLabels: ObservableObject {
     }
 
     func name(for id: String?) -> String {
-        guard let id else { return "Current input source: \(currentName)" }
-        return layouts.first { $0.id == id }?.name ?? "Unavailable input layout"
+        guard let id else { return currentName }
+        return layouts.first { $0.id == id }?.name ?? "Unavailable layout"
     }
 
     func label(for usage: UInt64, inputSourceID: String?) -> String {
         guard let key = PhysicalKey.key(for: usage) else {
-            return "Physical key HID 0x\(String(usage & 0xFFFFFFFF, radix: 16).uppercased())"
+            return "Unknown key [0x\(String(usage, radix: 16).uppercased())]"
         }
-        let physical = "\(key.name) [0x\(String(usage & 0xFFFFFFFF, radix: 16).uppercased())]"
+        let physical = key.name.replacingOccurrences(of: " position", with: "")
+        guard let symbols = translatedSymbols(for: usage, inputSourceID: inputSourceID) else { return physical }
+        // Keep the physical name when a different layout changes what is printed at this position.
+        if symbols.plain.localizedCaseInsensitiveCompare(physical) == .orderedSame { return symbols.label }
+        return "\(symbols.label) · \(physical)"
+    }
+
+    func symbols(for usage: UInt64, inputSourceID: String?) -> String? {
+        translatedSymbols(for: usage, inputSourceID: inputSourceID)?.label
+    }
+
+    private func translatedSymbols(for usage: UInt64, inputSourceID: String?) -> (plain: String, label: String)? {
+        guard let key = PhysicalKey.key(for: usage) else { return nil }
         let source = inputSourceID.flatMap { id in layouts.first { $0.id == id }?.source } ?? (inputSourceID == nil ? current : nil)
         guard let source, let virtualKey = key.virtualKeyCode,
-              let plain = symbol(source: source, keyCode: virtualKey, shifted: false) else { return physical }
+              let plain = symbol(source: source, keyCode: virtualKey, shifted: false) else { return nil }
         let shifted = symbol(source: source, keyCode: virtualKey, shifted: true)
-        let symbols = shifted.flatMap { $0 != plain ? "\(plain) / \($0)" : nil } ?? plain
-        return "\(symbols) · \(physical)"
+        return (plain, shifted.flatMap { $0 != plain ? "\(plain) / \($0)" : nil } ?? plain)
     }
 
     private func stringProperty(_ source: TISInputSource, _ key: CFString) -> String? {

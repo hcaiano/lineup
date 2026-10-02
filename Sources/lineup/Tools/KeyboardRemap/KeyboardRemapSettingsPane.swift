@@ -64,7 +64,7 @@ struct KeyboardRemapSettingsPane: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
                     SettingsSectionView("Keyboard") {
-                        SettingsRow(title: "Remap on", detail: "Each keyboard keeps its own saved physical-key rules.") {
+                        SettingsRow(title: "Remap on") {
                             Picker("Keyboard", selection: $selectedKeyboardID) {
                                 ForEach(keyboards) { keyboard in
                                     Text(keyboard.name).tag(keyboard.id)
@@ -73,36 +73,27 @@ struct KeyboardRemapSettingsPane: View {
                             .labelsHidden()
                             .frame(width: 230)
                         }
+                        if selectedKeyboard.selector == .builtIn {
+                            SettingsRow(title: presetDescription, detail: "Swap these two keys, including Shift.") {
+                                Button(isISOSwapSaved ? "Swap saved" : "Swap these keys") { tool.useISOPreset() }
+                                    .disabled(!tool.canEdit || isISOSwapSaved)
+                                    .accessibilityLabel(isISOSwapSaved ? "ISO and grave key swap saved"
+                                                        : "Swap ISO and grave keys on the built-in keyboard")
+                                    .help("Swap the two keys on the built-in ISO keyboard")
+                            }
+                        }
                         SettingsRow(title: "Status", detail: tool.status(for: selectedKeyboard.selector)) {
                             Button("Refresh") { tool.refreshKeyboards() }
                         }
                     }
 
-                    SettingsSectionView("Input layout", caption: "Symbols show the unshifted and Shift results for this layout. Choosing a layout changes the labels; mappings still use the same physical keys.") {
-                        SettingsRow(title: "Show symbols for") {
-                            Picker("Input layout", selection: Binding(
-                                get: { tool.settings.inputSourceID ?? "" },
-                                set: { tool.setInputSource($0.isEmpty ? nil : $0) })) {
-                                Text("Current input source: \(labels.currentName)").tag("")
-                                ForEach(labels.layouts) { layout in Text(layout.name).tag(layout.id) }
-                                if let saved = tool.settings.inputSourceID,
-                                   !labels.layouts.contains(where: { $0.id == saved }) {
-                                    Text("Unavailable saved layout").tag(saved)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 260)
-                            .disabled(!tool.canEdit)
-                        }
-                    }
-
-                    SettingsSectionView("Physical-key mappings", caption: "The key's name identifies its physical position. The symbols beside it depend on the input layout.") {
+                    SettingsSectionView("Key mappings", caption: "Choose what each key does. Shift follows the new key.") {
                         if mappings.isEmpty {
                             SettingsRow(title: "No mappings for this keyboard") { EmptyView() }
                         } else {
                             HStack {
-                                Text("Source key").frame(maxWidth: .infinity, alignment: .leading)
-                                Text("Destination key").frame(maxWidth: .infinity, alignment: .leading)
+                                Text("Press this key").frame(maxWidth: .infinity, alignment: .leading)
+                                Text("Use as this key").frame(maxWidth: .infinity, alignment: .leading)
                                 Spacer().frame(width: 28)
                             }
                             .font(.caption)
@@ -125,15 +116,38 @@ struct KeyboardRemapSettingsPane: View {
                         .padding(.vertical, 10)
                     }
 
-                    if selectedKeyboard.selector == .builtIn {
-                        SettingsSectionView("Built-in ISO keyboard", caption: "Swap the ISO section key with the grave key. On a matching layout, this swaps §/± with `/~ including Shift.") {
-                            SettingsRow(title: "Swap ISO and grave keys", detail: presetDescription) {
-                                Button("Use preset") { tool.useISOPreset() }
-                                    .disabled(!tool.canEdit)
+                    DisclosureGroup {
+                        VStack(alignment: .leading, spacing: 10) {
+                            SettingsRow(title: "Show symbols for") {
+                                Picker("Layout for key labels", selection: Binding(
+                                    get: { tool.settings.inputSourceID ?? "" },
+                                    set: { tool.setInputSource($0.isEmpty ? nil : $0) })) {
+                                    Text("Current: \(labels.currentName)").tag("")
+                                    ForEach(labels.layouts) { layout in Text(layout.name).tag(layout.id) }
+                                    if let saved = tool.settings.inputSourceID,
+                                       !labels.layouts.contains(where: { $0.id == saved }) {
+                                        Text("Unavailable saved layout").tag(saved)
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(width: 260)
+                                .disabled(!tool.canEdit)
                             }
+                            SettingsCaption(text: "Symbols show the key with and without Shift. This changes labels only; your macOS keyboard layout stays the same.")
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        HStack {
+                            Text("Key labels")
+                            Spacer()
+                            Text(labels.name(for: tool.settings.inputSourceID))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
-                    SettingsCaption(text: "Rules apply while Keyboard Remap is enabled and return after wake or reconnecting. Other keyboards keep their own mappings. Hyperkey shares the same mapping service, so conflicting Caps Lock rules are reported here.")
+                    SettingsCaption(text: tool.isRunning ? "Each keyboard keeps its own settings."
+                                    : "Turn on Keyboard Remap above to apply these mappings.")
                 }
                 .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
                 .padding(.vertical, SettingsMetrics.panePaddingVertical)
@@ -152,18 +166,26 @@ struct KeyboardRemapSettingsPane: View {
     }
 
     private var presetDescription: String {
-        labels.label(for: PhysicalKey.isoSection.hidUsage, inputSourceID: tool.settings.inputSourceID)
-            + " ↔ " + labels.label(for: PhysicalKey.grave.hidUsage, inputSourceID: tool.settings.inputSourceID)
+        let section = labels.symbols(for: PhysicalKey.isoSection.hidUsage, inputSourceID: tool.settings.inputSourceID)
+            ?? "ISO section"
+        let grave = labels.symbols(for: PhysicalKey.grave.hidUsage, inputSourceID: tool.settings.inputSourceID)
+            ?? "Grave / tilde"
+        return "\(section) ↔ \(grave)"
+    }
+
+    private var isISOSwapSaved: Bool {
+        mappings.contains { $0.source == PhysicalKey.isoSection.hidUsage && $0.destination == PhysicalKey.grave.hidUsage }
+            && mappings.contains { $0.source == PhysicalKey.grave.hidUsage && $0.destination == PhysicalKey.isoSection.hidUsage }
     }
 
     private func mappingRow(_ pair: KeyboardRemapSettings.Pair) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                keyPicker("Source key", selected: pair.source) { source in
+                keyPicker("Press this key", selected: pair.source) { source in
                     tool.editMapping(selector: selectedKeyboard.selector, id: pair.id, source: source)
                 }
                 Image(systemName: "arrow.right").foregroundStyle(.secondary).accessibilityHidden(true)
-                keyPicker("Destination key", selected: pair.destination) { destination in
+                keyPicker("Use as this key", selected: pair.destination) { destination in
                     tool.editMapping(selector: selectedKeyboard.selector, id: pair.id, destination: destination)
                 }
                 Button {
@@ -214,14 +236,14 @@ private struct KeyboardMappingSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(swap ? "Swap two physical keys" : "Add a physical-key mapping").font(.headline)
-            Text(swap ? "Creates one mapping in each direction on this keyboard." : "The source key produces the destination key's result, including Shift.")
+            Text(swap ? "Swap two keys" : "Add a key mapping").font(.headline)
+            Text(swap ? "Each key works as the other key, including Shift." : "Choose a key and what it should do, including Shift.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            keyPicker(swap ? "First key" : "Source key", selection: $source)
-            keyPicker(swap ? "Second key" : "Destination key", selection: $destination)
+            keyPicker(swap ? "First key" : "Press this key", selection: $source)
+            keyPicker(swap ? "Second key" : "Use as this key", selection: $destination)
             if source == destination {
-                Text("Choose two different physical keys.").font(.callout)
+                Text("Choose two different keys.").font(.callout)
             }
             if let message = tool.message {
                 BlockedBanner(message: message, systemImage: "exclamationmark.triangle.fill")

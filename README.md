@@ -96,10 +96,11 @@ Settings includes attribution links. No search or solar request leaves the Mac.
 
 ## Remap keyboard keys
 
-Open Settings → Keyboard Remap, select a keyboard and add a source and destination key.
-Choose **Swap keys** to exchange two keys. The built-in keyboard preset exchanges the ISO
-section key, often labeled §/±, with the grave accent and tilde key. The selected keyboard layout
-controls the symbols shown in Settings. Rules use physical keys, including their Shift behavior.
+Open Settings → Keyboard Remap and select a keyboard. For the built-in §/± and grave/tilde
+swap, choose **Swap these keys** below the keyboard selection. For other rules, choose
+**Add mapping** or **Swap two keys** and select the keys. Rules use physical keys, including
+their Shift behavior. Expand **Key labels** to choose which layout supplies the displayed
+symbols; this does not change your macOS keyboard layout.
 
 The tool starts off. Enable it after choosing your rules. Rules remain saved when a keyboard is
 disconnected and apply again on reconnection. A keyboard without rules keeps its existing map.
