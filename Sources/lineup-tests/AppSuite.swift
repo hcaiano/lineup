@@ -28,6 +28,7 @@ func runAppTests() throws {
     try runUpdateChannelTests()
     try runStoreTests()
     try runAppPlacementPersistenceTests()
+    try runKeyboardRemapPersistenceTests()
     try runLegacyImportTests()
     try runIdentityTests()
     try runReleaseToolingTests()

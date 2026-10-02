@@ -131,6 +131,8 @@ final class ToolServices {
     let permissions: PermissionCenter
     let activation: ActivationCoordinator
     let termination: TerminationCoordinator
+    /// Hyperkey and Keyboard Remap contribute to one owner of per-keyboard HID maps.
+    let keyboardMappings: KeyboardMappingService
     let log: Logger
     let refreshMenu: () -> Void
     let refreshSettings: () -> Void
@@ -151,13 +153,15 @@ final class ToolServices {
          refreshMenu: @escaping () -> Void,
          refreshSettings: @escaping () -> Void,
          peers: @escaping () -> [ToolID: Bool],
-         boundCombos: @escaping () -> [ToolCombo] = { [] }) {
+         boundCombos: @escaping () -> [ToolCombo] = { [] },
+         keyboardMappings: KeyboardMappingService? = nil) {
         self.id = id
         self.hotkeys = HotkeyScope(owner: id)
         self.config = config
         self.permissions = permissions
         self.activation = activation
         self.termination = termination
+        self.keyboardMappings = keyboardMappings ?? .shared
         self.log = Logger(subsystem: Product.logSubsystem, category: id.rawValue)
         self.refreshMenu = refreshMenu
         self.refreshSettings = refreshSettings

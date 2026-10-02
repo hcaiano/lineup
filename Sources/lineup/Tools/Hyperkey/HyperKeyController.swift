@@ -7,13 +7,9 @@ import os
 
 private let log = Logger(subsystem: Product.logSubsystem, category: "hyperkey")
 
-/// NOT @MainActor: hidutil work runs on `hidutilQueue` with completions hopped back to main,
-/// so this class manages its own threading. All instance state is only touched on the main
-/// thread (apply/stop from HyperkeyTool, the event tap on the main run loop).
-///
-/// Copied from standalone Cycler and retargeted for Lineup 2.0: the logger subsystem, the
-/// `hidutil` queue label and the Caps Lock ownership flag are all Lineup's now. The ownership
-/// handoff from a previous Cycler install lives in `CapsLockHandoff`.
+/// The event tap and trigger state live on the main run loop. KeyboardMappingService owns
+/// keyboard maps and all IOKit work; this controller only consumes the remapped trigger.
+@MainActor
 final class HyperKeyController {
     enum State: Equatable {
         case disabled
@@ -24,9 +20,6 @@ final class HyperKeyController {
     static let capsLockHID = CapsLockMapping.capsLockHID
     static let f18HID = CapsLockMapping.f18HID
     private static let capsLockKeyCode = 57
-    /// The ownership flag lives in Lineup's own defaults domain. `CapsLockHandoff` owns the
-    /// constant so the legacy Cycler key it supersedes has exactly one mention in the tree.
-    private static var ownsCapsLockMappingKey: String { CapsLockHandoff.newKey }
     private static let inputMonitoringBlockedMessage = "Input Monitoring permission required"
     private static let secureInputBlockedMessage =
         "Secure Input is active; if this persists, quit and reopen your password app. Hyper Key will retry automatically"
@@ -34,29 +27,16 @@ final class HyperKeyController {
     /// own Caps Lock remap would fight ours.
     static let standaloneCyclerBlockedMessage = "Cycler is running. Quit it to use Hyperkey here"
     private static let syntheticEventMarker: Int64 = 0x4C4E_4850 // "LNHP" — Lineup's own events
-    private static let hidutilQueue = DispatchQueue(label: Product.bundleID + ".hidutil")
-    /// `clearOnExit` and `installedAtexit` are read and written from BOTH the main thread and
-    /// `hidutilQueue` (the mapping work runs there, and so does the adoption probe), so they are
-    /// behind a lock rather than bare statics.
-    private static let staticsLock = NSLock()
-    private static var clearOnExitStorage = false
-    private static var installedAtexit = false
-
-    private static var clearOnExit: Bool {
-        get { staticsLock.withLock { clearOnExitStorage } }
-        set { staticsLock.withLock { clearOnExitStorage = newValue } }
-    }
-
     /// Set by `HyperkeyTool` immediately before each `apply()`: standalone Cycler.app is alive and
     /// holds (or will grab) the same Caps Lock -> F18 mapping. Checked only for triggers that need
     /// the remap; a function-key trigger never collides with it.
     var blockedByStandaloneCycler = false
 
     /// The keycode the event tap watches for each trigger. Caps Lock is remapped to F18 via
-    /// `hidutil`, so it shares F18's keycode; the function keys report their own.
+    /// the shared mapping service, so it shares F18’s keycode; function keys report their own.
     private static func watchKeyCode(for trigger: TriggerKey) -> Int64 {
         switch trigger {
-        case .capsLock, .f18: return 79 // kVK_F18 (Caps Lock arrives here after the hidutil remap)
+        case .capsLock, .f18: return 79 // kVK_F18 (Caps Lock arrives here after the HID remap)
         case .leftControl: return 59
         case .leftShift: return 56
         case .leftOption: return 58
@@ -83,7 +63,7 @@ final class HyperKeyController {
     }
 
     /// Fired on the main thread whenever `state` settles — `apply()` resolves asynchronously
-    /// (hidutil runs on a background queue), so the menu must refresh on this callback rather
+    /// (keyboard maps apply on a background queue), so the menu must refresh on this callback rather
     /// than by reading `state` right after `apply()` returns.
     var onStateChange: ((State) -> Void)?
 
@@ -101,9 +81,28 @@ final class HyperKeyController {
     private var includeShift = true
     private var activeTrigger: TriggerKey?
     private var triggerKeyCode: Int64 = 79
-    private var hidutilOperationID = 0
+    private var mappingOperationID = 0
+    private var keyboardMappings = KeyboardMappingService.shared
+    private var mappingObserver: UUID?
     private var appliedSettings = HyperKeySettings.disabled
     private var secureInputTimer: Timer?
+
+    func useKeyboardMappings(_ service: KeyboardMappingService) {
+        if let mappingObserver { keyboardMappings.removeObserver(mappingObserver) }
+        keyboardMappings = service
+        mappingObserver = service.observe { [weak self] in self?.reconcileMappingState() }
+    }
+
+    private func reconcileMappingState() {
+        guard appliedSettings.enabled, appliedSettings.triggerKey.needsCapsLockRemap,
+              keyboardMappings.hyperkeyRequested else { return }
+        if let message = keyboardMappings.hyperkeyStatus {
+            stop(invalidatingPending: false, settingState: .blocked(message), releaseMapping: false)
+        } else if keyboardMappings.hyperkeyReady {
+            didApplyMapping = true
+            finishStart(startTap(trigger: appliedSettings.triggerKey))
+        }
+    }
 
     var menuStatus: String? {
         switch state {
@@ -132,9 +131,8 @@ final class HyperKeyController {
     }
 
     /// True when the tap is already live for exactly these settings and the Caps Lock remap (if
-    /// this trigger needs one) is already applied — so a re-apply would only re-run the `hidutil`
-    /// probe, which is a subprocess. `HyperkeyTool` asks this before its activation-triggered
-    /// re-applies; the wake path and every settings edit re-apply regardless.
+    /// this trigger needs one) is already applied. The activation path skips redundant work;
+    /// wake and settings changes always reconcile the shared service.
     ///
     /// Secure Input is deliberately NOT part of this: its own 2s timer owns that transition and
     /// calls `apply()` directly, so gating on it here would only duplicate the check.
@@ -148,7 +146,7 @@ final class HyperKeyController {
     func apply(_ settings: HyperKeySettings) {
         appliedSettings = settings
         updateSecureInputWatch(enabled: settings.enabled)
-        let operationID = nextHidutilOperationID()
+        let operationID = nextMappingOperationID()
         guard settings.enabled else {
             stopAndClearMapping(settingState: .disabled)
             return
@@ -175,11 +173,10 @@ final class HyperKeyController {
             return
         }
 
-        // A function-key trigger never uses hidutil; clear only a Caps Lock remap that Lineup knows
-        // it created in this or a previous crashed run. A user-owned CapsLock->F18 mapping has the
-        // same shape, so shape alone must not be treated as ownership.
+        // A physical modifier or function-key trigger needs no HID contribution. Other tools’
+        // rules, and external tables, stay under the shared service’s ownership discipline.
         if !settings.triggerKey.needsCapsLockRemap {
-            Self.clearKnownOwnedMappingAsync()
+            keyboardMappings.setHyperkeyEnabled(false) { _ in }
         }
 
         start(trigger: settings.triggerKey, includeShift: settings.includeShift, operationID: operationID)
@@ -189,7 +186,7 @@ final class HyperKeyController {
     /// state transition, so the menu and the pill don't flash "disabled" on the way to "blocked".
     private func stopAndClearMapping(settingState newState: State) {
         stop(invalidatingPending: false, settingState: newState)
-        Self.clearKnownOwnedMappingAsync()
+        keyboardMappings.setHyperkeyEnabled(false) { _ in }
     }
 
     private func updateSecureInputWatch(enabled: Bool) {
@@ -202,7 +199,7 @@ final class HyperKeyController {
         // `.common` mode, not the default one: a tracking run loop (a menu held open, a window
         // drag) would otherwise stall the Secure Input reconcile for as long as it lasts.
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            self?.reconcileSecureInput()
+            MainActor.assumeIsolated { self?.reconcileSecureInput() }
         }
         timer.tolerance = 0.5
         RunLoop.main.add(timer, forMode: .common)
@@ -224,14 +221,9 @@ final class HyperKeyController {
         case blocked(String)
     }
 
-    private enum MappingResult {
-        case ready(createdMapping: Bool)
-        case blocked(String)
-    }
-
-    private func nextHidutilOperationID() -> Int {
-        hidutilOperationID += 1
-        return hidutilOperationID
+    private func nextMappingOperationID() -> Int {
+        mappingOperationID += 1
+        return mappingOperationID
     }
 
     private func start(trigger: TriggerKey, includeShift: Bool, operationID: Int) {
@@ -248,21 +240,13 @@ final class HyperKeyController {
         }
 
         if trigger.needsCapsLockRemap {
-            Self.ensureCapsLockMappingAsync { [weak self] result in
-                guard let self, self.hidutilOperationID == operationID else { return }
-                switch result {
-                case .ready(let createdMapping):
-                    if createdMapping || Self.ownsCapsLockMapping {
-                        self.didApplyMapping = true
-                        if createdMapping {
-                            Self.setOwnsCapsLockMapping(true)
-                        }
-                        Self.clearOnExit = true
-                        Self.installAtexit()
-                    }
+            keyboardMappings.setHyperkeyEnabled(true) { [weak self] message in
+                guard let self, self.mappingOperationID == operationID else { return }
+                if let message {
+                    self.stop(invalidatingPending: false, settingState: .blocked(message), releaseMapping: false)
+                } else if self.keyboardMappings.hyperkeyReady {
+                    self.didApplyMapping = true
                     self.finishStart(self.startTap(trigger: trigger))
-                case .blocked(let message):
-                    self.stop(invalidatingPending: false, settingState: .blocked(message))
                 }
             }
             return
@@ -323,34 +307,6 @@ final class HyperKeyController {
         }
     }
 
-    private static func ensureCapsLockMapping() -> MappingResult {
-        guard let mapping = Self.currentMapping() else {
-            return .blocked("hidutil failed to read UserKeyMapping")
-        }
-        let state = CapsLockMapping.state(of: mapping)
-        // A partial table is our pair on some keyboards and `()` on others. Re-applying fills the
-        // gaps, but only a mapping Lineup owns may be extended: someone else's per-device remap
-        // stays theirs, so Lineup reports the conflict instead of claiming Active.
-        let foreignForUs = state == .foreign || (state == .partialLineup && !Self.ownsCapsLockMapping)
-        guard !foreignForUs else {
-            return .blocked("existing hidutil UserKeyMapping is not Lineup's CapsLock->F18 mapping")
-        }
-        var createdMapping = false
-        if state != .lineup {
-            guard Self.applyCapsLockToF18() else {
-                return .blocked("hidutil failed to apply CapsLock->F18")
-            }
-            createdMapping = true
-            Self.setOwnsCapsLockMapping(true)
-            Self.clearOnExit = true
-            Self.installAtexit()
-        } else if Self.ownsCapsLockMapping {
-            Self.clearOnExit = true
-            Self.installAtexit()
-        }
-        return .ready(createdMapping: createdMapping)
-    }
-
     func stop() {
         secureInputTimer?.invalidate()
         secureInputTimer = nil
@@ -366,9 +322,9 @@ final class HyperKeyController {
         releaseSyntheticModifiers()
     }
 
-    private func stop(invalidatingPending: Bool, settingState newState: State = .disabled) {
+    private func stop(invalidatingPending: Bool, settingState newState: State = .disabled, releaseMapping: Bool = true) {
         if invalidatingPending {
-            _ = nextHidutilOperationID()
+            _ = nextMappingOperationID()
         }
         releaseSyntheticModifiers()
         if let tap {
@@ -386,13 +342,9 @@ final class HyperKeyController {
 
         let hadMapping = didApplyMapping
         didApplyMapping = false
-        // `didApplyMapping` is set in the hidutil completion, which `invalidatingPending` has just
-        // cancelled — but the background `ensureCapsLockMapping` may already have applied the
-        // mapping and recorded ownership. Toggling Hyperkey off inside that window would then
-        // leave Caps Lock remapped for the rest of the session with nothing left to clean it up.
-        // The clear self-gates on the persisted ownership flag, so asking unconditionally is free.
-        if hadMapping || invalidatingPending {
-            Self.clearKnownOwnedMappingAsync()
+        // Cancellation also removes a contribution whose asynchronous apply has not completed.
+        if releaseMapping && (hadMapping || invalidatingPending || keyboardMappings.hyperkeyRequested) {
+            keyboardMappings.setHyperkeyEnabled(false) { _ in }
         }
         if state != newState {
             state = newState
@@ -534,153 +486,8 @@ final class HyperKeyController {
         return CGRequestListenEventAccess()
     }
 
-    // `currentMapping` / `isMappingOurs` / `clearIfMappingIsOurs` / the ownership accessors are
-    // internal rather than private: `CapsLockHandoff` needs exactly these to adopt a mapping a
-    // previous standalone-Cycler run left behind, to spot an orphaned one, and to restore it on
-    // request. Nothing else in the target may touch hidutil.
-
-    /// The raw dump, or nil when `hidutil` did not exit cleanly: its partial output can look empty
-    /// or ours while a later service holds somebody else's remap, so a failed probe must never
-    /// authorize a write or an ownership change.
-    static func currentMapping() -> String? {
-        let result = runHidutil(arguments: ["property", "--get", "UserKeyMapping"])
-        guard result.status == 0 else {
-            log.error("hidutil read failed \(result.status, privacy: .public): \(result.error, privacy: .public)")
-            return nil
-        }
-        return result.output
-    }
-
-    /// `hidutil` is a subprocess and every caller is on the main thread (launch, the menu's
-    /// recovery probe, the pane's button). Same queue as the mapping work, so a probe queued
-    /// before an apply is guaranteed to be answered first.
-    static func currentMappingAsync(completion: @escaping (String?) -> Void) {
-        hidutilQueue.async {
-            let mapping = currentMapping()
-            DispatchQueue.main.async { completion(mapping) }
-        }
-    }
-
-    /// Shape only — the pair is parsed Src-with-its-own-Dst, so a REVERSED F18 -> Caps Lock
-    /// mapping (same two numbers) is never claimed as ours. See `CapsLockMapping`.
-    static func isMappingOurs(_ output: String) -> Bool {
-        CapsLockMapping.isLineupMapping(output)
-    }
-
-    private static func applyCapsLockToF18() -> Bool {
-        let json = """
-        {"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":\(capsLockHID),"HIDKeyboardModifierMappingDst":\(f18HID)}]}
-        """
-        let result = runHidutil(arguments: ["property", "--set", json])
-        if result.status != 0 {
-            log.error("hidutil apply failed \(result.status, privacy: .public): \(result.error, privacy: .public)")
-            return false
-        }
-        return true
-    }
-
-    /// Off-main variant of `clearIfMappingIsOurs()`, for the pane's "Restore Caps Lock" button.
-    static func clearIfMappingIsOursAsync(completion: @escaping (Bool) -> Void) {
-        installAtexit()
-        hidutilQueue.async {
-            let cleared = clearIfMappingIsOurs()
-            DispatchQueue.main.async { completion(cleared) }
-        }
-    }
-
-    @discardableResult
-    static func clearIfMappingIsOurs() -> Bool {
-        guard let mapping = currentMapping(), isMappingOurs(mapping) else { return false }
-        let result = runHidutil(arguments: ["property", "--set", #"{"UserKeyMapping":[]}"#])
-        if result.status != 0 {
-            log.error("hidutil clear failed \(result.status, privacy: .public): \(result.error, privacy: .public)")
-            return false
-        }
-        return true
-    }
-
-    private static func clearKnownOwnedMapping() -> Bool {
-        guard ownsCapsLockMapping else { return false }
-        // An unreadable probe proves nothing: keep the claim so a later pass, or the exit hook,
-        // can still clear the mapping.
-        guard let mapping = currentMapping() else { return false }
-        guard isMappingOurs(mapping) else {
-            setOwnsCapsLockMapping(false)
-            clearOnExit = false
-            return false
-        }
-        let cleared = clearIfMappingIsOurs()
-        if cleared {
-            setOwnsCapsLockMapping(false)
-            clearOnExit = false
-        }
-        return cleared
-    }
-
-    private static func ensureCapsLockMappingAsync(completion: @escaping (MappingResult) -> Void) {
-        // Install the exit hook BEFORE queueing: if the process exits while the remap is still
-        // in flight, atexit must already exist to drain the queue and clean up.
-        installAtexit()
-        hidutilQueue.async {
-            let result = ensureCapsLockMapping()
-            DispatchQueue.main.async {
-                completion(result)
-            }
-        }
-    }
-
-    private static func clearKnownOwnedMappingAsync() {
-        // Same exit discipline as the apply path: the atexit drain must be installed before
-        // queueing, so a quit right after a startup/disable-triggered clear still runs it.
-        installAtexit()
-        hidutilQueue.async {
-            _ = clearKnownOwnedMapping()
-        }
-    }
-
-    static var ownsCapsLockMapping: Bool {
-        UserDefaults.standard.bool(forKey: ownsCapsLockMappingKey)
-    }
-
-    static func setOwnsCapsLockMapping(_ owns: Bool) {
-        if owns {
-            UserDefaults.standard.set(true, forKey: ownsCapsLockMappingKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: ownsCapsLockMappingKey)
-        }
-    }
-
-    /// The mapping is gone (a user-triggered restore, or an adoption that found nothing applied):
-    /// drop ownership AND the exit hook's arming flag, so the `atexit` drain doesn't try to clear
-    /// a mapping we no longer own.
-    static func releaseOwnedMapping() {
-        setOwnsCapsLockMapping(false)
-        clearOnExit = false
-    }
-
-    /// Adoption: a mapping that is already applied becomes ours, so our teardown clears it.
-    /// Arms the exit hook exactly as the create path does.
-    static func adoptAppliedMapping() {
-        setOwnsCapsLockMapping(true)
-        clearOnExit = true
-        installAtexit()
-    }
-
-    /// Probe AND adopt in one step on the hidutil queue, so a `start()` that queues its own
-    /// mapping work immediately afterwards is guaranteed to see the ownership flag already set.
-    /// Splitting the two across a main-thread hop would race with `ensureCapsLockMapping`.
-    /// `completion` gets nil when the probe failed and nothing is known.
-    static func adoptAppliedMappingIfPresentAsync(completion: @escaping (Bool?) -> Void) {
-        installAtexit()
-        hidutilQueue.async {
-            let present = currentMapping().map(isMappingOurs)
-            if present == true { adoptAppliedMapping() }
-            DispatchQueue.main.async { completion(present) }
-        }
-    }
-
     /// Internal, not private: Raycast's own Hyper Key installs the SAME CapsLock->F18 mapping, so
-    /// `CapsLockHandoff` has to ask this before calling a mapping orphaned — otherwise Lineup would
+    /// legacy recovery has to ask this before transferring a claim — otherwise Lineup would
     /// offer to "restore" Caps Lock out from under a perfectly healthy Raycast.
     static func raycastCapsHyperEnabled() -> Bool {
         guard let value = CFPreferencesCopyAppValue(
@@ -711,70 +518,6 @@ final class HyperKeyController {
         return enabled && keyCode == capsLockKeyCode
     }
 
-    /// How long the exit hook waits for in-flight `hidutil` work before giving up on it.
-    private static let atexitDrainTimeout: DispatchTimeInterval = .seconds(3)
-
-    private static func installAtexit() {
-        staticsLock.lock()
-        let alreadyInstalled = installedAtexit
-        installedAtexit = true
-        staticsLock.unlock()
-        guard !alreadyInstalled else { return }
-        atexit {
-            // Drain in-flight hidutil work first: quitting right after enabling the hyper key
-            // must wait for the remap (and its ownership recording) to finish, or the mapping
-            // would outlive the process with no cleanup path.
-            //
-            // BOUNDED, never a blocking drain of the whole queue: a wedged `hidutil` would
-            // otherwise hang quit forever, with no window and no menu bar icon left to explain
-            // it. Past the timeout we skip the cleanup rather than hold the process hostage.
-            let drained = DispatchSemaphore(value: 0)
-            HyperKeyController.hidutilQueue.async { drained.signal() }
-            let deadline = DispatchTime.now() + HyperKeyController.atexitDrainTimeout
-            guard drained.wait(timeout: deadline) == .success else { return }
-            if HyperKeyController.clearOnExit {
-                _ = HyperKeyController.clearKnownOwnedMapping()
-            }
-        }
-    }
-
-    private static func runHidutil(arguments: [String]) -> (status: Int32, output: String, error: String) {
-        let process = Process()
-        let out = Pipe()
-        let err = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/hidutil")
-        process.arguments = arguments
-        process.standardOutput = out
-        process.standardError = err
-
-        do {
-            try process.run()
-            // Drain BOTH pipes before waiting. `waitUntilExit()` first would deadlock on any
-            // output past the 64KB pipe buffer — the child blocks writing, we block waiting —
-            // and the atexit drain would then inherit that wedge. stderr is read concurrently
-            // for the same reason: draining it only after stdout has the identical failure mode.
-            let errorSink = DataSink()
-            let errorRead = DispatchSemaphore(value: 0)
-            DispatchQueue.global(qos: .userInitiated).async {
-                errorSink.data = err.fileHandleForReading.readDataToEndOfFile()
-                errorRead.signal()
-            }
-            let outputData = out.fileHandleForReading.readDataToEndOfFile()
-            errorRead.wait()
-            process.waitUntilExit()
-            return (process.terminationStatus,
-                    String(decoding: outputData, as: UTF8.self),
-                    String(decoding: errorSink.data, as: UTF8.self))
-        } catch {
-            return (127, "", String(describing: error))
-        }
-    }
-}
-
-/// Handoff for the concurrently-read stderr in `runHidutil`: written on the reader queue, read
-/// only after its semaphore has been signalled.
-private final class DataSink: @unchecked Sendable {
-    var data = Data()
 }
 
 private func hyperKeyControllerTapCallback(
@@ -785,5 +528,5 @@ private func hyperKeyControllerTapCallback(
 ) -> Unmanaged<CGEvent>? {
     guard let userInfo else { return Unmanaged.passUnretained(event) }
     let controller = Unmanaged<HyperKeyController>.fromOpaque(userInfo).takeUnretainedValue()
-    return controller.handle(type: type, event: event)
+    return MainActor.assumeIsolated { controller.handle(type: type, event: event) }
 }

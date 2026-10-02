@@ -9,6 +9,7 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
     public static let zones = ToolID(rawValue: "zones")
     public static let cycler = ToolID(rawValue: "cycler")
     public static let hyperkey = ToolID(rawValue: "hyperkey")
+    public static let keyboardRemap = ToolID(rawValue: "keyboardRemap")
     public static let worldClock = ToolID(rawValue: "worldClock")
     public static let awake = ToolID(rawValue: "awake")
     public static let textCapture = ToolID(rawValue: "textCapture")
@@ -20,6 +21,7 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
         case .zones: return "Zones"
         case .cycler: return "Cycler"
         case .hyperkey: return "Hyperkey"
+        case .keyboardRemap: return "Keyboard Remap"
         case .worldClock: return "World Clock"
         case .awake: return "Keep Awake"
         case .menuBar: return "Menu Bar"
@@ -30,7 +32,7 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
     }
 
     /// Registry/sidebar order.
-    public static let all: [ToolID] = [.zones, .cycler, .hyperkey, .worldClock, .awake, .textCapture, .menuBar, .scroll]
+    public static let all: [ToolID] = [.zones, .cycler, .hyperkey, .keyboardRemap, .worldClock, .awake, .textCapture, .menuBar, .scroll]
 }
 
 extension ToolID: CustomStringConvertible {
