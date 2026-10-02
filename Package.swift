@@ -16,6 +16,8 @@ let package = Package(
         // Pure Hyper-key persisted settings (TriggerKey + HyperKeySettings). Split out of
         // CyclerCore so Cycler and Hyperkey are independent tools. No dependencies by design.
         .target(name: "HyperkeyCore"),
+        // Per-keyboard selection, physical usages, and shared ownership-safe map composition.
+        .target(name: "KeyboardRemapCore"),
         .target(name: "WorldClockCore"),
         // Region geometry, recognition order and cancellation tokens for local text capture.
         .target(name: "TextCaptureCore"),
@@ -24,13 +26,15 @@ let package = Package(
             .linkedFramework("IOKit"), .linkedFramework("CoreGraphics"),
             .linkedFramework("CoreFoundation"), .linkedFramework("ColorSync"),
         ]),
+        // Scroll device classification, gesture continuity and per-axis reversal.
+        .target(name: "ScrollCore"),
         // Pure cycle-order math + the legacy ~/.config/cycler/bindings.json model.
         // Depends on HyperkeyCore only to re-export TriggerKey/HyperKeySettings for that
         // legacy file shape (see Sources/CyclerCore/Bindings.swift).
         .target(name: "CyclerCore", dependencies: ["HyperkeyCore"]),
         // Product identity, tool identity, and the unified ~/.config/lineup/config.json
         // envelope + legacy import. Needs all three tool models to do the import.
-        .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore"]),
+        .target(name: "AppCore", dependencies: ["ZonesCore", "CyclerCore", "HyperkeyCore", "KeyboardRemapCore", "WorldClockCore", "ScrollCore"]),
         // Thin executable: AppKit agent shell + the tools. AX window writes,
         // Carbon hotkeys, CGEventTap.
         .executableTarget(
@@ -40,10 +44,12 @@ let package = Package(
                 "ZonesCore",
                 "CyclerCore",
                 "HyperkeyCore",
+                "KeyboardRemapCore",
                 "WorldClockCore",
                 "TextCaptureCore",
                 "DisplayControlCore",
                 "DisplayHardware",
+                "ScrollCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             // Per-tool app icons for the Settings sidebar and pane headers. `.copy` (not
@@ -61,7 +67,7 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore", "TextCaptureCore", "DisplayControlCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "KeyboardRemapCore", "WorldClockCore", "TextCaptureCore", "ScrollCore", "DisplayControlCore"]
         ),
     ]
 )

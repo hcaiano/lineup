@@ -138,8 +138,8 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting eight independent tools, with pure core modules, a C hardware
-bridge and one AppKit executable:
+Lineup is one app shell hosting ten independent tools, on top of nine pure ("core") modules,
+a C hardware bridge and one AppKit executable:
 
 ```
 Sources/ZonesCore/          Pure, tested core for the Zones tool (no AppKit)
@@ -156,8 +156,10 @@ Sources/CyclerCore/         Pure, tested core for the Cycler tool
 Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   TriggerKey.swift          Trigger key enum + display names
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
+Sources/KeyboardRemapCore/  Physical keys, device selection, map composition and ownership journal
 Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
 Sources/TextCaptureCore/    Display-local capture geometry, reading order, and cancellation gate
+Sources/ScrollCore/         Scroll device classification, gesture continuity and per-axis reversal
 Sources/DisplayControlCore/ Exact display targeting, command generations, DDC packets and media keys
 Sources/DisplayHardware/    Native brightness and Intel/Apple Silicon DDC bridge, with runtime checks
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
@@ -171,24 +173,29 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
   MenuBarSettings.swift     Menu Bar settings, arrow-boundary groups and auto-hide policy
   MenuBarPreferences.swift  Selective native visibility edits and recovery journal model
+  KeyboardRemapSettings.swift  Versioned per-keyboard rules in the existing config envelope
+  ScrollSettings.swift      Scroll device and direction preferences, with unknown-key preservation
   MenuPanelSession.swift    Ephemeral tab selection, session memory and enabled-tool ordering
-Sources/lineup/              AppKit agent (the app shell + the eight tools)
+Sources/lineup/              AppKit agent (the app shell + the ten tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
   Settings/                    Settings window: sidebar shell + shared components
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
-  Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
+  App/KeyboardMappingService.swift  Shared per-service HID map owner and recovery
+  Tools/Hyperkey/              Hyperkey event tap, blocked-state pill, legacy ownership handoff
+  Tools/KeyboardRemap/         Keyboard selection, physical key editor and layout-aware labels
   Tools/WorldClock/            Shared and standalone clock view, optional status item and Settings
   Tools/Awake/                 IOKit idle-sleep requests, shared panel countdown, session settings
   Tools/DisplayControl/        Hardware detection, serialized writes, native sliders and Settings
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
   Tools/TextCapture/           ScreenCaptureKit selection/capture, Vision OCR, clipboard, Settings
   Tools/MenuBar/               Menu bar inventory, arrow, native visibility and recovery
+  Tools/Scroll/                Scroll event tap, device lookup and Settings
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
   main.swift                  Orchestrates the suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / DisplayControlSuite.swift / MenuPanelSuite.swift / NightlyAutomationSuite.swift
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / KeyboardRemapSuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / ScrollSuite.swift / DisplayControlSuite.swift / MenuPanelSuite.swift / NightlyAutomationSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
@@ -216,8 +223,8 @@ to style Settings and the layout editor.
 `MenuPanelSession` in AppCore owns tab selection and prioritizes Display Control, Keep Awake and
 World Clock. The first opening selects Display Control when present, otherwise the first enabled
 tool. Closing clears the current selection but retains the last tab in memory for the app session.
-Disabling the selected tool falls back to the first remaining tab. Command-1 through Command-8
-select tabs; Control-Tab and Control-Shift-Tab cycle them. Escape closes the popover after a
+Disabling the selected tool falls back to the first remaining tab. Command-1 through Command-9
+select the first nine tabs; Control-Tab and Control-Shift-Tab cycle them. Escape closes the popover after a
 clock search or editing mode has consumed its own cancellation.
 
 Tools provide `makeQuickPanel` and optional `makeFullPanel` views backed by the same live tool
@@ -261,9 +268,10 @@ current system material. Verify native controls with both appearances and the re
 accessibility settings; let the OS render each setting.
 
 This starts only Display Control, Keep Awake, World Clock and Text Capture (which has no shortcut
-until one is recorded). Zones, Cycler and Hyperkey are registered but stay off, so Settings can show
-their panes without shortcuts, event taps or a key remapping. Menu Bar is not registered, because
-registration restores icons from the live recovery journal. The review uses a separate
+until one is recorded). Zones, Cycler, Hyperkey and Scroll are registered but stay off, so Settings
+can show their panes without shortcuts, event taps or a key remapping. Menu Bar is not registered,
+because registration restores icons from the live recovery journal, and neither is Keyboard Remap,
+whose pane refreshes the live keyboard maps. The review uses a separate
 `review-config.json`, sample cities and media keys off. Detection reads hardware; a Keep Awake
 request starts only through its Start action. The gear opens the isolated Settings window.
 Quitting releases the tools. The review refuses the live config directory and the normal app
@@ -274,12 +282,67 @@ matching Settings panes, then exit. Capture uses `screencapture -l` on the visib
 keeps composed materials and native control layers; the terminal needs Screen Recording. The
 active Keep Awake capture holds a real power assertion for about a second and stops it before the
 next capture. Capture also includes the Text Capture notices, the drag-snap highlight and the
-Zones, Cycler, Hyperkey and Text Capture panel widgets drawn with sample data on the popover
-material. Add `LINEUP_MENU_PANEL_REVIEW_EDITOR=1` to include the layout editor; it covers every
+Zones, Cycler, Hyperkey, Text Capture, Scroll and Keyboard Remap panel widgets drawn with sample
+data on the popover material. Add `LINEUP_MENU_PANEL_REVIEW_EDITOR=1` to include the layout editor; it covers every
 display for about a second, with a sample layout and a Save that writes nothing. Add
 `LINEUP_MENU_PANEL_REVIEW_APPEARANCE=light` or `dark` for each appearance. A
 transient popover closes when another application takes focus, so capture interactions in one
 continuous session.
+
+### Keyboard maps and recovery
+
+`KeyboardMappingService` owns every `UserKeyMapping` write. Hyperkey contributes Caps Lock to
+F18 only while its Caps Lock trigger is available. Keyboard Remap contributes physical HID
+pairs selected by a built-in flag or an external hardware fingerprint. Product names are labels;
+external selection uses vendor/product IDs, transport and a serial number or location. Ambiguous
+matches block the selected rule instead of applying it to several services.
+
+The service uses Apple's per-service IOKit APIs from
+[TN2450](https://developer.apple.com/library/archive/technotes/tn2450/_index.html).
+It reads and validates each complete table, removes only exact journaled pairs, and composes
+the desired rules with external pairs. A pre-existing identical pair remains externally owned.
+Conflicting sources and incompatible F18 routes block application. Unreadable tables never
+authorize a write. Enumeration, composition, writes and recovery run on one serial queue.
+Wake and a three-second inventory refresh recover maps after sleep and reconnection.
+The timer runs while Hyperkey is requested, nonempty remap rules are enabled, or a legacy
+ownership claim or recovery is pending. It stops after idle cleanup. Startup, wake and explicit
+Refresh still update the inventory. Requests made during a refresh coalesce into one more pass
+after the current snapshot. A disconnected saved keyboard keeps its per-keyboard
+status and waits for reconnection without raising an app-wide mapping warning.
+
+`~/.config/lineup/keyboard-mappings-recovery.json` stores ownership independently of tool
+preferences. Its boot-session identifier prevents replaying a RegistryID after reboot.
+Transactions record old and proposed owned pairs atomically before writing, re-read the table
+before applying, and verify the result before finalizing ownership. macOS provides no atomic
+compare-and-swap for this property; the re-read detects intervening writes but cannot lock out
+another remapper. Cleanup retains failed claims for retry and preserves changed destinations
+and additional external pairs. A shared menu warning and Settings recovery action remain
+available when a tool is disabled but its previous pairs could not be released.
+The bounded exit cleanup releases journaled pairs after normal termination;
+the next start recovers after an interruption.
+Legacy ownership claims are acknowledged only after the current request journals them. A later
+explicit claim is imported again even if an earlier claim was transferred in the same session.
+An empty keyboard inventory leaves the claim pending for the next connected keyboard.
+
+The existing schema-1 config envelope stores `tools.keyboardRemap` as an optional version-1
+section. Settings saves through `ToolConfigScope` before changing runtime rules and preserves
+unknown fields in settings, rules, selectors and pairs. Future or malformed sections block the
+tool's editing and application. Other tools keep their own sections.
+
+For visual inspection without starting tools or reading live config, the existing debug preview
+command also renders empty and configured Keyboard Remap panes:
+
+```sh
+LINEUP_RENDER_PREVIEW=<existing-output-directory> swift run lineup
+```
+
+These panes use an in-memory config and an inventory-only mapping service. They do not prove
+keyboard input behavior. Before release, verify the built-in ISO/grave swap alongside an
+external keyboard, plain and Shift input, held-key repeat, wake, reconnect, live edits, every
+Hyperkey/Keyboard Remap enable combination and quit. Check conflicts, denied or revoked Input
+Monitoring for Hyperkey, and recovery after interruption with later external changes. Capture
+the screenshots and keyboard-interaction video required by `CONTRIBUTING.md`.
+Display geometry, window dragging and capture overlays do not apply to this tool.
 
 ### Menu Bar runtime and recovery
 
@@ -359,7 +422,7 @@ The dependency-free suite checks geometry, reading order, settings persistence, 
 commit gate. It does not prove macOS permission prompts, live OCR quality, or compositor behavior.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`/`menuBar`/`displayControl`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`keyboardRemap`/`worldClock`/`awake`/`textCapture`/`menuBar`/`scroll`/`displayControl`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
 
 ### App launch placement
@@ -554,6 +617,47 @@ Two rules the feed depends on:
 
 The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) → `make-dmg.sh` →
 `notarize.sh` (DMG) → `sparkle-appcast.sh` → `wrangler deploy` → commit.
+
+## Scroll event tap
+
+Scroll installs one active session event tap for scroll-wheel events only, appended after other
+session taps, and only while the tool runs with a device and direction selected and Accessibility
+is granted. The tap's run-loop source lives on a dedicated thread: every scroll on the Mac waits
+for an active tap, so the main thread must not delay it. The callback always returns the original
+event, modified in place; it never posts events. When macOS disables the tap for a timeout, the
+callback re-enables it and events pass through unchanged meanwhile. A crash removes the tap with
+the process.
+
+Each event is attributed through its attached `IOHIDEvent`. `CGEventCopyIOHIDEvent` and
+`IOHIDEventGetSenderID` are private, resolved with `dlsym`; when either is missing the tool reports
+that it is unsupported and installs nothing. The sender is the registry ID of the HID service that
+produced the event. `IORegistryEntryIDMatching` finds the service; its driver class,
+`DeviceUsagePairs` and Apple vendor/product IDs decide mouse or trackpad in `ScrollDeviceDescriptor`.
+Magic Mouse is checked before the touchpad usage it can report; built-in trackpads also report a
+mouse usage. Answers are cached by registry ID, which macOS does not reuse while running, so the
+cache needs no invalidation after sleep or reconnection. Events without HID data, such as those
+posted by other apps, are never reversed and never join a gesture. A phased gesture keeps the
+device that began it through its momentum, so inertia cannot flip direction if one of its HID
+events has an unresolved sender.
+
+Reversal negates the line, fixed-point and point deltas and the HID event's scroll values, which
+WebKit reads. The line delta is written first because Core Graphics recomputes the other two from
+it. Accelerated and raw delta fields are left untouched, as in other scroll utilities.
+
+Accessibility grants and revocations are observed through the `com.apple.accessibility.api`
+notification, rechecked a second later, and on activation and wake. While access is missing, a
+two-second timer retries. Revocation removes the tap. The settings section uses the opaque tool
+envelope; an unreadable section intercepts nothing and blocks edits.
+
+For manual verification, use a wheel mouse, a Magic Mouse and a trackpad. With the defaults, record
+mouse wheel and trackpad scrolling alternating in one window, then enable Horizontal and include
+horizontal scrolling and a trackpad flick whose inertia keeps its direction. Repeat with the inverse
+combination and each direction alone. Confirm that pinch, rotation, three- and four-finger swipes,
+Mission Control and Notification Center behave as before, and that Safari's two-finger page swipe
+changes only when horizontal reversal applies to that device. Sleep and wake, disconnect and reconnect a mouse, then scroll
+again. Revoke Accessibility while scrolling: scrolling must keep working in the macOS direction, and
+Settings must show recovery. Disable the tool and quit Lineup during inertia; the next scroll must
+follow macOS.
 
 ## Keep Awake power requests
 

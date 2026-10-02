@@ -13,7 +13,7 @@
 
 ![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup combines eight tools. Enable only the tools you need:
+Lineup combines ten tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
   Zone shortcuts are numbered across ALL your displays: each display's Settings group shows its
@@ -25,6 +25,8 @@ Lineup combines eight tools. Enable only the tools you need:
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
+- **Keyboard Remap:** Remap or swap physical keys on one keyboard, including the built-in
+  keyboard, while other keyboards keep their mappings.
 - **World Clock:** Compare cities with your local time, scroll through nearby hours, and pin a
   place's live time to an optional separate menu-bar item. City search and sunrise/sunset
   estimates work offline.
@@ -34,6 +36,8 @@ Lineup combines eight tools. Enable only the tools you need:
   Portuguese and English.
 - **Menu Bar:** Hide the icons you place left of an arrow, and show them with one click.
   Requires macOS 27 and is off by default.
+- **Scroll:** Reverse the mouse and the trackpad separately, for example a traditional mouse
+  wheel with natural trackpad scrolling.
 - **Display Control:** Adjust confirmed hardware brightness and speaker volume per compatible
   display. Optional brightness keys can adjust one display or a calibrated group; volume keys
   have their own destination.
@@ -46,13 +50,14 @@ Click the Lineup menu-bar icon to open its panel. The top row has an icon tab fo
 tool. Select Display Control for hardware brightness and volume sliders, Keep Awake for duration
 and Start/Stop controls, or World Clock to manage places and compare times. Zones has **Edit
 Layout…** and the drag-to-snap switch; Cycler lists your app shortcuts, and clicking one opens that
-app; Hyperkey shows which key sends Hyper; Text Capture starts a capture and shows its shortcut.
+app; Hyperkey shows which key sends Hyper; Text Capture starts a capture and shows its shortcut;
+Scroll has a switch for the mouse and one for the trackpad; Keyboard Remap opens its key mappings.
 Settings and other app actions are in the same top row. Right-click the icon for the native menu
 and its tool submenus.
 
 The first opening selects Display Control when available. Later openings remember your last tab
 until Lineup quits. Disabling the selected tool switches to the first remaining tab. Select tabs
-with Command-1 through Command-8, or cycle with Control-Tab and Control-Shift-Tab.
+with Command-1 through Command-9, or cycle with Control-Tab and Control-Shift-Tab.
 
 Click outside, click the Lineup icon again, or press Escape to close the panel. In World Clock,
 Escape first leaves search or editing. Closing the panel leaves enabled tools and any Keep Awake
@@ -178,6 +183,23 @@ when their DDC services cannot be matched safely. See
 The optional black cover changes no gamma, display power or arrangement. Lineup does not use
 gradual software dimming as a fallback and does not change resolution or HDR.
 
+## Remap keyboard keys
+
+Open Settings → Keyboard Remap and select a keyboard. For the built-in §/± and grave/tilde
+swap, choose **Swap these keys** below the keyboard selection. For other rules, choose
+**Add mapping** or **Swap two keys** and select the keys. Rules use physical keys, including
+their Shift behavior. Expand **Key labels** to choose which layout supplies the displayed
+symbols; this does not change your macOS keyboard layout.
+
+The tool starts off. Enable it after choosing your rules. Rules remain saved when a keyboard is
+disconnected and apply again on reconnection. A keyboard without rules keeps its existing map.
+Hyperkey can run alongside Keyboard Remap; Caps Lock and F18 cannot have contradictory rules.
+
+If Settings reports a conflict, change the rule or stop the app or login script that owns the
+conflicting mapping, then choose **Retry**. Lineup preserves external mappings and leaves an
+unreadable table untouched. Disabling a tool or quitting Lineup removes only the pairs it added.
+Keyboard Remap needs no extra permissions.
+
 ## Keep Awake
 
 Enable Keep Awake in Settings, then choose a duration and press **Start** in the Lineup panel.
@@ -242,6 +264,27 @@ choose the indicated settings file; Lineup changes only the visibility of your s
 This tool uses a private macOS 27 interface. If macOS no longer offers it, the arrow stays but
 nothing hides, and Settings says so. Menu Bar is unavailable on other macOS versions; the other
 tools still support macOS 13+.
+
+## Reverse scrolling
+
+macOS has one scroll direction for every device. Enable **Scroll** in Settings to reverse the
+mouse, the trackpad or both, on top of that direction. By default it reverses vertical mouse
+scrolling and leaves the trackpad unchanged. **Vertical** and **Horizontal** choose the directions
+reversed on each selected device. Changes apply to the next scroll, and the Lineup menu bar offers
+quick switches for each device.
+
+Settings shows what reversal means with your current macOS preference. Lineup never changes
+**Natural scrolling** in System Settings; turning Scroll off or quitting Lineup restores the macOS
+direction immediately. Scroll needs the Accessibility access Lineup already uses. Until it is
+granted, scrolling keeps the macOS direction and the other tools keep working.
+
+Each scroll is matched to the mouse or trackpad that produced it, so alternating devices, sleep,
+and connecting a device need no action. Magic Mouse counts as a mouse. Speed and inertia are
+preserved. Zoom, rotation, Mission Control and swipes between spaces are gestures, not scrolling,
+and are unchanged. Apps that turn horizontal scrolling into page navigation, such as Safari, follow
+the reversed horizontal direction; horizontal reversal is off by default. Scrolling posted by
+other apps, such as remote-control or mouse utilities, and devices that are neither a mouse nor a
+trackpad keep the macOS direction.
 
 ## Update tracks
 

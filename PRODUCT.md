@@ -29,7 +29,8 @@ and volume sliders; Keep Awake has session controls; World Clock has its complet
 search and time scroll. Zones has Edit Layout and the drag-to-snap switch. Cycler lists the app
 shortcuts; clicking one opens its app as the shortcut would, and Edit opens its Settings. Hyperkey
 shows its trigger and the modifiers it sends. Text Capture has its capture button and shortcut, or
-a way to add one. A tool without its own controls shows its actions; a single action is one
+a way to add one. Scroll has one switch per device. Keyboard Remap shows how many keys it remaps
+and opens its Settings to edit them. A tool without its own controls shows its actions; a single action is one
 full-width button. Actions that open an editor or a capture close the panel first. Settings and app
 actions remain in the top row; right-clicking the icon opens the existing native menu.
 
@@ -46,7 +47,7 @@ force a transparency level.
 The first opening selects Display Control when enabled, otherwise the first available tool.
 Reopening remembers the last selected tab for the current app session. Opening a specific tool
 from Settings selects its tab. Disabling the selected tool removes its tab and selects the first
-remaining tool. Use Command-1 through Command-8 to select tabs, or Control-Tab and
+remaining tool. Use Command-1 through Command-9 to select the first nine tabs, or Control-Tab and
 Control-Shift-Tab to move forward and backward.
 
 Closing the panel leaves Keep Awake sessions and enabled tools running. Content scrolls within
@@ -116,6 +117,27 @@ emergency Escape shortcut cannot be registered. Wake and reconnection detect cap
 The optional black cover does not change gamma, display power or arrangement. Gradual software
 dimming, resolution changes, HDR and virtual-display controls are outside this tool's current scope.
 
+## Keyboard Remap
+
+Keyboard Remap is an optional tool, off by default. Settings lets users select the built-in
+keyboard or an external keyboard, add physical source and destination keys, and swap two keys.
+The built-in keyboard preset appears below the keyboard selection and swaps the ISO section key
+and the grave accent key. Shift follows the destination key. Known keys show symbols and physical
+names without HID codes. The collapsed Key labels option selects the layout used for those
+symbols; it changes labels without changing the macOS input layout or saved physical keys.
+
+Rules apply only to their selected keyboard. A disconnected keyboard retains its settings and
+receives them again when it reconnects. Settings shows its disconnected status beside the
+keyboard selection. External keyboards use hardware identifiers rather than
+their product name alone. An ambiguous match waits for the user to choose a distinguishable
+device.
+
+Hyperkey and Keyboard Remap share one owner of keyboard maps. Disabling either tool removes
+only its contribution. Conflicting or unreadable external maps block the affected operation and
+show recovery in Settings, while other tools remain usable. Quitting releases Lineup's own
+pairs. Recovery after an interruption preserves external changes made after Lineup applied its
+rules. Keyboard Remap needs no event tap or additional permission.
+
 ## World Clock
 
 World Clock is an optional menu-bar tool for checking colleagues' times and comparing nearby
@@ -181,6 +203,24 @@ VoiceOver-announced notice confirms a copy. Empty results, capture or recognitio
 the clipboard. Screen Recording is requested only on capture, with recovery in Settings. Display
 changes and tool shutdown invalidate pending results. There is no capture history, automatic
 paste, translation, or network processing.
+
+## Scroll
+
+Scroll is an independent, opt-in tool for people who want a different direction on each device,
+most often a traditional mouse wheel with a natural trackpad. Settings and the menu bar reverse
+the mouse and the trackpad separately; vertical and horizontal choices apply to each reversed
+device. The defaults reverse vertical mouse scrolling and keep the trackpad unchanged; horizontal
+reversal starts off because apps turn horizontal scrolling into page navigation. Settings
+explains the result relative to the current macOS Natural scrolling preference, which Lineup only
+reads.
+
+Changes apply to the next scroll. Reversal changes only the sign of each scroll: speed and inertia
+stay as macOS delivers them, gesture events such as zoom, rotation and space swipes are never
+touched, and no event is added or removed. A gesture keeps one device through its inertia.
+Scrolling that cannot be attributed to a mouse or trackpad, including input posted by other apps,
+keeps the macOS direction. Missing Accessibility leaves scrolling unchanged
+and shows recovery in Settings. Disabling the tool or quitting ends interception immediately.
+Smoothing, acceleration, button remapping and per-app rules are out of scope.
 
 ## Brand Personality
 

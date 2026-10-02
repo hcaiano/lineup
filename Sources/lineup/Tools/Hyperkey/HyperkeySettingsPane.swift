@@ -3,11 +3,8 @@ import HyperkeyCore
 import SwiftUI
 
 /// The Hyperkey pane's view model. The tool owns it and pushes `refresh()` on every state change,
-/// because `HyperKeyController.apply()` settles asynchronously (hidutil runs on a background
-/// queue) — reading status straight after an edit would show the previous state.
-///
-/// It also caches the orphaned-mapping answer: that probe spawns `hidutil`, so it must not be
-/// re-run from a SwiftUI body.
+/// because keyboard mapping work settles asynchronously. Status follows confirmed readback.
+/// Recovery only offers maps covered by an explicit ownership claim.
 @MainActor
 final class HyperkeyPaneModel: ObservableObject {
     struct AlertItem: Identifiable { let id = UUID(); let title: String; let message: String }
@@ -58,8 +55,7 @@ final class HyperkeyPaneModel: ObservableObject {
     }
 
     /// Called when the pane appears or the app becomes active again — the two moments a grant or
-    /// a leftover mapping can have changed behind our back. Activation is frequent, so only the
-    /// pane opening forces the (subprocess-backed) mapping probe.
+    /// a recorded mapping may need recovery.
     func recheck(force: Bool = false) {
         tool?.refreshRecoveryState(force: force)
         refresh()
@@ -93,6 +89,11 @@ final class HyperkeyPaneModel: ObservableObject {
 
     func restoreCapsLock() {
         tool?.restoreCapsLock()
+        refresh()
+    }
+
+    func retry() {
+        tool?.retry()
         refresh()
     }
 
@@ -182,7 +183,7 @@ struct HyperkeySettingsPane: View {
                                 if model.needsInputMonitoring {
                                     Button("Open Input Monitoring") { model.openInputMonitoringSettings() }
                                 } else {
-                                    EmptyView()
+                                    Button("Retry") { model.retry() }
                                 }
                             }
                         }
@@ -208,7 +209,7 @@ struct HyperkeySettingsPane: View {
                         SettingsSectionView("Recovery") {
                             SettingsRow(
                                 title: "Caps Lock is still remapped",
-                                detail: "A Caps Lock → F18 mapping is applied that no running app claims, usually a Cycler install that quit without cleaning up. Restoring it is safe.") {
+                                detail: "A Caps Lock → F18 mapping owned by Lineup or a previous Cycler install could not be released. Retry to remove only that recorded mapping.") {
                                 Button("Restore Caps Lock") { model.restoreCapsLock() }
                             }
                         }

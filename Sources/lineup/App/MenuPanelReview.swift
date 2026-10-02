@@ -20,6 +20,7 @@ final class MenuPanelReview: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindowController?
     private var settingsModel: SettingsStore?
     private var displayTool: DisplayControlTool?
+    private var scrollTool: ScrollTool?
     private var discoveryTimer: Timer?
     private var directory: URL?
     private var capture = false
@@ -86,8 +87,9 @@ final class MenuPanelReview: NSObject, NSApplicationDelegate {
             }
             // Registered only so Settings can render their panes. They never start: each would
             // install shortcuts, event taps or a key remapping. Menu Bar is left out entirely
-            // because registration restores icons from the live recovery journal.
-            for id in [ToolID.zones, .cycler, .hyperkey] {
+            // because registration restores icons from the live recovery journal, and Keyboard
+            // Remap because its Settings pane refreshes the live keyboard maps.
+            for id in [ToolID.zones, .cycler, .hyperkey, .scroll] {
                 try store.setEnabled(false, for: id)
             }
 
@@ -102,6 +104,9 @@ final class MenuPanelReview: NSObject, NSApplicationDelegate {
             registry.register(AwakeTool())
             registry.register(TextCaptureTool())
             registry.register(displayTool)
+            let scrollTool = ScrollTool()
+            self.scrollTool = scrollTool
+            registry.register(scrollTool)
             let item = StatusItemController(registry: registry, permissions: .shared)
             statusItem = item
             item.showMenuBarIcon = { store.config.general.showMenuBarIcon }
@@ -327,7 +332,8 @@ final class MenuPanelReview: NSObject, NSApplicationDelegate {
                 settings(.tool(.cycler), "cycler"), settings(.tool(.hyperkey), "hyperkey"),
                 settings(.tool(.worldClock), "world-clock"), settings(.tool(.awake), "awake"),
                 settings(.tool(.textCapture), "text-capture"),
-                settings(.tool(.displayControl), "display-control"), settings(.about, "about")]
+                settings(.tool(.displayControl), "display-control"), settings(.tool(.scroll), "scroll"),
+                settings(.about, "about")]
     }
 
     private var widgetWindow: NSPanel?
@@ -377,6 +383,15 @@ final class MenuPanelReview: NSObject, NSApplicationDelegate {
             Divider()
             TextCaptureQuickPanel(isCapturing: false, isRunning: true, shortcut: "⌃⇧2", warnings: [],
                                   capture: {}, cancel: {})
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
+            if let scrollTool {
+                Divider()
+                ScrollQuickPanel(tool: scrollTool)
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
+            }
+            Divider()
+            // Never attached, so it reads no keyboard and has no mapping service.
+            KeyboardRemapQuickPanel(tool: KeyboardRemapTool())
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
         }
         .frame(width: 352)

@@ -3,6 +3,7 @@ import AppCore
 import ApplicationServices
 import os
 import Sparkle
+import SwiftUI
 import ZonesCore
 
 /// The one `NSApplicationDelegate`.
@@ -23,6 +24,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private var settings: SettingsWindowController?
     private var welcome: WelcomeWindowController?
     private var whatsNew: WhatsNewWindowController?
+    private var keyboardMappingObserver: UUID?
 
     /// What the last `LegacyImport.run` reported. Kept because two of its outcomes outlive the
     /// call: a deferred Zones import becomes a shell warning and a retry, and a Cycler import
@@ -115,11 +117,18 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.register(ZonesTool())
         registry.register(CyclerTool())
         registry.register(HyperkeyTool())
+        registry.register(KeyboardRemapTool())
         registry.register(WorldClockTool())
         registry.register(AwakeTool())
         registry.register(TextCaptureTool())
         registry.register(MenuBarTool())
         registry.register(DisplayControlTool())
+        registry.register(ScrollTool())
+        keyboardMappingObserver = KeyboardMappingService.shared.observe { [weak self] in
+            self?.statusItem.refresh()
+            self?.settings?.refresh()
+        }
+        KeyboardMappingService.shared.start()
         registry.startEnabledTools()
         statusItem.refresh()
 
@@ -260,6 +269,14 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 detailLines: [message],
                 actionTitle: "Reset configuration…",
                 action: { [weak self] in self?.resetConfig() }))
+        }
+        if let message = KeyboardMappingService.shared.recoveryStatus {
+            out.append(ToolWarning(
+                id: "shell.keyboardMappingRecovery",
+                text: "Previous keyboard mappings need recovery",
+                detailLines: [message],
+                actionTitle: "Retry keyboard recovery",
+                action: { KeyboardMappingService.shared.retry() }))
         }
         if importReport.zonesDeferred {
             // 1.x's wording, kept verbatim: the same situation, so the same sentence.
@@ -444,8 +461,17 @@ final class AppShell: NSObject, NSApplicationDelegate {
     // MARK: - Termination
 
     func applicationWillTerminate(_ notification: Notification) {
+        #if DEBUG
+        // Preview never starts the shell's tools or its shared mapping owner.
+        if ProcessInfo.processInfo.environment["LINEUP_RENDER_PREVIEW"] != nil { return }
+        #endif
         TerminationCoordinator.shared.runCleanups()
         registry.stopAll()
+        if let keyboardMappingObserver {
+            KeyboardMappingService.shared.removeObserver(keyboardMappingObserver)
+            self.keyboardMappingObserver = nil
+        }
+        KeyboardMappingService.shared.shutdown()
     }
 
     #if DEBUG
@@ -453,12 +479,17 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private static func renderPreviews(to dir: String) {
         func write(_ view: NSView, _ name: String) {
             let win = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            win.appearance = NSAppearance(named: .aqua)
+            win.setFrameOrigin(NSPoint(x: -10000, y: -10000))
             win.contentView = view
+            win.orderFront(nil)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
             view.layoutSubtreeIfNeeded()
             view.display()
             guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(dir)/\(name)"))
+            win.orderOut(nil)
         }
         func sized(_ view: NSView, _ size: NSSize) -> NSView {
             view.frame = NSRect(origin: .zero, size: size)
@@ -468,6 +499,44 @@ final class AppShell: NSObject, NSApplicationDelegate {
         write(WhatsNewWindowController.makeEmbeddedContent(), "preview-whatsnew.png")
         write(sized(AboutWindowController.makeEmbeddedContent(size: AboutWindowController.naturalSize),
                     AboutWindowController.naturalSize), "preview-about.png")
+
+        // Render the actual tool pane with in-memory settings and an inventory-only service.
+        // This branch returns before the shell reads config.json or starts any live tools.
+        let mappings = KeyboardMappingService(readOnly: true)
+        mappings.start()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        for configured in [false, true] {
+            var config = LineupAppConfig()
+            var remap = KeyboardRemapSettings()
+            if configured {
+                remap.rules = [.init(selector: .builtIn, mappings: [
+                    .init(source: 0x700000064, destination: 0x700000035),
+                    .init(source: 0x700000035, destination: 0x700000064),
+                ])]
+            }
+            try? config.setSettings(remap, for: .keyboardRemap)
+            let previewStore = LineupAppConfigStore(
+                url: URL(fileURLWithPath: dir).appendingPathComponent("preview-config.json"),
+                config: config)
+            let tool = KeyboardRemapTool()
+            tool.attach(ToolServices(
+                id: .keyboardRemap,
+                config: ToolConfigScope(owner: .keyboardRemap, store: previewStore),
+                permissions: .shared, activation: .shared, termination: .shared,
+                refreshMenu: {}, refreshSettings: {}, peers: { [:] },
+                keyboardMappings: mappings))
+            tool.paneDidAppear()
+            let view = ToolPane(id: tool.id, title: tool.displayName, summary: tool.summary,
+                                isOn: .constant(false)) { tool.makeSettingsPane() }
+                .tint(Color(nsColor: Brand.blue))
+                .environment(\.colorScheme, .light)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .frame(width: 650, height: 880)
+            write(sized(NSHostingView(rootView: view), NSSize(width: 650, height: 880)),
+                  configured ? "preview-keyboard-remap-configured.png" : "preview-keyboard-remap-empty.png")
+            tool.paneDidDisappear()
+        }
+        mappings.shutdown()
     }
     #endif
 }

@@ -61,6 +61,14 @@
       "color": "4D617A",
       "subject": "One wide ivory white softly raised horizontal menu-bar strip, centered slightly above midpoint, with exactly three evenly spaced small deep-slate rounded squares inset in it. Beneath the strip, one bold ivory downward chevron centered, indicating show or hide. Keep two simple distinct shapes and high contrast. No desktop screen, tiny text or extra panels.",
       "master": "masters/menu-bar.png"
+    },
+    {
+      "id": "scroll",
+      "name": "Scroll",
+      "asset": "feature-scroll",
+      "color": "6B8F23",
+      "subject": "Two separate bold ivory vertical arrows side by side, the left pointing up and the right pointing down, with thick stems, broad triangular heads and a clear enamel gap between them. Make the paired directions read as independent at 20 pixels. No mouse outline, trackpad outline, letters or extra marks.",
+      "master": "masters/scroll.png"
     }
   ]
 }

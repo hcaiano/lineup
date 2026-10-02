@@ -41,6 +41,7 @@ final class HyperkeyTool: Tool {
     /// is the normal order — that edit has to persist immediately, with no tool ever started.
     private var services: ToolServices?
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    private var mappingObserver: UUID?
     /// `stop()` must not persist `enabled = false` when the whole app is quitting — only when the
     /// USER turned the tool off. `AppShell.applicationWillTerminate` runs the termination cleanups
     /// before `registry.stopAll()`, so our cleanup block is a reliable "we are quitting" signal.
@@ -48,8 +49,8 @@ final class HyperkeyTool: Tool {
     /// reads: the tool flag is authoritative on load.
     private var isTerminating = false
 
-    /// Cached because `orphanedMappingDetected()` spawns `hidutil`, and `warnings` is recomputed
-    /// on every menu build. Refreshed on the events that can actually change it.
+    /// Recovery follows explicit ownership claims from the shared keyboard service.
+    /// Cached so the menu and Settings see the same state.
     private(set) var orphanedMapping = false
     private var lastOrphanProbe: Date?
 
@@ -61,6 +62,13 @@ final class HyperkeyTool: Tool {
     /// saves the real trigger while Hyperkey is off. Acquires no tap, no mapping, no observers.
     func attach(_ services: ToolServices) {
         self.services = services
+        controller.useKeyboardMappings(services.keyboardMappings)
+        mappingObserver = services.keyboardMappings.observe { [weak self] in
+            guard let self else { return }
+            self.refreshRecoveryState(force: true)
+            self.paneModel.refresh()
+            self.services?.refreshMenu()
+        }
         loadSettings()
         paneModel.refresh()
     }
@@ -88,9 +96,9 @@ final class HyperkeyTool: Tool {
 
         // Before the first apply(): a Caps Lock remap left by a previous standalone-Cycler install
         // must become ours, or we would use it and never clean it up (plan §5.2).
-        CapsLockHandoff.adoptLegacyOwnershipIfNeeded()
+        CapsLockHandoff.adoptLegacyOwnershipIfNeeded(using: services.keyboardMappings)
 
-        // apply() resolves asynchronously (hidutil runs on a background queue), so the pill, the
+        // apply() resolves asynchronously (keyboard maps apply on a background queue), so the pill, the
         // menu and the pane must refresh on this callback, not on apply()'s return.
         controller.onStateChange = { [weak self] state in
             MainActor.assumeIsolated {
@@ -109,7 +117,7 @@ final class HyperkeyTool: Tool {
         }
 
         // The shell owns signals now (cycler's installHyperKeySignalCleanup() is NOT ported), but
-        // the tap and the hidutil mapping still have to come down on SIGTERM/SIGINT/SIGHUP.
+        // the tap and Hyperkey’s mapping contribution still come down on SIGTERM/SIGINT/SIGHUP.
         services.termination.addCleanup(.hyperkey) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -119,7 +127,7 @@ final class HyperkeyTool: Tool {
             }
         }
 
-        // Sleep tears the tap down and can drop the hidutil mapping; re-apply on wake.
+        // Sleep can disable the tap and drop HID mappings; reconcile both on wake.
         observe(NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)
         // Coming back from System Settings is when a fresh Input Monitoring grant becomes visible
         // — and when a just-quit standalone Cycler stops blocking us.
@@ -137,7 +145,7 @@ final class HyperkeyTool: Tool {
         guard isRunning else { return }
         isRunning = false
         // Disables the tap, removes the run-loop source, invalidates the Secure Input timer and
-        // clears the hidutil mapping IF we own it.
+        // removes only Hyperkey’s contribution through the shared mapping service.
         controller.stop()
         controller.onStateChange = nil
         HyperKeyBlockedPill.shared.hide()
@@ -155,8 +163,7 @@ final class HyperkeyTool: Tool {
         let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isRunning else { return }
-                // Debounced: didBecomeActive fires on every app activation and the probe is a
-                // subprocess.
+                // Share the cached recovery state across frequent app activations.
                 self.refreshRecoveryState()
                 if didWake {
                     // Sleep can eat the trigger's key-up, leaving our synthetic ⌃⌥⇧⌘ latched for
@@ -185,9 +192,8 @@ final class HyperkeyTool: Tool {
         controller.blockedByStandaloneCycler = SingleInstance.standaloneCyclerIsRunning() != nil
         var effective = settings
         effective.enabled = true // the TOOL flag is authoritative, and it is true while running
-        // didBecomeActive fires on EVERY app activation, and a full apply() runs the hidutil probe
-        // — a subprocess — each time. When the tap is already live for exactly these settings and
-        // the mapping is already ours, there is nothing to redo.
+        // App activation is frequent. A live tap with confirmed shared mappings needs no new
+        // application; wake and settings changes still force reconciliation.
         guard force || !controller.isSettled(for: effective) else { return }
         controller.apply(effective)
     }
@@ -313,10 +319,9 @@ final class HyperkeyTool: Tool {
         }
     }
 
-    /// The pane's "Restore Caps Lock" button. `hidutil` runs off the main thread, so the UI
-    /// catches up in the completion.
+    /// Restores only the service’s recorded Caps Lock ownership. Completion follows readback.
     func restoreCapsLock() {
-        CapsLockHandoff.restoreCapsLock { [weak self] _ in
+        CapsLockHandoff.restoreCapsLock(using: services?.keyboardMappings ?? .shared) { [weak self] _ in
             guard let self else { return }
             self.refreshRecoveryState(force: true)
             // The mapping (and our claim on it) just went away, so this must not take the settled
@@ -327,21 +332,22 @@ final class HyperkeyTool: Tool {
         }
     }
 
+    func retry() {
+        services?.keyboardMappings.retry()
+        apply(force: true)
+    }
+
     var statusText: String? { controller.settingsStatus }
     var needsInputMonitoring: Bool { controller.needsInputMonitoring }
     var permissions: PermissionCenter? { services?.permissions ?? PermissionCenter.shared }
 
-    /// `hidutil` is a subprocess; keep the probe off the hot paths AND off the main thread. `force`
-    /// is for the moments the answer genuinely just changed (a restore, the pane opening, start).
-    ///
-    /// The answer lands asynchronously, so the menu and the pane are refreshed from the completion
-    /// when it actually changed something.
+    /// Updates recovery from the service’s ownership state, including failed cleanup attempts.
     func refreshRecoveryState(force: Bool = false) {
-        // Quitting: the probe could only spawn a subprocess whose answer nothing would ever read.
+        // Do not publish recovery UI while the app is quitting.
         guard !isTerminating else { return }
         if !force, let last = lastOrphanProbe, Date().timeIntervalSince(last) < 5 { return }
         lastOrphanProbe = Date()
-        CapsLockHandoff.orphanedMappingDetected { [weak self] orphaned in
+        CapsLockHandoff.orphanedMappingDetected(using: services?.keyboardMappings ?? .shared) { [weak self] orphaned in
             guard let self, self.orphanedMapping != orphaned else { return }
             self.orphanedMapping = orphaned
             self.services?.refreshMenu()
@@ -352,8 +358,6 @@ final class HyperkeyTool: Tool {
 
     // MARK: - Menu
 
-    /// Status only, or nothing: Hyperkey has no actions of its own. A blocked state is a warning,
-    /// not a menu row, so it appears at the TOP of the menu with its recovery action.
     func makeQuickPanel() -> AnyView? {
         // The picker's names carry a glyph suffix ("Left Option (⌥)"); a key cap needs the name.
         let trigger = settings.triggerKey.displayName
@@ -364,6 +368,8 @@ final class HyperkeyTool: Tool {
                                           warnings: warnings))
     }
 
+    /// Status only, or nothing: Hyperkey has no actions of its own. A blocked state is a warning,
+    /// not a menu row, so it appears at the TOP of the menu with its recovery action.
     func menuItems() -> [NSMenuItem] {
         guard case .active = controller.state, let status = controller.menuStatus else { return [] }
         return [ToolMenu.info(status)]
@@ -393,7 +399,7 @@ final class HyperkeyTool: Tool {
             out.append(ToolWarning(
                 id: "hyperkey.orphanedMapping",
                 text: "⚠︎ Caps Lock is still remapped by an app that isn’t running",
-                detailLines: ["Left behind by a Cycler install that quit without cleaning up."],
+                detailLines: ["A keyboard map owned by Lineup or a previous Cycler install could not be released."],
                 actionTitle: "Restore Caps Lock",
                 action: { [weak self] in self?.restoreCapsLock() }))
         }
