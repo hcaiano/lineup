@@ -113,6 +113,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.register(AwakeTool())
         registry.register(TextCaptureTool())
         registry.register(MenuBarTool())
+        registry.register(ScrollTool())
         registry.startEnabledTools()
         statusItem.refresh()
 
