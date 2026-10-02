@@ -25,6 +25,8 @@ runSuite("AwakeSuite", runAwakeTests)
 runSuite("TextCaptureSuite", runTextCaptureTests)
 runSuite("MenuBarSuite", runMenuBarTests)
 runSuite("ScrollSuite", runScrollTests)
+runSuite("DisplayControlSuite", runDisplayControlTests)
+runSuite("MenuPanelSuite", runMenuPanelTests)
 
 // ---- Report ----
 if failures == 0 {

@@ -20,12 +20,10 @@ struct MenuBarPane: View {
                 if !tool.supported {
                     Text("Menu Bar currently supports macOS 27.").foregroundStyle(.secondary)
                 } else if !tool.available {
-                    Label(MenuBarTool.unavailableText, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    BlockedBanner(message: MenuBarTool.unavailableText, systemImage: "exclamationmark.triangle.fill")
                 }
                 if let error = tool.sectionLoadError ?? tool.message {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    BlockedBanner(message: error, systemImage: "exclamationmark.triangle.fill")
                 }
                 if tool.hasPendingRecovery {
                     SettingsSectionView("Recovery", caption: "Some hidden icons could not be restored. Restore them before hiding another group.") {
@@ -61,12 +59,12 @@ struct MenuBarPane: View {
                             group("Hidden by the arrow", hidden: true)
                             group("Always visible", hidden: false)
                             SettingsCaption(text: "Click the arrow to show hidden icons for \(Int(MenuBarAutoHide.delay)) seconds. They stay visible while you use their menus.")
-                            SettingsCaption(text: "The clock, Control Center and recording indicators always stay visible.")
                         }
                     }
                     DisclosureGroup("More options") {
                         VStack(alignment: .leading, spacing: 10) {
                             SettingsCaption(text: "macOS groups all icons from the same app. If an app has an icon on each side of the arrow, it stays visible.")
+                            SettingsCaption(text: "The clock, Control Center and recording indicators always stay visible.")
                             if tool.settings.preferencesBookmark != nil {
                                 Button("Allow Menu Bar Access Again…") { tool.chooseAccess() }
                                     .disabled(tool.busy)

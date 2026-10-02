@@ -1,73 +1,192 @@
 import AppKit
 import AppCore
 import Sparkle
+import SwiftUI
 
-/// The single `NSStatusItem` and the unified menu.
-///
-/// Shape:
-/// ```
-/// ⚠︎ <warnings from the shell + every running tool>
-///    <detail lines>
-///    Grant Accessibility… / Retry shortcuts / Reset configuration…
-/// ──────────
-/// Zones      ▸  Edit Layout… · ⇧-drag to snap ✓
-/// Cycler     ▸  Reload bindings
-/// Hyperkey   ▸  (status only, or nothing)
-/// ──────────
-/// Settings…                 ⌘,
-/// Launch at login           ✓
-/// ──────────
-/// Check for Updates…            → target: AppUpdater.shared
-/// About Lineup
-/// ──────────
-/// Quit Lineup               ⌘Q
-/// ```
-/// A tool contributing exactly one item gets it inlined instead of a submenu.
+/// Owns the Lineup status item: left click opens shared controls, right click opens
+/// the native action menu. Tools keep their own services and contribute only views.
 @MainActor
-final class StatusItemController: NSObject, NSMenuDelegate {
-    private var isTrackingMenu = false
+final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private let registry: ToolRegistry
     private let permissions: PermissionCenter
+    private let panelModel = MenuPanelModel()
+    private var popover: NSPopover?
+    private var panelTools: [ToolID: any Tool] = [:]
+
+    #if DEBUG
+    /// Captures the presented view in the isolated manual review, without rehosting its state.
+    var reviewPanelView: NSView? { popover?.contentViewController?.view }
+    #endif
 
     /// Shell-level warnings (config unreadable, etc.), recomputed on each build.
     var shellWarnings: () -> [ToolWarning] = { [] }
     var showMenuBarIcon: () -> Bool = { true }
     var onOpenSettings: () -> Void = {}
+    var onOpenToolSettings: (ToolID) -> Void = { _ in }
     var onShowAbout: () -> Void = {}
 
     init(registry: ToolRegistry, permissions: PermissionCenter) {
         self.registry = registry
         self.permissions = permissions
         super.init()
+        panelModel.openSettings = { [weak self] in
+            self?.closePanel()
+            self?.onOpenSettings()
+        }
+        panelModel.openToolSettings = { [weak self] id in
+            self?.closePanel()
+            self?.onOpenToolSettings(id)
+        }
+        panelModel.moreItems = { [weak self] in self?.appActions() ?? [] }
+        panelModel.invoke = { [weak self] item in self?.invoke(item) }
+        panelModel.close = { [weak self] in self?.closePanel() }
+        panelModel.selectionChanged = { [weak self] in self?.syncPanelTools() }
     }
 
     /// Rebuild from scratch. Cheap, and it is the only way a menu built once can reflect a
     /// permission that was granted while the app kept running.
     func refresh() {
         guard showMenuBarIcon() else {
-            if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+            if let statusItem {
+                closePanel()
+                NSStatusBar.system.removeStatusItem(statusItem)
+            }
             statusItem = nil
+            refreshPanel()
             return
         }
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.image = Brand.menuBarLogo()
-            item.button?.toolTip = "\(Product.name): window snapping, app cycling, Hyperkey, world clocks, Keep Awake, text capture"
+            item.button?.target = self
+            item.button?.action = #selector(statusItemClicked)
+            item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
             statusItem = item
         }
         let awake = (registry.tool(.awake) as? AwakeTool)?.isActive == true
         statusItem?.button?.title = awake ? " Awake" : ""
         statusItem?.button?.toolTip = awake ? "Lineup: Keep Awake is active" : "Lineup"
-        if !isTrackingMenu { statusItem?.menu = buildMenu() }
+        refreshPanel()
     }
 
-    func menuWillOpen(_ menu: NSMenu) { isTrackingMenu = true }
-
     func menuDidClose(_ menu: NSMenu) {
-        isTrackingMenu = false
+        statusItem?.menu = nil
         // Let the selected action run before rebuilding.
         DispatchQueue.main.async { [weak self] in self?.refresh() }
+    }
+
+    @objc private func statusItemClicked() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            closePanel()
+            guard let statusItem, let button = statusItem.button else { return }
+            statusItem.menu = buildMenu()
+            button.performClick(nil)
+            statusItem.menu = nil
+        } else if popover?.isShown == true {
+            closePanel()
+        } else {
+            showPanel()
+        }
+    }
+
+    func showPanel(tool id: ToolID? = nil) {
+        // Settings can explicitly open a tool even when the main icon is hidden.
+        guard let anchor = statusItem?.button ?? NSApp.keyWindow?.contentView else { return }
+        let statusAnchor = anchor is NSStatusBarButton
+        let anchorRect = statusAnchor ? anchor.bounds : NSRect(x: anchor.bounds.midX,
+            y: anchor.bounds.maxY - 1, width: 1, height: 1)
+        refreshPanel()
+        panelModel.open(tool: id)
+        if popover?.isShown == true {
+            syncPanelTools()
+            return
+        }
+        let panel = NSPopover()
+        panel.appearance = NSApp.appearance
+        panel.behavior = .transient
+        panel.animates = false
+        panel.delegate = self
+        let available = (anchor.window?.screen?.visibleFrame.height ?? 760) - 44
+        let view = MenuPanel(model: panelModel, maximumHeight: min(640, max(200, available)))
+        let controller = MenuPanelHostingController(rootView: view)
+        controller.sizingOptions = [.preferredContentSize]
+        controller.onResize = { [weak self, weak panel, weak anchor] size in
+            guard let self, let panel, let anchor, self.popover === panel, panel.isShown else { return }
+            panel.contentSize = size
+            panel.show(relativeTo: anchorRect, of: anchor, preferredEdge: .minY)
+        }
+        panel.contentViewController = controller
+        controller.view.layoutSubtreeIfNeeded()
+        panel.contentSize = controller.view.fittingSize
+        popover = panel
+        syncPanelTools()
+        panel.show(relativeTo: anchorRect, of: anchor, preferredEdge: .minY)
+        panel.contentViewController?.view.window?.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func closePanel() {
+        let closing = popover
+        popover = nil
+        for tool in panelTools.values { tool.panelDidClose() }
+        panelTools = [:]
+        panelModel.didClose()
+        closing?.delegate = nil
+        closing?.close()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard let closed = notification.object as? NSPopover, closed === popover else { return }
+        closePanel()
+    }
+
+
+    private func syncPanelTools() {
+        let running = registry.runningTools.filter { $0.id == panelModel.session.selectedTool }
+        let enabled = Set(running.map(\.id))
+        for (id, tool) in panelTools where !enabled.contains(id) {
+            tool.panelDidClose()
+            panelTools[id] = nil
+        }
+        for tool in running where panelTools[tool.id] == nil {
+            panelTools[tool.id] = tool
+            tool.panelWillOpen()
+        }
+    }
+
+    private func refreshPanel() {
+        var warnings = shellWarnings()
+        if !permissions.isAccessibilityTrusted,
+           registry.runningTools.contains(where: { $0.requiredPermissions.contains(.accessibility) }) {
+            warnings.insert(ToolWarning(id: "shell.accessibility", text: "Accessibility access needed",
+                                       actionTitle: "Open Accessibility Settings…",
+                                       action: { [weak self] in self?.permissions.openAccessibilitySettings() }), at: 0)
+        }
+        panelModel.update(tools: registry.runningTools, warnings: warnings)
+        if popover?.isShown == true { syncPanelTools() }
+    }
+
+    private func invoke(_ item: NSMenuItem) {
+        guard item.isEnabled, let action = item.action else { return }
+        closePanel()
+        // Overlays and capture begin only after the popover has left the screen.
+        DispatchQueue.main.async { NSApp.sendAction(action, to: item.target, from: item) }
+    }
+
+    private func appActions() -> [NSMenuItem] {
+        let login = actionItem("Open at Login", symbol: "power") { [weak self] in
+            LaunchAtLogin.toggle()
+            self?.refresh()
+        }
+        login.state = LaunchAtLogin.isEnabled ? .on : .off
+        let update = NSMenuItem(title: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        update.target = AppUpdater.shared
+        update.isEnabled = AppUpdater.shared.updater.canCheckForUpdates
+        return [login, update,
+                actionItem("About Lineup", symbol: "info.circle") { [weak self] in self?.onShowAbout() },
+                .separator(),
+                actionItem("Quit Lineup", key: "q", symbol: "xmark.circle") { NSApp.terminate(nil) }]
     }
 
     // MARK: - Menu
@@ -79,17 +198,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         // Actionable problems ONLY, at the top. Healthy states show nothing.
         var warnings = shellWarnings()
-        if !permissions.isAccessibilityTrusted {
+        if !permissions.isAccessibilityTrusted,
+           registry.runningTools.contains(where: { $0.requiredPermissions.contains(.accessibility) }) {
             warnings.insert(ToolWarning(
                 id: "shell.accessibility",
-                text: "⚠︎ Accessibility not granted",
-                actionTitle: "Grant Accessibility…",
+                text: "Accessibility access needed",
+                actionTitle: "Open Accessibility Settings…",
                 action: { [weak self] in self?.permissions.openAccessibilitySettings() }), at: 0)
         }
         for tool in registry.runningTools { warnings.append(contentsOf: tool.warnings) }
 
         for warning in warnings {
-            addInfo(menu, warning.text)
+            addWarning(menu, warning.text)
             for line in warning.detailLines { addInfo(menu, "  \(line)") }
             if let title = warning.actionTitle, let action = warning.action {
                 menu.addItem(actionItem(title, symbol: symbol(forWarning: warning), run: action))
@@ -123,7 +243,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(actionItem("Settings…", key: ",", symbol: "gearshape") { [weak self] in
             self?.onOpenSettings()
         })
-        let loginItem = actionItem("Launch at login", symbol: "power") { [weak self] in
+        let loginItem = actionItem("Open at Login", symbol: "power") { [weak self] in
             LaunchAtLogin.toggle()
             self?.refresh()
         }
@@ -156,6 +276,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if warning.id.contains("inputMonitoring") { return "keyboard" }
         if warning.id.contains("config") { return "arrow.counterclockwise" }
         return "arrow.clockwise"
+    }
+
+    /// The warning's title with an orange triangle, matching the panel. Tools write a leading
+    /// "⚠︎" for text-only surfaces; the image replaces it here.
+    private func addWarning(_ menu: NSMenu, _ text: String) {
+        let title = text.hasPrefix("⚠") ? String(text.drop(while: { $0 == "⚠" || $0 == "\u{FE0E}" || $0 == "\u{FE0F}" || $0 == " " })) : text
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [.systemOrange])))
+        item.isEnabled = false
+        menu.addItem(item)
     }
 
     private func addInfo(_ menu: NSMenu, _ title: String) {

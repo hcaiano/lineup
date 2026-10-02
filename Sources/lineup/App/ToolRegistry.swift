@@ -18,6 +18,7 @@ final class ToolRegistry {
     /// Rebuild the menu / Settings when a tool's state changes. Set by `AppShell`.
     var onChange: (() -> Void)?
     var onSettingsChange: (() -> Void)?
+    var onOpenPanel: ((ToolID?) -> Void)?
 
     init(store: LineupAppConfigStore) {
         self.store = store
@@ -141,7 +142,8 @@ final class ToolRegistry {
                 guard let self else { return [:] }
                 return Dictionary(uniqueKeysWithValues: self.tools.map { ($0.id, $0.isRunning) })
             },
-            boundCombos: { [weak self] in self?.boundCombos() ?? [] })
+            boundCombos: { [weak self] in self?.boundCombos() ?? [] },
+            openPanel: { [weak self] id in self?.onOpenPanel?(id) })
     }
 
     /// Every combo any registered tool has bound, tagged with its owner.

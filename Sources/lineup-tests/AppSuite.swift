@@ -1004,14 +1004,15 @@ private func runSettingsWindowTests() throws {
           "the per-tool enable binding has exactly one owner (got \(paneOwners))")
 
     let pane = source("Sources/lineup/Settings/ToolPane.swift")
-    check(pane.range(of: #"ToolIcon\([^)]*\bsize:\s*72\b[^)]*\)"#,
+    check(pane.range(of: #"ToolIcon\([^)]*\bsize:\s*56\b[^)]*\)"#,
                      options: .regularExpression) != nil,
-          "the pane header shows a 72pt tool icon")
-    // The switch is an overlay on the ICON row, not on the header block: pinned to the block's
-    // corner it floats over the scroll area instead of reading as part of the header.
-    check(pane.contains("toggleStyle(.switch)") && pane.contains("alignment: .trailing")
+          "the pane header shows a 56pt tool icon")
+    // The switch shares the title's row: pinned to a corner it floats over the scroll area
+    // instead of reading as part of the header.
+    check(pane.range(of: #"HStack\(alignment: \.center[\s\S]*ToolIcon[\s\S]*Text\(title\)[\s\S]*maxWidth: \.infinity[\s\S]*toggleStyle\(\.switch\)"#,
+                     options: .regularExpression) != nil
             && !pane.contains("alignment: .topTrailing"),
-          "the enable switch is aligned with the pane header's icon row")
+          "the enable switch sits on the header's title row")
     check(pane.contains("Text(summary)"), "the pane header shows the tool's one-line summary")
     // A fixed header above a scrolling pane otherwise reports an ideal height of header + the
     // WHOLE scroll content, and a tall pane pushes the entire split view up out of the window.
@@ -1411,13 +1412,13 @@ private func runOnboardingTests() throws {
         r.hyperkeyWasEnabled = hyperEnabled
         return Onboarding.cyclerImportSummary(r)
     }
-    check(summary(6, hyperEnabled: true) == "Imported 6 Cycler shortcuts and your Hyper Key setup.",
+    check(summary(6, hyperEnabled: true) == "Imported 6 Cycler shortcuts and your Hyperkey setup.",
           "the confirmation names both the shortcut count and the hyper key")
     check(summary(6, hyperEnabled: false) == "Imported 6 Cycler shortcuts.",
           "a disabled legacy hyper key is not claimed")
     check(summary(1, hyperEnabled: false) == "Imported 1 Cycler shortcut.",
           "one shortcut is singular")
-    check(summary(0, hyperEnabled: true) == "Imported your Hyper Key setup from Cycler.",
+    check(summary(0, hyperEnabled: true) == "Imported your Hyperkey setup from Cycler.",
           "a hyper-key-only Cycler config still gets a confirmation")
     check(summary(0, hyperEnabled: false) == nil,
           "an empty bindings.json produces no confirmation line")
@@ -1577,8 +1578,8 @@ private func runOnboardingTests() throws {
           && shell.contains("activateFileViewerSelecting"),
           "Reveal in Finder is offered only when Cycler.app actually resolves")
     check(Onboarding.cyclerUninstallBanner.contains("Quit and remove Cycler.app")
-          && Onboarding.cyclerUninstallBanner.contains("win the race"),
-          "the uninstall banner keeps the plan's wording")
+          && Onboarding.cyclerUninstallBanner.contains("take over your shortcuts"),
+          "the uninstall banner names the action and the plain consequence")
 
     // The onboarding windows sell the suite with the shared tool tiles.
     for path in ["Sources/lineup/App/WelcomeWindow.swift",
@@ -1600,7 +1601,7 @@ private func runOnboardingTests() throws {
     check(OnboardingCopyMirror.inputMonitoringNote.contains("only when you turn Hyperkey on"),
           "the Input Monitoring note says it is only asked for on Hyperkey enable")
     check(source("Sources/lineup/App/OnboardingKit.swift")
-            .contains("\"\(OnboardingCopyMirror.inputMonitoringNote)\""),
+            .contains("\"Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only \"\n        + \"when you first capture text.\""),
           "the mirrored Input Monitoring note is the one the app actually shows")
 
     // ---- Settings panes: the design-review polish ----
@@ -1623,14 +1624,14 @@ private func runOnboardingTests() throws {
     let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
     check(zonesPane.contains("caption: \"Click a shortcut, then press a key combo."),
           "the recorder instructions are a caption on the shortcut section, not a floating line")
-    // The section is titled "Behavior" since batch 3: it holds drag-to-snap, the drag bind AND the
-    // layout-editor row, so "Drag to snap" named only a third of it (and repeated the row below it).
+    // The layout leads the pane; snapping follows. "Drag to snap" would repeat its own row.
     if let caption = zonesPane.range(of: "caption: \"Click a shortcut"),
-       let dragSection = zonesPane.range(of: "SettingsSectionView(\"Behavior\")") {
-        check(dragSection.lowerBound < caption.lowerBound,
-              "the recorder caption sits below the behaviour section, where the recorders are")
+       let layout = zonesPane.range(of: "SettingsSectionView(\"Layout\")"),
+       let snapping = zonesPane.range(of: "SettingsSectionView(\"Snapping\")") {
+        check(layout.lowerBound < snapping.lowerBound && snapping.lowerBound < caption.lowerBound,
+              "the layout section leads, then snapping, then the recorder caption with its recorders")
     } else {
-        check(false, "the Zones pane keeps its behaviour section")
+        check(false, "the Zones pane keeps its layout and snapping sections")
     }
     check(!zonesPane.contains("SettingsSectionView(\"Drag to snap\")")
             && !zonesPane.contains("SettingsSectionView(\"Zones\")"),
@@ -2323,7 +2324,8 @@ private enum AboutFactsMirror {
 /// The onboarding copy lives in the app target, which this runner does not link. Mirrored the
 /// same way `ShortcutKitCaps` is, with the scan above pinning the real definition.
 private enum OnboardingCopyMirror {
-    static let inputMonitoringNote = "Input Monitoring is asked for only when you turn Hyperkey on."
+    static let inputMonitoringNote = "Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only "
+        + "when you first capture text."
 }
 
 /// `ShortcutKit` and `SettingsMetrics` live in the app target, which this runner does not link.
@@ -2482,9 +2484,9 @@ private func runVisualDesignTests() throws {
               "\(path) takes its section spacing and pane padding from SettingsMetrics")
     }
     check(source("Sources/lineup/Settings/ToolPane.swift")
-            .range(of: #"ToolIcon\([^)]*\bsize:\s*72\b[^)]*\)\s*\.padding\(\.bottom,\s*2\)\s*\.frame\(width:\s*SettingsMetrics.contentWidth\)"#,
+            .range(of: #"toggleStyle\(\.switch\)[\s\S]*\}\s*\.frame\(width:\s*SettingsMetrics.contentWidth\)"#,
                    options: .regularExpression) != nil,
-          "the hero enable switch hangs off the 540pt content gutter, not the pane edge")
+          "the header's enable switch ends on the 540pt content gutter, not the pane edge")
 
     // ---- 5. Type hierarchy and section endings ----
     check(metrics.contains(".font(.system(size: 15, weight: .semibold))"),
@@ -2606,7 +2608,7 @@ private func runVisualDesignTests() throws {
 
     // ---- 12. Zones: the layout editor is reachable from the pane that owns zones ----
     let zonesPane = source("Sources/lineup/Tools/Zones/ZonesSettingsPane.swift")
-    check(zonesPane.contains("Button(\"Open Layout Editor…\") { model.openLayoutEditor() }")
+    check(zonesPane.contains("Button(\"Edit Layout…\") { model.openLayoutEditor() }")
             && zonesPane.contains(".disabled(!model.canOpenLayoutEditor)"),
           "the pane opens the layout editor, and only when the tool can actually show it")
     check(zonesPane.contains("var canOpenLayoutEditor: Bool { isRunning && canWrite }"),
@@ -2615,7 +2617,7 @@ private func runVisualDesignTests() throws {
           "the pane's button and the menu item run the SAME action")
     // Zone shortcuts are presented as dynamic per-display group sections, not fixed rows.
     check(zonesPane.contains("struct ZoneShortcutGroup: Identifiable") && zonesPane.contains("group.rangeLabel")
-            && zonesPane.contains("group.status == .connected"),
+            && zonesPane.contains("group.status != .connected"),
           "zone rows come from dynamic per-display groups with a range label and connected status")
     check(!zonesPane.contains("isBeyondLayout") && !zonesPane.contains("(not in current layout)"),
           "the fixed zone-row list and its beyond-layout special case are gone (groups cover all mapped zones)")

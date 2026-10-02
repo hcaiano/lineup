@@ -166,6 +166,8 @@ final class ScrollTool: Tool, ObservableObject {
 
     // MARK: - Menu
 
+    func makeQuickPanel() -> AnyView? { AnyView(ScrollQuickPanel(tool: self)) }
+
     func menuItems() -> [NSMenuItem] {
         let mouse = ToolMenu.item("Reverse mouse", symbol: "computermouse") { [weak self] in
             guard let self else { return }

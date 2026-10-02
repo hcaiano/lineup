@@ -190,16 +190,28 @@ private func runWorldClockPersistenceTests() throws {
     store.load()
     try store.setEnabled(true, for: .worldClock)
     try store.setSettings(JSONValue.object(["untouched": .int(73)]), for: .zones)
+    let unconfigured = LineupAppConfigStore(url: url)
+    unconfigured.load()
+    let defaults = try unconfigured.config.settings(WorldClockSettings.self, for: .worldClock) ?? WorldClockSettings()
+    try store.setSettings(defaults, for: .worldClock)
+    let fresh = LineupAppConfigStore(url: url)
+    fresh.load()
+    check(try fresh.config.settings(WorldClockSettings.self, for: .worldClock)?.showSeparateMenuBarItem == false,
+          "a clock with only saved enablement defaults inside Lineup and keeps that placement after saving")
     let original = Data(#"{"version":1,"future":"keep","pinnedID":"city:1","places":[{"id":"city:1","name":"Porto","timeZoneID":"Europe/Lisbon","coordinates":{"latitude":41.15,"longitude":-8.61,"altitude":100},"futurePlace":true},{"id":"zone:UTC","name":"UTC","timeZoneID":"UTC"}]}"#.utf8)
     var settings = try JSONDecoder().decode(WorldClockSettings.self, from: original)
+    check(settings.showSeparateMenuBarItem && settings.pinnedID == "city:1",
+          "existing clock settings keep their separate item and pinned place when upgrading")
     settings.places[0].name = "Home"
     settings.places.swapAt(0, 1)
+    settings.showSeparateMenuBarItem = false
     try store.setSettings(settings, for: .worldClock)
     let loaded = LineupAppConfigStore(url: url)
     loaded.load()
     let restored = try loaded.config.settings(WorldClockSettings.self, for: .worldClock)!
-    check(restored.places.map(\.name) == ["UTC", "Home"] && restored.pinnedID == "city:1",
-          "renaming, order and pin survive a real config save and reload")
+    check(restored.places.map(\.name) == ["UTC", "Home"] && restored.pinnedID == "city:1"
+          && !restored.showSeparateMenuBarItem,
+          "renaming, order, pin and placement survive a real config save and reload")
     let raw = try JSONValue.encoding(restored)
     let rawPlaces: [JSONValue]
     if case .array(let values) = raw["places"] { rawPlaces = values } else { rawPlaces = [] }
@@ -211,14 +223,17 @@ private func runWorldClockPersistenceTests() throws {
     settings.removePlace(id: "city:1")
     check(settings.pinnedID == nil && settings.places.map(\.id) == ["zone:UTC"], "removing a pinned city restores the icon")
     settings.pinnedID = "local"
+    settings.showSeparateMenuBarItem = true
     try store.setSettings(settings, for: .worldClock)
     loaded.load()
-    check(try loaded.config.settings(WorldClockSettings.self, for: .worldClock)?.pinnedID == "local",
-          "the automatic local clock can be pinned and persisted")
+    let separate = try loaded.config.settings(WorldClockSettings.self, for: .worldClock)!
+    check(separate.pinnedID == "local" && separate.showSeparateMenuBarItem,
+          "the separate menu bar item can be restored with its pinned local clock")
     for rejected in [
         #"{"version":2,"places":[]}"#,
         #"{"version":1,"places":[{"id":"x","name":"Bad","timeZoneID":"UTC","coordinates":{"latitude":91,"longitude":0}}]}"#,
         #"{"version":1,"places":[],"pinnedID":"missing"}"#,
+        #"{"version":1,"places":[],"showSeparateMenuBarItem":"yes"}"#,
         #"{"version":1,"places":[{"id":"x","name":"A","timeZoneID":"UTC"},{"id":"x","name":"B","timeZoneID":"UTC"}]}"#,
     ] {
         do {

@@ -21,6 +21,11 @@ let package = Package(
         .target(name: "WorldClockCore"),
         // Region geometry, recognition order and cancellation tokens for local text capture.
         .target(name: "TextCaptureCore"),
+        .target(name: "DisplayControlCore"),
+        .target(name: "DisplayHardware", linkerSettings: [
+            .linkedFramework("IOKit"), .linkedFramework("CoreGraphics"),
+            .linkedFramework("CoreFoundation"), .linkedFramework("ColorSync"),
+        ]),
         // Scroll device classification, gesture continuity and per-axis reversal.
         .target(name: "ScrollCore"),
         // Pure cycle-order math + the legacy ~/.config/cycler/bindings.json model.
@@ -42,6 +47,8 @@ let package = Package(
                 "KeyboardRemapCore",
                 "WorldClockCore",
                 "TextCaptureCore",
+                "DisplayControlCore",
+                "DisplayHardware",
                 "ScrollCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
@@ -60,7 +67,7 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "KeyboardRemapCore", "WorldClockCore", "TextCaptureCore", "ScrollCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "KeyboardRemapCore", "WorldClockCore", "TextCaptureCore", "ScrollCore", "DisplayControlCore"]
         ),
     ]
 )

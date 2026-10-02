@@ -11,8 +11,8 @@ struct AwakeSettingsPane: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            SettingsSectionView("Session", caption: "Start here or from the Lineup menu bar.") {
-                SettingsRow(title: "Duration", detail: "Changing this restarts an active session.") {
+            SettingsSectionView("Session") {
+                SettingsRow(title: "Duration") {
                     Picker("Duration", selection: Binding(get: { tool.settings.durationMinutes },
                                                          set: { tool.setDuration($0) })) {
                         ForEach(AwakeSettings.durations, id: \.self) { minutes in
@@ -23,7 +23,7 @@ struct AwakeSettingsPane: View {
                     .frame(width: 130)
                     .disabled(!tool.canEdit)
                 }
-                SettingsRow(title: "Keep display on", detail: "Off lets the display sleep while the Mac stays awake.") {
+                SettingsRow(title: "Keep display on", detail: "When off, the display can sleep while your Mac stays awake.") {
                     Toggle("Keep display on", isOn: Binding(get: { tool.settings.keepDisplayOn },
                                                            set: { tool.setDisplayOn($0) }))
                         .labelsHidden()
@@ -34,12 +34,12 @@ struct AwakeSettingsPane: View {
                     if tool.isActive {
                         Button("Stop") { tool.stopSession() }
                     } else {
-                        Button("Start session") { tool.startSession() }
+                        Button("Start") { tool.startSession() }
                             .disabled(!tool.isRunning || !tool.canEdit)
                     }
                 }
             }
-            SettingsCaption(text: "You can still lock or sleep your Mac. Sleeping, disabling Keep Awake, or quitting Lineup ends the session. Sessions never resume after restarting Lineup.")
+            SettingsCaption(text: "Sleeping your Mac or quitting Lineup ends the session.")
         }
         .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
         .padding(.vertical, SettingsMetrics.panePaddingVertical)

@@ -65,7 +65,7 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
 
     /// The size the layout below is designed at. Shrunk from 430 when the repository row and the
     /// licence footer came out.
-    static let naturalSize = NSSize(width: 420, height: 344)
+    static let naturalSize = NSSize(width: 420, height: 300)
 
     private var window: NSWindow?
 
@@ -140,21 +140,20 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
             view.addSubview(build)
         }
 
-        // One row now the repository link is gone; the card is sized to it, not left half empty.
-        let card = AppearanceLayerView(frame: NSRect(x: 42, y: size.height - 262, width: size.width - 84, height: 48))
-        card.fill = .controlBackgroundColor
-        card.border = .separatorColor
-        card.layer?.cornerRadius = 10
-        card.layer?.borderWidth = 1
-        view.addSubview(card)
+        // The website as one centred link, as in the Settings About pane. A bordered card around
+        // a single row read as a web form rather than a Mac About window.
+        let link = NSButton(title: "lineup.caiano.com", target: self, action: #selector(openLink(_:)))
+        link.frame = NSRect(x: 42, y: size.height - 246, width: size.width - 84, height: 24)
+        link.bezelStyle = .inline
+        link.isBordered = false
+        link.alignment = .center
+        link.font = .systemFont(ofSize: 13)
+        link.contentTintColor = Brand.blue
+        link.identifier = NSUserInterfaceItemIdentifier("https://lineup.caiano.com")
+        link.setAccessibilityLabel("Website, lineup.caiano.com")
+        view.addSubview(link)
 
-        addLinkRow(to: card, y: 13, title: "Website", value: "lineup.caiano.com", url: "https://lineup.caiano.com")
-
-        let footerDivider = NSBox(frame: NSRect(x: 42, y: size.height - 286, width: size.width - 84, height: 1))
-        footerDivider.boxType = .separator
-        view.addSubview(footerDivider)
-
-        let footer = label(AboutFacts.copyright, y: size.height - 320, size: 12, weight: .regular, color: .secondaryLabelColor)
+        let footer = label(AboutFacts.copyright, y: size.height - 282, size: 12, weight: .regular, color: .secondaryLabelColor)
         footer.alignment = .center
         view.addSubview(footer)
 
@@ -168,23 +167,6 @@ final class AboutWindowController: NSObject, NSWindowDelegate {
         f.textColor = color
         f.lineBreakMode = .byTruncatingTail
         return f
-    }
-
-    private func addLinkRow(to parent: NSView, y: CGFloat, title: String, value: String, url: String) {
-        let titleField = NSTextField(labelWithString: title)
-        titleField.frame = NSRect(x: 16, y: y, width: 78, height: 22)
-        titleField.font = .systemFont(ofSize: 13, weight: .medium)
-        titleField.textColor = .labelColor
-        parent.addSubview(titleField)
-
-        let button = NSButton(title: value, target: self, action: #selector(openLink(_:)))
-        button.frame = NSRect(x: 96, y: y - 2, width: parent.bounds.width - 112, height: 26)
-        button.bezelStyle = .inline
-        button.isBordered = false
-        button.alignment = .left
-        button.contentTintColor = Brand.blue
-        button.identifier = NSUserInterfaceItemIdentifier(url)
-        parent.addSubview(button)
     }
 
     @objc private func openLink(_ sender: NSButton) {

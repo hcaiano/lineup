@@ -66,11 +66,11 @@ public enum Onboarding {
         case (0, false):
             return nil
         case (0, true):
-            return "Imported your Hyper Key setup from Cycler."
+            return "Imported your Hyperkey setup from Cycler."
         case (let n, false):
             return "Imported \(n) Cycler shortcut\(n == 1 ? "" : "s")."
         case (let n, true):
-            return "Imported \(n) Cycler shortcut\(n == 1 ? "" : "s") and your Hyper Key setup."
+            return "Imported \(n) Cycler shortcut\(n == 1 ? "" : "s") and your Hyperkey setup."
         }
     }
 
@@ -78,7 +78,7 @@ public enum Onboarding {
     /// hold its own Caps Lock remap, so leaving it installed is not merely redundant — whichever
     /// process registered first wins, and it is usually the login item that has been there longer.
     public static let cyclerUninstallBanner =
-        "Quit and remove Cycler.app. Lineup now does this, and Cycler's shortcuts will otherwise win the race."
+        "Quit and remove Cycler.app. Lineup includes it now, and the old app would take over your shortcuts."
 
     /// Shown while standalone Cycler is actually RUNNING, where the conflict is live rather than
     /// merely possible.

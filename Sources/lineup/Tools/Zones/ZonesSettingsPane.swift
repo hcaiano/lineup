@@ -54,9 +54,25 @@ private struct ZonesSettingsPaneBody: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
-                    SettingsSectionView("Behavior") {
+                    // The layout comes first: drawing zones is what the rest of the pane serves.
+                    // Without this row the editor is reachable only from the menu-bar icon,
+                    // which General lets the user hide.
+                    SettingsSectionView("Layout") {
+                        SettingsRow(title: "Zone layout",
+                                    detail: "Draw the zones windows snap into, on each display.") {
+                            Button("Edit Layout…") { model.openLayoutEditor() }
+                                .disabled(!model.canOpenLayoutEditor)
+                                .help(model.canOpenLayoutEditor
+                                      ? "Draw this display's zones"
+                                      : "Turn Zones on to edit its layout")
+                        }
+                    }
+
+                    SettingsSectionView("Snapping") {
                         SettingsRow(title: "Drag to snap",
-                                    detail: "Hold the drag bind while dragging a window.") {
+                                    detail: model.dragSnapOn
+                                        ? "Hold the key below while dragging a window over a zone."
+                                        : "Hold a key while dragging to drop a window into a zone.") {
                             Toggle("", isOn: Binding(get: { model.dragSnapOn },
                                                      set: { model.setDragSnapOn($0) }))
                                 .labelsHidden()
@@ -67,43 +83,33 @@ private struct ZonesSettingsPaneBody: View {
                                 .accessibilityLabel("Drag to snap")
                         }
 
-                        SettingsRow(title: "Drag bind",
-                                    detail: "Click to record a key or modifier combo.") {
-                            HStack(spacing: 8) {
-                                RecorderButton(
-                                    text: model.dragTriggerDisplay,
-                                    emptyText: "Click to set",
-                                    isRecording: recorder.isRecording(Self.dragBindID),
-                                    enabled: model.canWrite,
-                                    accessibilityLabel: "Drag snap bind",
-                                    accessibilityValue: model.dragTriggerSpokenValue,
-                                    rejectionCount: recorder.rejectionCount,
-                                    action: { recordDragBind() })
+                        // Only meaningful while dragging snaps, so it appears with the switch.
+                        if model.dragSnapOn {
+                            SettingsRow(title: "Key to hold") {
+                                HStack(spacing: 8) {
+                                    RecorderButton(
+                                        text: model.dragTriggerDisplay,
+                                        emptyText: "Click to set",
+                                        isRecording: recorder.isRecording(Self.dragBindID),
+                                        enabled: model.canWrite,
+                                        accessibilityLabel: "Drag snap bind",
+                                        accessibilityValue: model.dragTriggerSpokenValue,
+                                        rejectionCount: recorder.rejectionCount,
+                                        action: { recordDragBind() })
 
-                                CircleClearButton(
-                                    help: "Reset drag bind to Shift",
-                                    accessibilityLabel: "Reset drag bind to Shift",
-                                    disabled: !model.canWrite,
-                                    action: { model.resetDragBind() })
+                                    CircleClearButton(
+                                        help: "Reset to Shift",
+                                        accessibilityLabel: "Reset drag bind to Shift",
+                                        disabled: !model.canWrite,
+                                        action: { model.resetDragBind() })
+                                }
                             }
-                        }
-
-                        // Without this the layout editor is reachable only from the menu-bar icon
-                        // — which General lets the user hide. The pane that owns zones has to be
-                        // able to open the thing that draws them.
-                        SettingsRow(title: "Zone layout",
-                                    detail: "Draw the zones windows snap into, per display.") {
-                            Button("Open Layout Editor…") { model.openLayoutEditor() }
-                                .disabled(!model.canOpenLayoutEditor)
-                                .help(model.canOpenLayoutEditor
-                                      ? "Draw this display's zones"
-                                      : "Turn Zones on to edit its layout")
                         }
                     }
 
                     SettingsSectionView(
                         "Window",
-                        caption: "Click a shortcut, then press a key combo. Esc cancels, Delete clears.") {
+                        caption: "Click a shortcut, then press a key combo.") {
                         ForEach(model.quickShortcutRows) { row in
                             shortcutRow(row)
                         }
@@ -113,7 +119,7 @@ private struct ZonesSettingsPaneBody: View {
                         "Zone shortcuts",
                         caption: "Saved zones are numbered across displays.") {
                         if model.zoneShortcutGroups.isEmpty {
-                            Text("Open the layout editor to create zones, then assign shortcuts here.")
+                            Text("Draw zones with Edit Layout, then give them shortcuts here.")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -183,11 +189,12 @@ private struct ZonesSettingsPaneBody: View {
                         .font(.callout.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
-                Text(group.status.label)
-                    .font(.caption)
-                    .foregroundStyle(group.status == .connected
-                                     ? Color(nsColor: Brand.blue)
-                                     : Color(nsColor: .secondaryLabelColor))
+                // A connected display is the normal case and needs no label.
+                if group.status != .connected {
+                    Text(group.status.label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.top, 10)
             .padding(.bottom, 4)

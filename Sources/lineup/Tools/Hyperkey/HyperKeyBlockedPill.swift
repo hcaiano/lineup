@@ -74,7 +74,8 @@ final class HyperKeyBlockedPill {
     private func buildContainer() -> NSView {
         let icon = NSImageView()
         icon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-        icon.contentTintColor = Brand.hyperkeyAccent
+        // A warning glyph is orange everywhere in Lineup; the tool hue belongs to its artwork.
+        icon.contentTintColor = .systemOrange
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.translatesAutoresizingMaskIntoConstraints = false
 
@@ -136,7 +137,7 @@ final class HyperKeyBlockedPill {
 
     private static func message(_ detail: String) -> NSAttributedString {
         let result = NSMutableAttributedString(
-            string: "Hyper Key unavailable",
+            string: "Hyperkey unavailable",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
                 .foregroundColor: NSColor.white,
@@ -158,7 +159,7 @@ final class HyperKeyBlockedPill {
             return "Allow Lineup in System Settings → Input Monitoring."
         }
         if message.contains("Raycast") {
-            return "Raycast is using Caps Lock. Disable its Hyper Key or choose another trigger."
+            return "Raycast is using Caps Lock. Turn off its Hyper Key."
         }
         if message.contains("Cycler is running") {
             return "Quit the standalone Cycler app. Lineup does this now."

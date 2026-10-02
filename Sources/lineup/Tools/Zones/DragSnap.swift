@@ -320,10 +320,11 @@ final class DragSnapController {
 /// Translucent, click-through block highlight. The window frame IS the highlighted target;
 /// an optional one-line hint teaches the half-snap when the user lingers.
 @MainActor
-private final class HighlightWindow: NSWindow {
+final class HighlightWindow: NSWindow {
     static let halfHint = "Edges fill half, corners a quarter"
 
     private let hintLabel = NSTextField(labelWithString: HighlightWindow.halfHint)
+    private let hintPill = NSView()
 
     init() {
         super.init(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
@@ -344,11 +345,13 @@ private final class HighlightWindow: NSWindow {
         hintLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         hintLabel.textColor = .white
         hintLabel.alignment = .center
-        hintLabel.wantsLayer = true
-        hintLabel.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
-        hintLabel.layer?.cornerRadius = 8
-        hintLabel.isHidden = true
-        v.addSubview(hintLabel)
+        // The capsule is its own view: a label's layer background sat the text at the top of a
+        // taller box. Inside a separate pill the text is centred on both axes.
+        hintPill.wantsLayer = true
+        hintPill.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
+        hintPill.isHidden = true
+        hintPill.addSubview(hintLabel)
+        v.addSubview(hintPill)
         contentView = v
     }
 
@@ -357,18 +360,22 @@ private final class HighlightWindow: NSWindow {
         if let hint {
             hintLabel.stringValue = hint
             hintLabel.sizeToFit()
-            let w = hintLabel.frame.width + 20, h = hintLabel.frame.height + 8
+            let text = hintLabel.frame.size
+            let w = ceil(text.width) + 24, h = ceil(text.height) + 10
             // The pill must sit fully INSIDE the highlight; in a zone too small or narrow
             // to host it cleanly, show nothing rather than something clipped.
             if rect.width < w + 16 || rect.height < h + 26 {
-                hintLabel.isHidden = true
+                hintPill.isHidden = true
             } else {
                 let y = min(18, max(6, rect.height - h - 6))
-                hintLabel.frame = NSRect(x: (rect.width - w) / 2, y: y, width: w, height: h)
-                hintLabel.isHidden = false
+                hintPill.frame = NSRect(x: (rect.width - w) / 2, y: y, width: w, height: h)
+                hintPill.layer?.cornerRadius = h / 2
+                hintLabel.frame = NSRect(x: (w - text.width) / 2, y: (h - text.height) / 2,
+                                         width: text.width, height: text.height)
+                hintPill.isHidden = false
             }
         } else {
-            hintLabel.isHidden = true
+            hintPill.isHidden = true
         }
         orderFront(nil) // not key — don't steal focus from the drag
     }

@@ -30,7 +30,7 @@ final class WhatsNewWindowController: NSObject, NSWindowDelegate {
     static func makeEmbeddedContent() -> NSView {
         let host = NSHostingView(rootView: WhatsNewView(
             importContext: OnboardingImportContext(
-                cyclerSummary: "Imported 6 Cycler shortcuts and your Hyper Key setup.",
+                cyclerSummary: "Imported 6 Cycler shortcuts and your Hyperkey setup.",
                 revealCycler: {}, showUninstallBanner: true),
             onOpenSettings: {}, onLater: {})
                 .frame(width: Self.width)
@@ -82,10 +82,9 @@ private struct WhatsNewView: View {
                         .scaledToFit()
                         .frame(width: 64, height: 64)
                         .accessibilityHidden(true)
-                    Text("\(Product.name) 2.0")
+                    Text("What’s New in \(Product.name)")
                         .font(.system(size: 22, weight: .semibold))
-                    Text("Your window snapping is now the Zones tool. Two new tools are available, "
-                         + "off by default: Cycler and Hyperkey.")
+                    Text("Your window snapping is now the Zones tool, with more tools beside it.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -122,6 +121,7 @@ private struct WhatsNewView: View {
 
             HStack {
                 Button("Not now", action: onLater)
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Open Settings", action: onOpenSettings)
                     .keyboardShortcut(.defaultAction)

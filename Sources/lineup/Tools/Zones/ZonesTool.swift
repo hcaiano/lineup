@@ -752,6 +752,20 @@ final class ZonesTool: Tool {
 
     // MARK: - Menu
 
+    func makeQuickPanel() -> AnyView? {
+        let trigger = dragSnapTrigger
+        return AnyView(ZonesQuickPanel(
+            dragSnapOn: isDragSnapOn,
+            dragBind: ShortcutKit.dragSnapDisplay(keyCode: trigger.keyCode, modifiers: trigger.modifiers),
+            canWrite: canWrite,
+            warnings: warnings,
+            editLayout: { [weak self] in self?.openEditor() },
+            setDragSnap: { [weak self] on in
+                self?.setDragSnapEnabled(on)
+                self?.settingsModel?.refresh()
+            }))
+    }
+
     func menuItems() -> [NSMenuItem] {
         let edit = ToolMenu.item("Edit Layout…", symbol: "square.grid.2x2") { [weak self] in
             self?.openEditor()

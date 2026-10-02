@@ -246,6 +246,8 @@ final class KeyboardRemapTool: Tool, ObservableObject {
                             action: canRetryMappings ? { [weak self] in self?.retry() } : nil)]
     }
 
+    func makeQuickPanel() -> AnyView? { AnyView(KeyboardRemapQuickPanel(tool: self)) }
+
     func menuItems() -> [NSMenuItem] {
         let count = settings.rules.reduce(0) { $0 + $1.mappings.count }
         var items = [ToolMenu.info("\(count) saved physical-key mappings")]

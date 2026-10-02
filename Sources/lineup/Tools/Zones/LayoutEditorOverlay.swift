@@ -136,47 +136,61 @@ final class LayoutEditorOverlayController {
     }
 
     private func addChrome(to container: NSView, screenSize: CGSize, label: String) {
-        // Top-center: short instruction (or the blocked reason).
-        let hint = NSTextField(labelWithString:
-            canWrite ? "Hover a zone to split or merge it. Drag a handle to resize."
-                     : (blockedMessage ?? "Editing is disabled."))
+        // The chrome is the same dark glass as Lineup's other overlays: one designed surface
+        // floating over the user's own display, not opaque boxes laid on top of it.
+
+        // Top-center: a short instruction (or the blocked reason), sized to its text.
+        let hintText = canWrite ? "Hover a zone to split or merge it. Drag a handle to resize."
+                                : (blockedMessage ?? "Editing is disabled.")
+        let hint = NSTextField(labelWithString: hintText)
         hint.alignment = .center
-        hint.textColor = canWrite ? .white : .systemOrange
-        hint.font = .systemFont(ofSize: 14, weight: canWrite ? .regular : .semibold)
-        let hp = panel(NSRect(x: screenSize.width / 2 - 320, y: screenSize.height - 72, width: 640, height: 44))
-        hint.frame = NSRect(x: 14, y: 11, width: 612, height: 22)
+        hint.textColor = canWrite ? NSColor.white.withAlphaComponent(0.9) : .systemOrange
+        hint.font = .systemFont(ofSize: 13, weight: canWrite ? .medium : .semibold)
+        hint.lineBreakMode = .byTruncatingTail
+        let hintW = min(screenSize.width - 80, ceil(hint.intrinsicContentSize.width) + 48), hintH: CGFloat = 38
+        let hp = HUDGlass.container(frame: NSRect(x: (screenSize.width - hintW) / 2, y: screenSize.height - 82,
+                                                  width: hintW, height: hintH),
+                                    cornerRadius: hintH / 2)
+        hint.frame = NSRect(x: 22, y: (hintH - 18) / 2, width: hintW - 44, height: 18)
         hp.addSubview(hint); container.addSubview(hp)
 
         // Inline save-failure banner (hidden). An NSAlert would render behind the overlay.
-        let err = panel(NSRect(x: screenSize.width / 2 - 300, y: 150, width: 600, height: 40))
-        err.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.92).cgColor // warning, never red
+        // A warning: orange glyph, readable white text, never a red or orange slab.
+        let errW: CGFloat = 560, errH: CGFloat = 40
+        let err = HUDGlass.container(frame: NSRect(x: (screenSize.width - errW) / 2, y: 112, width: errW, height: errH),
+                                     cornerRadius: errH / 2)
+        let errIcon = NSImageView(frame: NSRect(x: 16, y: (errH - 16) / 2, width: 16, height: 16))
+        errIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")
+        errIcon.contentTintColor = .systemOrange
+        err.addSubview(errIcon)
         let errLabel = NSTextField(labelWithString: "Couldn’t save. Your changes are still here, so try Save again.")
-        errLabel.frame = NSRect(x: 12, y: 9, width: 576, height: 22)
-        errLabel.alignment = .center; errLabel.textColor = .white; errLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        errLabel.frame = NSRect(x: 40, y: (errH - 18) / 2, width: errW - 56, height: 18)
+        errLabel.alignment = .left; errLabel.textColor = .white; errLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        errLabel.lineBreakMode = .byTruncatingTail
         err.addSubview(errLabel); err.isHidden = true
         container.addSubview(err); errorBanners.append(err); bannerLabels.append(errLabel)
 
         // Bottom-CENTER: Cancel + Save (reachable on very wide displays, unlike a corner).
-        let barW: CGFloat = 300, barH: CGFloat = 60
-        let bar = panel(NSRect(x: screenSize.width / 2 - barW / 2, y: 36, width: barW, height: barH))
+        let buttonW: CGFloat = 112, gap: CGFloat = 10, inset: CGFloat = 10
+        let barW = canWrite ? buttonW * 2 + gap + inset * 2 : buttonW + inset * 2, barH: CGFloat = 52
+        let bar = HUDGlass.container(frame: NSRect(x: (screenSize.width - barW) / 2, y: 36, width: barW, height: barH),
+                                     cornerRadius: barH / 2)
         container.addSubview(bar)
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
-        cancel.keyEquivalent = "\u{1b}"; cancel.bezelStyle = .rounded
-        cancel.frame = NSRect(x: 18, y: 16, width: 120, height: 28)
+        // Read-only: one Close button. A second button that also only closed the editor, under a
+        // "Reset…" title, promised a recovery it could not perform here.
+        let cancel = NSButton(title: canWrite ? "Cancel" : "Close", target: self, action: #selector(cancelTapped))
+        cancel.keyEquivalent = canWrite ? "\u{1b}" : "\r"; cancel.bezelStyle = .rounded
+        cancel.controlSize = .large
+        cancel.frame = NSRect(x: inset, y: (barH - 32) / 2, width: buttonW, height: 32)
         bar.addSubview(cancel)
-        let save = NSButton(title: canWrite ? "Save" : "Reset…", target: self,
-                            action: canWrite ? #selector(doneTapped) : #selector(cancelTapped))
+        guard canWrite else { return }
+        // Return makes Save the default button; the bezel carries the editor's brand blue.
+        let save = NSButton(title: "Save", target: self, action: #selector(doneTapped))
         save.keyEquivalent = "\r"; save.bezelStyle = .rounded
-        save.contentTintColor = Brand.blue
-        save.frame = NSRect(x: 162, y: 16, width: 120, height: 28)
+        save.controlSize = .large
+        save.bezelColor = Brand.blue
+        save.frame = NSRect(x: inset + buttonW + gap, y: (barH - 32) / 2, width: buttonW, height: 32)
         bar.addSubview(save)
-    }
-
-    private func panel(_ frame: NSRect) -> NSView {
-        let v = NSView(frame: frame); v.wantsLayer = true
-        v.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.58).cgColor
-        v.layer?.cornerRadius = 12
-        return v
     }
 
     /// Surface a notice in the existing inline banner style (an NSAlert would hide behind
@@ -234,6 +248,11 @@ final class LayoutEditorOverlayController {
     func forceClose() {
         close()
     }
+
+    #if DEBUG
+    /// The first display's editor, for the isolated design review's capture.
+    var reviewWindow: NSWindow? { windows.first }
+    #endif
 
     /// Rebase onto the CURRENT displays while the editor stays open: refresh the candidate
     /// base, rebuild every canvas (add/remove/reposition) with draft trees preserved by
@@ -635,15 +654,17 @@ private final class ZoneControlBar: NSView {
     }
 
     private let segmentW: CGFloat = 86, segmentH: CGFloat = 58, padding: CGFloat = 6
+    private var glass: NSView!
     private var splitVButton: GlyphButton!
     private var splitHButton: GlyphButton!
     private var mergeButton: GlyphButton!
 
     init() {
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
-        layer?.cornerRadius = 14
+        // Glass behind the segments, sized with the bar.
+        glass = HUDGlass.container(frame: .zero, cornerRadius: 14, tint: 0.5)
+        glass.autoresizingMask = [.width, .height]
+        addSubview(glass)
         splitVButton = GlyphButton(title: "Split", kind: .splitVertical) { [weak self] in self?.onSplitV() }
         splitHButton = GlyphButton(title: "Stack", kind: .splitHorizontal) { [weak self] in self?.onSplitH() }
         mergeButton = GlyphButton(title: "Merge", kind: .merge) { [weak self] in self?.onMerge() }
@@ -653,6 +674,8 @@ private final class ZoneControlBar: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     private func relayout() {
+        glass.frame = bounds
+        glass.subviews.first?.frame = bounds
         var x = padding
         for b in [splitVButton!, splitHButton!, mergeButton!] where !b.isHidden {
             b.frame = NSRect(x: x, y: padding, width: segmentW, height: segmentH)
@@ -697,6 +720,11 @@ private final class ZoneControlBar: NSView {
         override func mouseEntered(with event: NSEvent) { hovered = true }
         override func mouseExited(with event: NSEvent) { hovered = false }
         override func mouseDown(with event: NSEvent) { action() }
+        // The button role alone does not make VoiceOver's press reach a custom view.
+        override func accessibilityPerformPress() -> Bool {
+            action()
+            return true
+        }
         // Same first-mouse fix as the canvas: act on the first click on a non-primary overlay.
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
@@ -704,7 +732,7 @@ private final class ZoneControlBar: NSView {
         override func draw(_ dirtyRect: NSRect) {
             if hovered {
                 Brand.blue.setFill()
-                NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 10, yRadius: 10).fill()
+                NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 11, yRadius: 11).fill()
             }
             // Glyph: a 30×22 rounded rect depicting the result, centered above the label.
             let gw: CGFloat = 30, gh: CGFloat = 22
@@ -721,9 +749,9 @@ private final class ZoneControlBar: NSView {
             case .splitHorizontal:
                 line.move(to: NSPoint(x: g.minX + 2, y: g.midY)); line.line(to: NSPoint(x: g.maxX - 2, y: g.midY))
             case .merge:
-                // Two halves becoming one: a dashed center line fading out reads as "remove the split".
-                line.move(to: NSPoint(x: g.midX, y: g.minY + 3)); line.line(to: NSPoint(x: g.midX, y: g.maxY - 3))
-                line.setLineDash([2, 3], count: 2, phase: 0)
+                // The result, like its neighbours: one undivided zone, lightly filled.
+                white.withAlphaComponent(0.28).setFill()
+                NSBezierPath(roundedRect: g.insetBy(dx: 3, dy: 3), xRadius: 2, yRadius: 2).fill()
             }
             line.lineWidth = 2
             line.stroke()

@@ -86,6 +86,7 @@ enum ToolIconLibrary {
         case .textCapture: return "text.viewfinder"
         case .menuBar: return "menubar.rectangle"
         case .scroll: return "arrow.up.arrow.down"
+        case .displayControl: return "display"
         default: return "wrench.and.screwdriver.fill"
         }
     }
