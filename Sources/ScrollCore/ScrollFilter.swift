@@ -75,7 +75,8 @@ public struct ScrollFilter: Sendable {
         case .software:
             return []
         case .device(let sender):
-            if phase.startsGesture || (phase.isPhased && sender != nil) { gestureDevice = sender }
+            // Another device's phased events must not take over a gesture already in progress.
+            if phase.startsGesture || (phase.isPhased && gestureDevice == nil) { gestureDevice = sender }
             device = sender
         case .unresolved:
             if phase.startsGesture { gestureDevice = nil }
