@@ -47,8 +47,7 @@ struct KeyboardRemapSettingsPane: View {
     }
 
     private var canRetryMappings: Bool {
-        tool.canEdit && tool.message == nil
-            && (tool.recoveryMessage != nil || (tool.isRunning && tool.mappingMessage != nil))
+        tool.canRetryMappings && tool.message == nil
     }
 
     var body: some View {
@@ -156,6 +155,7 @@ struct KeyboardRemapSettingsPane: View {
         }
         .onAppear { tool.paneDidAppear(); labels.refresh() }
         .onDisappear { tool.paneDidDisappear() }
+        .onChange(of: selectedKeyboardID) { _ in tool.clearEditingMessage() }
         .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String))) { _ in
             labels.refresh()
         }
@@ -260,6 +260,10 @@ private struct KeyboardMappingSheet: View {
         }
         .padding(24)
         .frame(width: 480)
+        .onAppear { tool.clearEditingMessage() }
+        .onDisappear { tool.clearEditingMessage() }
+        .onChange(of: source) { _ in tool.clearEditingMessage() }
+        .onChange(of: destination) { _ in tool.clearEditingMessage() }
     }
 
     private func keyPicker(_ title: String, selection: Binding<UInt64>) -> some View {

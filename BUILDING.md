@@ -211,6 +211,10 @@ the desired rules with external pairs. A pre-existing identical pair remains ext
 Conflicting sources and incompatible F18 routes block application. Unreadable tables never
 authorize a write. Enumeration, composition, writes and recovery run on one serial queue.
 Wake and a three-second inventory refresh recover maps after sleep and reconnection.
+The timer runs while Hyperkey is requested, nonempty remap rules are enabled, or a legacy
+ownership claim or recovery is pending. It stops after idle cleanup. Startup, wake and explicit
+Refresh still update the inventory. A disconnected saved keyboard keeps its per-keyboard
+status and waits for reconnection without raising an app-wide mapping warning.
 
 `~/.config/lineup/keyboard-mappings-recovery.json` stores ownership independently of tool
 preferences. Its boot-session identifier prevents replaying a RegistryID after reboot.
@@ -222,6 +226,8 @@ and additional external pairs. A shared menu warning and Settings recovery actio
 available when a tool is disabled but its previous pairs could not be released.
 The bounded exit cleanup releases journaled pairs after normal termination;
 the next start recovers after an interruption.
+Legacy ownership claims are acknowledged only after the current request journals them. A later
+explicit claim is imported again even if an earlier claim was transferred in the same session.
 
 The existing schema-1 config envelope stores `tools.keyboardRemap` as an optional version-1
 section. Settings saves through `ToolConfigScope` before changing runtime rules and preserves

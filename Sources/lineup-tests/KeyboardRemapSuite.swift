@@ -8,12 +8,92 @@ func runKeyboardRemapTests() throws {
     try runKeyboardTableTests()
     try runKeyboardJournalTests()
     try runKeyboardTransactionTests()
+    runKeyboardMaintenanceTests()
+    runKeyboardRuleSelectionTests()
+    try runLegacyClaimTransferTests()
 }
 
 private let isoToGrave = KeyMapping(source: 0x700000064, destination: 0x700000035)
 private let graveToISO = KeyMapping(source: 0x700000035, destination: 0x700000064)
 private let capsToF18 = KeyMapping(source: 0x700000039, destination: 0x70000006D)
 private let externalMapping = KeyMapping(source: 0xC000000E9, destination: 0xC000000EA)
+
+private func runKeyboardMaintenanceTests() {
+    let saved = [KeyboardRuleSet(selector: .builtIn, mappings: [isoToGrave])]
+    let empty = [KeyboardRuleSet(selector: .builtIn, mappings: [])]
+    let cases: [(String, Bool, Bool, [KeyboardRuleSet], Bool, Bool, Bool, Bool, Bool, Bool)] = [
+        ("idle tools suspend periodic keyboard reads after initial reconciliation", true, false, saved, false, false, false, false, false, false),
+        ("an enabled tool with no mappings leaves periodic keyboard reads suspended", true, false, empty, true, false, false, false, false, false),
+        ("saved active mappings keep reconnect detection running even without a connected keyboard", true, false, saved, true, false, false, false, false, true),
+        ("requested Hyperkey keeps keyboard inventory active", true, false, [], false, true, false, false, false, true),
+        ("an unacknowledged legacy claim keeps recovery active", true, false, [], false, false, true, false, false, true),
+        ("disabling the last contributor waits for its queued cleanup before suspending", true, false, [], false, false, false, true, false, true),
+        ("failed cleanup continues recovery retries after both tools are disabled", true, false, [], false, false, false, false, true, true),
+        ("a shutdown snapshot cannot restart the periodic timer", false, false, saved, true, true, true, true, true, false),
+        ("read-only previews do not start periodic work for active-looking settings", true, true, saved, true, true, true, true, true, false),
+    ]
+    for (name, started, readOnly, rules, remap, hyperkey, legacy, pending, recovery, expected) in cases {
+        check(KeyboardMappingMaintenance.requiresPolling(started: started, readOnly: readOnly,
+            rules: rules, remapEnabled: remap, hyperkeyRequested: hyperkey,
+            legacyClaimRequested: legacy, reconciliationPending: pending,
+            recoveryPending: recovery) == expected, name)
+    }
+}
+
+private func runKeyboardRuleSelectionTests() {
+    let builtIn = KeyboardDevice(registryID: 1, product: "Built-in", isBuiltIn: true)
+    let external = KeyboardDevice(registryID: 2, product: "USB keyboard",
+        vendorID: 10, productID: 20, locationID: 30, transport: "USB", isBuiltIn: false)
+    let rules = [KeyboardRuleSet(selector: .builtIn, mappings: [isoToGrave]),
+                 KeyboardRuleSet(selector: KeyboardSelector(device: external), mappings: [graveToISO])]
+    let disconnected = KeyboardRuleSelection(rules: rules, devices: [builtIn])
+    check(disconnected.status == nil && disconnected.deviceErrors.isEmpty
+            && disconnected.mappings == [builtIn.registryID: [isoToGrave]],
+          "a disconnected saved keyboard does not block or report an error for connected keyboard mappings")
+    let reconnected = KeyboardRuleSelection(rules: rules, devices: [builtIn, external])
+    check(reconnected.status == nil && reconnected.deviceErrors.isEmpty
+            && reconnected.mappings[external.registryID] == [graveToISO],
+          "a reconnected saved keyboard receives its own mappings without editing the saved rules")
+    let duplicate = KeyboardDevice(registryID: 3, product: "Other built-in service", isBuiltIn: true)
+    let ambiguous = KeyboardRuleSelection(rules: rules, devices: [builtIn, duplicate, external])
+    check(ambiguous.status != nil && Set(ambiguous.deviceErrors.keys) == Set([1, 3])
+            && ambiguous.mappings == [external.registryID: [graveToISO]],
+          "ambiguous selectors still block only the affected devices and preserve independent keyboard rules")
+}
+
+private func runLegacyClaimTransferTests() throws {
+    enum ProbeFailure: Error { case unreadable }
+    let transfer = KeyboardLegacyClaimTransfer()
+    var journal = KeyboardMappingJournal(bootSession: "same-boot")
+    var records = 0
+    _ = try transfer.transfer(requested: true, mapping: capsToF18, registryIDs: [1],
+        journal: journal, read: { _ in [capsToF18, externalMapping] }, record: { journal = $0; records += 1 })
+    let firstCleanup = try KeyboardMappingPlanner.plan(current: [capsToF18, externalMapping],
+        owned: journal.mappings(for: 1), hyperkey: nil, remappings: [])
+    journal.setMappings(firstCleanup.owned, for: 1)
+
+    // The same owner can later receive a fresh explicit claim from an old provider.
+    let acknowledged = try transfer.transfer(requested: true, mapping: capsToF18, registryIDs: [2],
+        journal: journal, read: { _ in [capsToF18, externalMapping] }, record: { journal = $0; records += 1 })
+    let secondCleanup = try KeyboardMappingPlanner.plan(current: [capsToF18, externalMapping],
+        owned: journal.mappings(for: 2), hyperkey: nil, remappings: [])
+    check(acknowledged && records == 2 && secondCleanup.table == [externalMapping]
+            && secondCleanup.owned.isEmpty,
+          "a second explicit legacy claim in the same owner is journaled and restored instead of borrowing its Caps Lock pair")
+    journal.setMappings(secondCleanup.owned, for: 2)
+
+    let priorJournal = journal
+    var failed = false
+    var failedAcknowledged = false
+    do {
+        failedAcknowledged = try transfer.transfer(requested: true, mapping: capsToF18,
+            registryIDs: [3, 4], journal: journal,
+            read: { id in if id == 4 { throw ProbeFailure.unreadable }; return [capsToF18] },
+            record: { journal = $0; records += 1 })
+    } catch { failed = error is ProbeFailure }
+    check(failed && !failedAcknowledged && journal == priorJournal && records == 2,
+          "a failed later legacy probe never reuses an old acknowledgement or retires the new ownership flag")
+}
 
 private func keyboardError(_ expected: KeyboardMappingError, _ name: String,
                            _ operation: () throws -> Void) {

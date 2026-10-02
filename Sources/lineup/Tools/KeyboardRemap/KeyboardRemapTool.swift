@@ -27,6 +27,9 @@ final class KeyboardRemapTool: Tool, ObservableObject {
 
     var blockedMessage: String? { sectionLoadError ?? services?.config.blockedMessage }
     var canEdit: Bool { blockedMessage == nil && services?.config.canWrite == true }
+    var canRetryMappings: Bool {
+        canEdit && (recoveryMessage != nil || (isRunning && mappingMessage != nil))
+    }
 
     func attach(_ services: ToolServices) {
         self.services = services
@@ -67,6 +70,7 @@ final class KeyboardRemapTool: Tool, ObservableObject {
     }
 
     func paneDidAppear() {
+        clearEditingMessage()
         paneVisible = true
         // A disabled tool reads inventory here without installing mappings or an event tap.
         beginObserving()
@@ -106,11 +110,17 @@ final class KeyboardRemapTool: Tool, ObservableObject {
     }
 
     func retry() {
-        guard canEdit, isRunning || recoveryMessage != nil else { return }
+        guard canRetryMappings else { return }
         services?.keyboardMappings.retry()
     }
 
     func refreshKeyboards() { services?.keyboardMappings.refresh() }
+
+    func clearEditingMessage() {
+        guard message != nil else { return }
+        message = nil
+        services?.refreshMenu()
+    }
 
     @discardableResult
     private func save(applyMappings: Bool = true, _ edit: (inout KeyboardRemapSettings) -> Void) -> Bool {
@@ -224,18 +234,19 @@ final class KeyboardRemapTool: Tool, ObservableObject {
         if let message { return [ToolWarning(id: "keyboardRemap.save", text: message)] }
         if let recoveryMessage {
             return [ToolWarning(id: "keyboardRemap.recovery", text: recoveryMessage,
-                                actionTitle: canEdit ? "Retry keyboard mappings" : nil,
-                                action: canEdit ? { [weak self] in self?.retry() } : nil)]
+                                actionTitle: canRetryMappings ? "Retry keyboard mappings" : nil,
+                                action: canRetryMappings ? { [weak self] in self?.retry() } : nil)]
         }
         guard isRunning, let mappingMessage else { return [] }
         return [ToolWarning(id: "keyboardRemap.mapping", text: mappingMessage,
-                            actionTitle: "Retry keyboard mappings", action: { [weak self] in self?.retry() })]
+                            actionTitle: canRetryMappings ? "Retry keyboard mappings" : nil,
+                            action: canRetryMappings ? { [weak self] in self?.retry() } : nil)]
     }
 
     func menuItems() -> [NSMenuItem] {
         let count = settings.rules.reduce(0) { $0 + $1.mappings.count }
         var items = [ToolMenu.info("\(count) saved physical-key mappings")]
-        if mappingMessage != nil {
+        if canRetryMappings {
             items.append(ToolMenu.item("Retry keyboard mappings", symbol: "arrow.clockwise") { [weak self] in self?.retry() })
         }
         return items

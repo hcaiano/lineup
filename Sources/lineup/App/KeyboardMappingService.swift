@@ -37,6 +37,7 @@ final class KeyboardMappingService {
     private var started = false
     private var generation = 0
     private var refreshPending = false
+    private var reconciliationPending = false
 
     func observe(_ callback: @escaping () -> Void) -> UUID {
         let id = UUID()
@@ -53,16 +54,12 @@ final class KeyboardMappingService {
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
+            MainActor.assumeIsolated {
+                guard let self, self.started else { return }
+                self.refresh()
+            }
         }
-        // Polling sees new HID services, including keyboards reconnected with a new RegistryID.
-        // The timer only queues work; enumeration and reads never block the main run loop.
-        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
-        }
-        timer.tolerance = 0.5
-        RunLoop.main.add(timer, forMode: .common)
-        pollTimer = timer
+        updatePolling()
         refresh()
     }
 
@@ -112,6 +109,8 @@ final class KeyboardMappingService {
         // A legacy provider may have exited since startup. Recheck its explicit claim before
         // migrating ownership into the journal and releasing the owned pair.
         refreshLegacyClaimRequest()
+        reconciliationPending = !readOnly
+        updatePolling()
         let request = KeyboardMappingRequest(rules: remapEnabled ? rules : [], hyperkey: false, legacyClaim: legacyClaimRequested)
         let token = generation
         if !readOnly { backend.armExitCleanup() }
@@ -134,7 +133,32 @@ final class KeyboardMappingService {
                 || (UserDefaults(suiteName: CapsLockHandoff.legacySuite)?.bool(forKey: CapsLockHandoff.legacyKey) ?? false))
     }
 
+    private func updatePolling() {
+        let needed = KeyboardMappingMaintenance.requiresPolling(started: started, readOnly: readOnly,
+            rules: rules, remapEnabled: remapEnabled, hyperkeyRequested: hyperkeyRequested,
+            legacyClaimRequested: legacyClaimRequested, reconciliationPending: reconciliationPending,
+            recoveryPending: recoveryStatus != nil || capsLockRecoveryPending)
+        guard needed else {
+            pollTimer?.invalidate()
+            pollTimer = nil
+            return
+        }
+        guard pollTimer == nil else { return }
+        // Reconnects can create a new RegistryID. Work stays on the backend's serial queue.
+        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.started else { return }
+                self.refresh()
+            }
+        }
+        timer.tolerance = 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
+    }
+
     private func enqueue(completion: ((KeyboardMappingSnapshot) -> Void)? = nil) {
+        reconciliationPending = !readOnly
+        updatePolling()
         let request = KeyboardMappingRequest(rules: remapEnabled ? rules : [], hyperkey: hyperkeyRequested, legacyClaim: legacyClaimRequested)
         let token = generation
         if !readOnly { backend.armExitCleanup() }
@@ -150,6 +174,7 @@ final class KeyboardMappingService {
     }
 
     private func accept(_ snapshot: KeyboardMappingSnapshot) {
+        reconciliationPending = false
         let changed = devices != snapshot.devices || remapStatus != snapshot.remapStatus
             || hyperkeyStatus != snapshot.hyperkeyStatus || hyperkeyReady != snapshot.hyperkeyReady
             || remapDeviceStatuses != snapshot.deviceStatuses || appliedRemapDeviceIDs != snapshot.applied
@@ -167,6 +192,7 @@ final class KeyboardMappingService {
             UserDefaults.standard.removeObject(forKey: CapsLockHandoff.newKey)
             UserDefaults(suiteName: CapsLockHandoff.legacySuite)?.removeObject(forKey: CapsLockHandoff.legacyKey)
         }
+        updatePolling()
         if changed { for callback in Array(observers.values) { callback() } }
     }
 }
@@ -196,7 +222,7 @@ private final class KeyboardMappingBackend: @unchecked Sendable {
     private let log = Logger(subsystem: Product.logSubsystem, category: "keyboard-mappings")
     private var client: IOHIDEventSystemClient?
     private var journal: KeyboardMappingJournal?
-    private var legacyTransferred = false
+    private let legacyClaimTransfer = KeyboardLegacyClaimTransfer()
     private static let exitLock = NSLock()
     private static var exitBackend: KeyboardMappingBackend?
 
@@ -224,7 +250,6 @@ private final class KeyboardMappingBackend: @unchecked Sendable {
 
     func reconcile(_ request: KeyboardMappingRequest) -> KeyboardMappingSnapshot {
         var result = KeyboardMappingSnapshot()
-        result.legacyTransferred = legacyTransferred
         do {
             let services = try inventory()
             result.devices = services.map(\.device).sorted {
@@ -233,36 +258,15 @@ private final class KeyboardMappingBackend: @unchecked Sendable {
                 return $0.registryID < $1.registryID
             }
             try loadJournal()
-            if request.legacyClaim && !legacyTransferred {
-                // Save the explicit old claim before retiring it. Parsing every relevant table
-                // first prevents a failed probe from losing either legacy ownership flag.
-                let pair = Self.capsLockPair
-                var migrated = journal!
-                for service in services {
-                    let table = try read(service.client)
-                    if table.contains(pair) {
-                        let owned = migrated.mappings(for: service.device.registryID)
-                        migrated.setMappings(Array(Set(owned + [pair])).sorted(by: Self.mappingOrder), for: service.device.registryID)
-                    }
-                }
-                try save(migrated)
-                legacyTransferred = true
-                result.legacyTransferred = true
-            }
+            let servicesByID = Dictionary(uniqueKeysWithValues: services.map { ($0.device.registryID, $0.client) })
+            result.legacyTransferred = try legacyClaimTransfer.transfer(requested: request.legacyClaim,
+                mapping: Self.capsLockPair, registryIDs: services.map { $0.device.registryID },
+                journal: journal!, read: { id in try self.read(servicesByID[id]!) }, record: save)
 
-            var deviceRules: [UInt64: [KeyMapping]] = [:]
-            for rule in request.rules where !rule.mappings.isEmpty {
-                let matching = services.filter { rule.selector.matches(device: $0.device) }
-                if matching.isEmpty {
-                    result.remapStatus = "The selected keyboard is disconnected. Its rules will apply when it returns."
-                } else if matching.count > 1 {
-                    let message = "The selected keyboard matches more than one HID service. Choose a keyboard that can be identified separately."
-                    result.remapStatus = message
-                    for service in matching { result.deviceStatuses[service.device.registryID] = message }
-                } else if let service = matching.first {
-                    deviceRules[service.device.registryID, default: []] += rule.mappings
-                }
-            }
+            let selection = KeyboardRuleSelection(rules: request.rules, devices: result.devices)
+            let deviceRules = selection.mappings
+            result.deviceStatuses = selection.deviceErrors
+            result.remapStatus = selection.status
 
             let selectionStatus = result.remapStatus
             var tables: [UInt64: [KeyMapping]] = [:]
@@ -491,10 +495,6 @@ private final class KeyboardMappingBackend: @unchecked Sendable {
     }
 
     private static let capsLockPair = KeyMapping(source: 0x700000039, destination: 0x70000006D)
-    private static func mappingOrder(_ lhs: KeyMapping, _ rhs: KeyMapping) -> Bool {
-        lhs.source == rhs.source ? lhs.destination < rhs.destination : lhs.source < rhs.source
-    }
-
     private static func currentBootSession() -> String? {
         var size = 0
         guard sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0, size > 1 else { return nil }
