@@ -116,6 +116,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.register(AwakeTool())
         registry.register(TextCaptureTool())
         registry.register(MenuBarTool())
+        registry.register(ScrollTool())
         keyboardMappingObserver = KeyboardMappingService.shared.observe { [weak self] in
             self?.statusItem.refresh()
             self?.settings?.refresh()

@@ -9,6 +9,7 @@ independently:
 - **World Clock** compares local and world times in its own menu-bar panel.
 - **Keep Awake** prevents idle sleep for a timed session, with a separate display option.
 - **Text Capture** copies locally recognized text from a selected screen region.
+- **Scroll** reverses mouse and trackpad scrolling independently.
 
 Read [PRODUCT.md](PRODUCT.md) before changing user-visible behavior or design. Read
 [BUILDING.md](BUILDING.md) for build, package, and architecture details. Read
@@ -61,7 +62,7 @@ State which paths do not apply when their omission is not obvious.
 ## Where code lives
 
 - `Sources/ZonesCore`, `Sources/CyclerCore`, `Sources/HyperkeyCore`, `Sources/WorldClockCore`,
-  and `Sources/TextCaptureCore` contain testable tool logic.
+  `Sources/TextCaptureCore`, and `Sources/ScrollCore` contain testable tool logic.
 - `Sources/AppCore` owns product identity, shared configuration, migration, and tool metadata.
 - `Sources/lineup/App` contains the app shell and shared macOS services.
 - `Sources/lineup/Settings` contains the SwiftUI settings interface.

@@ -99,6 +99,24 @@ the clipboard. Screen Recording is requested only on capture, with recovery in S
 changes and tool shutdown invalidate pending results. There is no capture history, automatic
 paste, translation, or network processing.
 
+## Scroll
+
+Scroll is an independent, opt-in tool for people who want a different direction on each device,
+most often a traditional mouse wheel with a natural trackpad. Settings and the menu bar reverse
+the mouse and the trackpad separately; vertical and horizontal choices apply to each reversed
+device. The defaults reverse vertical mouse scrolling and keep the trackpad unchanged; horizontal
+reversal starts off because apps turn horizontal scrolling into page navigation. Settings
+explains the result relative to the current macOS Natural scrolling preference, which Lineup only
+reads.
+
+Changes apply to the next scroll. Reversal changes only the sign of each scroll: speed and inertia
+stay as macOS delivers them, gesture events such as zoom, rotation and space swipes are never
+touched, and no event is added or removed. A gesture keeps one device through its inertia.
+Scrolling that cannot be attributed to a mouse or trackpad, including input posted by other apps,
+keeps the macOS direction. Missing Accessibility leaves scrolling unchanged
+and shows recovery in Settings. Disabling the tool or quitting ends interception immediately.
+Smoothing, acceleration, button remapping and per-app rules are out of scope.
+
 ## Brand Personality
 
 Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in

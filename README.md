@@ -13,7 +13,7 @@
 
 ![Lineup layout editor with three custom zones](docs/editor.png)
 
-Lineup combines seven tools. Enable only the tools you need:
+Lineup combines eight tools. Enable only the tools you need:
 
 - **Zones:** Draw a window layout on each display. Move windows with Shift-drag or a shortcut.
   Zone shortcuts are numbered across ALL your displays: each display's Settings group shows its
@@ -35,6 +35,8 @@ Lineup combines seven tools. Enable only the tools you need:
   Portuguese and English.
 - **Menu Bar:** Hide the icons you place left of an arrow, and show them with one click.
   Requires macOS 27 and is off by default.
+- **Scroll:** Reverse the mouse and the trackpad separately, for example a traditional mouse
+  wheel with natural trackpad scrolling.
 
 Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
@@ -171,6 +173,27 @@ choose the indicated settings file; Lineup changes only the visibility of your s
 This tool uses a private macOS 27 interface. If macOS no longer offers it, the arrow stays but
 nothing hides, and Settings says so. Menu Bar is unavailable on other macOS versions; the other
 tools still support macOS 13+.
+
+## Reverse scrolling
+
+macOS has one scroll direction for every device. Enable **Scroll** in Settings to reverse the
+mouse, the trackpad or both, on top of that direction. By default it reverses vertical mouse
+scrolling and leaves the trackpad unchanged. **Vertical** and **Horizontal** choose the directions
+reversed on each selected device. Changes apply to the next scroll, and the Lineup menu bar offers
+quick switches for each device.
+
+Settings shows what reversal means with your current macOS preference. Lineup never changes
+**Natural scrolling** in System Settings; turning Scroll off or quitting Lineup restores the macOS
+direction immediately. Scroll needs the Accessibility access Lineup already uses. Until it is
+granted, scrolling keeps the macOS direction and the other tools keep working.
+
+Each scroll is matched to the mouse or trackpad that produced it, so alternating devices, sleep,
+and connecting a device need no action. Magic Mouse counts as a mouse. Speed and inertia are
+preserved. Zoom, rotation, Mission Control and swipes between spaces are gestures, not scrolling,
+and are unchanged. Apps that turn horizontal scrolling into page navigation, such as Safari, follow
+the reversed horizontal direction; horizontal reversal is off by default. Scrolling posted by
+other apps, such as remote-control or mouse utilities, and devices that are neither a mouse nor a
+trackpad keep the macOS direction.
 
 ## Update tracks
 

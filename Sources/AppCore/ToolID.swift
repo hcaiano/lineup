@@ -14,6 +14,7 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
     public static let awake = ToolID(rawValue: "awake")
     public static let textCapture = ToolID(rawValue: "textCapture")
     public static let menuBar = ToolID(rawValue: "menuBar")
+    public static let scroll = ToolID(rawValue: "scroll")
 
     public var displayName: String {
         switch self {
@@ -25,12 +26,13 @@ public struct ToolID: RawRepresentable, Hashable, Codable, Sendable {
         case .awake: return "Keep Awake"
         case .menuBar: return "Menu Bar"
         case .textCapture: return "Text Capture"
+        case .scroll: return "Scroll"
         default: return rawValue.capitalized
         }
     }
 
     /// Registry/sidebar order.
-    public static let all: [ToolID] = [.zones, .cycler, .hyperkey, .keyboardRemap, .worldClock, .awake, .textCapture, .menuBar]
+    public static let all: [ToolID] = [.zones, .cycler, .hyperkey, .keyboardRemap, .worldClock, .awake, .textCapture, .menuBar, .scroll]
 }
 
 extension ToolID: CustomStringConvertible {
