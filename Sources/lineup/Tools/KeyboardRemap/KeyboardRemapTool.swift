@@ -17,6 +17,7 @@ final class KeyboardRemapTool: Tool, ObservableObject {
     @Published private(set) var devices: [KeyboardDevice] = []
     @Published private(set) var sectionLoadError: String?
     @Published private(set) var message: String?
+    @Published private(set) var saveMessage: String?
     @Published private(set) var mappingMessage: String?
     @Published private(set) var recoveryMessage: String?
     @Published private(set) var deviceStatuses: [UInt64: String] = [:]
@@ -131,15 +132,16 @@ final class KeyboardRemapTool: Tool, ObservableObject {
             message = "Each source key needs one different destination. Edit the existing mapping before adding this key again."
             return false
         }
+        message = nil
         do {
             try services.config.save(proposed)
             settings = proposed
-            message = nil
+            saveMessage = nil
             if applyMappings { apply() }
             services.refreshMenu()
             return true
         } catch {
-            message = "Keyboard Remap settings could not be saved. Your previous mappings are still in use."
+            saveMessage = "Keyboard Remap settings could not be saved. Your previous mappings are still in use."
             services.refreshMenu()
             return false
         }
@@ -231,7 +233,8 @@ final class KeyboardRemapTool: Tool, ObservableObject {
 
     var warnings: [ToolWarning] {
         if let blockedMessage { return [ToolWarning(id: "keyboardRemap.config", text: blockedMessage)] }
-        if let message { return [ToolWarning(id: "keyboardRemap.save", text: message)] }
+        if let message { return [ToolWarning(id: "keyboardRemap.edit", text: message)] }
+        if let saveMessage { return [ToolWarning(id: "keyboardRemap.save", text: saveMessage)] }
         if let recoveryMessage {
             return [ToolWarning(id: "keyboardRemap.recovery", text: recoveryMessage,
                                 actionTitle: canRetryMappings ? "Retry keyboard mappings" : nil,

@@ -47,12 +47,12 @@ struct KeyboardRemapSettingsPane: View {
     }
 
     private var canRetryMappings: Bool {
-        tool.canRetryMappings && tool.message == nil
+        tool.canRetryMappings && tool.message == nil && tool.saveMessage == nil
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if let message = tool.blockedMessage ?? tool.message ?? tool.recoveryMessage
+            if let message = tool.blockedMessage ?? tool.message ?? tool.saveMessage ?? tool.recoveryMessage
                 ?? (tool.isRunning ? tool.mappingMessage : nil) {
                 PinnedBannerStrip {
                     BlockedBanner(message: message, systemImage: "exclamationmark.triangle.fill",
@@ -245,7 +245,7 @@ private struct KeyboardMappingSheet: View {
             if source == destination {
                 Text("Choose two different keys.").font(.callout)
             }
-            if let message = tool.message {
+            if let message = tool.message ?? tool.saveMessage {
                 BlockedBanner(message: message, systemImage: "exclamationmark.triangle.fill")
             }
             HStack {
