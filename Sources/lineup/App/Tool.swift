@@ -127,6 +127,7 @@ struct ToolConfigScope {
 final class ToolServices {
     let id: ToolID
     let hotkeys: HotkeyScope
+    let mediaKeys: MediaKeyScope
     let config: ToolConfigScope
     let permissions: PermissionCenter
     let activation: ActivationCoordinator
@@ -134,6 +135,8 @@ final class ToolServices {
     let log: Logger
     let refreshMenu: () -> Void
     let refreshSettings: () -> Void
+    /// Opens the shared menu-bar panel, optionally focused on one tool's detailed view.
+    let openPanel: (ToolID?) -> Void
     /// Read-only view of sibling tools, for cross-tool hints (e.g. Hyperkey noticing that
     /// Zones/Cycler have hyper-based shortcuts bound). Never used to mutate a sibling.
     let peers: () -> [ToolID: Bool]
@@ -151,9 +154,11 @@ final class ToolServices {
          refreshMenu: @escaping () -> Void,
          refreshSettings: @escaping () -> Void,
          peers: @escaping () -> [ToolID: Bool],
-         boundCombos: @escaping () -> [ToolCombo] = { [] }) {
+         boundCombos: @escaping () -> [ToolCombo] = { [] },
+         openPanel: @escaping (ToolID?) -> Void = { _ in }) {
         self.id = id
         self.hotkeys = HotkeyScope(owner: id)
+        self.mediaKeys = MediaKeyScope(owner: id)
         self.config = config
         self.permissions = permissions
         self.activation = activation
@@ -161,6 +166,7 @@ final class ToolServices {
         self.log = Logger(subsystem: Product.logSubsystem, category: id.rawValue)
         self.refreshMenu = refreshMenu
         self.refreshSettings = refreshSettings
+        self.openPanel = openPanel
         self.peers = peers
         self.boundCombos = boundCombos
     }
@@ -220,9 +226,21 @@ protocol Tool: AnyObject {
     /// Additive to the Phase 3 contract and defaulted to a no-op, so a tool with no shortcuts
     /// (Hyperkey) implements nothing.
     func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure])
+
+    /// Controls in the selected shared-panel tab. Tools with no widget retain their menu actions.
+    var panelIsActive: Bool { get }
+    func makeQuickPanel() -> AnyView?
+    func makeFullPanel(maximumHeight: CGFloat, close: @escaping () -> Void) -> AnyView?
+    func panelWillOpen()
+    func panelDidClose()
 }
 
 extension Tool {
+    var panelIsActive: Bool { false }
     func persistedCombos() -> [(keyCode: Int, modifiers: UInt32)] { [] }
     func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure]) {}
+    func makeQuickPanel() -> AnyView? { nil }
+    func makeFullPanel(maximumHeight: CGFloat, close: @escaping () -> Void) -> AnyView? { nil }
+    func panelWillOpen() {}
+    func panelDidClose() {}
 }

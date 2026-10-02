@@ -116,6 +116,10 @@ final class WorldClockModel: ObservableObject {
 
     func pin(_ id: String) { edit { $0.pinnedID = $0.pinnedID == id ? nil : id } }
 
+    func setPinned(_ id: String?) { edit { $0.pinnedID = id } }
+
+    func setSeparateMenuBarItem(_ show: Bool) { edit { $0.showSeparateMenuBarItem = show } }
+
     func loadCatalog() {
         guard catalog == nil, catalogTask == nil else { return }
         catalogLoading = true

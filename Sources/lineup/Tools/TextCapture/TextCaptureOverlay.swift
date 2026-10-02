@@ -141,28 +141,40 @@ final class TextCaptureNotice {
     private var panel: NSPanel?
     private var dismissal: Task<Void, Never>?
 
-    func show(_ message: String) {
+    /// A brief confirmation or problem near the bottom of the active display. The glyph says
+    /// which it is, so colour is never the only signal.
+    func show(_ message: String, success: Bool = false) {
         hide()
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
                 ?? NSScreen.main else { return }
-        let panel = NSPanel(contentRect: CGRect(x: screen.visibleFrame.midX - 210,
-                                               y: screen.visibleFrame.minY + 70, width: 420, height: 64),
+        // Sized to the message: a fixed box cut off the last line of longer failures and left
+        // one-line confirmations sitting at its top.
+        let width: CGFloat = 420, textX: CGFloat = 46
+        let label = NSTextField(wrappingLabelWithString: message)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = .white
+        label.preferredMaxLayoutWidth = width - textX - 18
+        let textHeight = ceil(label.fittingSize.height)
+        let height = max(44, textHeight + 24)
+        label.frame = CGRect(x: textX, y: (height - textHeight) / 2, width: width - textX - 18, height: textHeight)
+        let panel = NSPanel(contentRect: CGRect(x: screen.visibleFrame.midX - width / 2,
+                                               y: screen.visibleFrame.minY + 70, width: width, height: height),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isFloatingPanel = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        panel.hasShadow = true
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.ignoresMouseEvents = true
-        let background = NSVisualEffectView(frame: CGRect(x: 0, y: 0, width: 420, height: 64))
-        background.material = .hudWindow
-        background.state = .active
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 12
-        let label = NSTextField(wrappingLabelWithString: message)
-        label.frame = CGRect(x: 16, y: 12, width: 388, height: 40)
-        label.alignment = .center
-        label.font = .systemFont(ofSize: 14, weight: .medium)
+        let background = HUDGlass.container(frame: CGRect(x: 0, y: 0, width: width, height: height),
+                                            cornerRadius: min(height / 2, 16))
+        let icon = NSImageView(frame: CGRect(x: 16, y: (height - 20) / 2, width: 20, height: 20))
+        icon.image = NSImage(systemSymbolName: success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                             accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 16, weight: .semibold))
+        icon.contentTintColor = success ? .systemGreen : .systemOrange
+        background.addSubview(icon)
         background.addSubview(label)
         panel.contentView = background
         self.panel = panel
@@ -175,6 +187,11 @@ final class TextCaptureNotice {
             self?.hide()
         }
     }
+
+    #if DEBUG
+    /// The visible notice, for the isolated design review's capture.
+    var reviewView: NSView? { panel?.contentView }
+    #endif
 
     func hide() {
         dismissal?.cancel()

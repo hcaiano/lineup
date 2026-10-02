@@ -17,21 +17,18 @@ struct GeneralPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
                 SettingsSectionView("Startup") {
-                    SettingsRow(
-                        title: "Launch at login",
-                        detail: "Lineup lives in the menu bar. Starting it at login keeps your shortcuts live."
-                    ) {
+                    SettingsRow(title: "Open at login") {
                         Toggle("", isOn: $store.launchAtLogin)
                             .labelsHidden()
                             .toggleStyle(.switch)
-                            .accessibilityLabel("Launch at login")
+                            .accessibilityLabel("Open at login")
                     }
                 }
 
                 SettingsSectionView("Menu bar") {
                     SettingsRow(
                         title: "Show the menu bar icon",
-                        detail: "With the icon hidden, open Lineup from Spotlight to get back to Settings."
+                        detail: "When hidden, open Lineup from Spotlight to return to Settings."
                     ) {
                         Toggle("", isOn: $store.showMenuBarIcon)
                             .labelsHidden()
@@ -40,15 +37,12 @@ struct GeneralPane: View {
                     }
                 }
 
-                SettingsSectionView("Permissions") {
-                    if requirements.isEmpty {
-                        SettingsRow(
-                            title: "Nothing to grant",
-                            detail: "No tool in this build needs a system permission."
-                        ) { EmptyView() }
-                    }
-                    ForEach(requirements, id: \.permission) { requirement in
-                        permissionRow(requirement.permission, neededBy: requirement.tools)
+                // Only shown when a tool needs one: an empty section would be a row of nothing.
+                if !requirements.isEmpty {
+                    SettingsSectionView("Permissions") {
+                        ForEach(requirements, id: \.permission) { requirement in
+                            permissionRow(requirement.permission, neededBy: requirement.tools)
+                        }
                     }
                 }
 
@@ -66,11 +60,8 @@ struct GeneralPane: View {
                         .labelsHidden()
                         .accessibilityLabel("Update track")
                     }
-                    SettingsRow(
-                        title: "Software updates",
-                        detail: "Lineup checks in the background and installs an update once you agree."
-                    ) {
-                        Button("Check for Updates…") { AppUpdater.shared.checkForUpdates(nil) }
+                    SettingsRow(title: "Software updates", detail: "Lineup checks automatically and asks before installing.") {
+                        Button("Check Now") { AppUpdater.shared.checkForUpdates(nil) }
                     }
                 }
             }
@@ -88,15 +79,13 @@ struct GeneralPane: View {
         if store.hasDeferredNightly {
             // Sparkle resumes a dismissed download whatever the track says, so the switch is not
             // finished yet. Name the one action that finishes it.
-            return "Switching to Stable finishes after you choose Skip This Version for the "
-                + "downloaded Nightly update. Until then Lineup keeps offering it, and one that "
-                + "already began installing installs when Lineup quits."
+            return "To finish switching to Stable, choose Skip This Version for the downloaded "
+                + "Nightly update. An update that already began installs when Lineup quits."
         }
         // Explain the consequence before the user opts into Nightly. Name the alternative here:
         // the segmented control alone is not enough context for VoiceOver or a quick scan.
         return "Tested releases. Nightly gives you the newest public builds, which may be less "
-            + "reliable. Returning from Nightly to Stable waits for a newer Stable release; "
-            + "Lineup does not downgrade automatically."
+            + "reliable. Returning from Nightly to Stable waits for a newer Stable release."
     }
 
     // MARK: - Rows

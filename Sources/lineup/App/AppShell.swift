@@ -39,6 +39,10 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
+        if let directory = ProcessInfo.processInfo.environment["LINEUP_DISPLAY_CONTROL_PREVIEW"] {
+            DisplayControlPreview.render(to: directory)
+            return
+        }
         // Offscreen UI preview: `LINEUP_RENDER_PREVIEW=<dir> swift run lineup` writes PNGs of the
         // Welcome + About content from the real view code, then exits. Debug-only; never ships.
         if let dir = ProcessInfo.processInfo.environment["LINEUP_RENDER_PREVIEW"] {
@@ -99,10 +103,12 @@ final class AppShell: NSObject, NSApplicationDelegate {
         }
         registry.onChange = { [weak self] in self?.statusItem.refresh() }
         registry.onSettingsChange = { [weak self] in self?.settings?.refresh() }
+        registry.onOpenPanel = { [weak self] id in self?.statusItem.showPanel(tool: id) }
 
         statusItem.shellWarnings = { [weak self] in self?.shellWarnings() ?? [] }
         statusItem.showMenuBarIcon = { [weak self] in self?.store.config.general.showMenuBarIcon ?? true }
         statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
+        statusItem.onOpenToolSettings = { [weak self] id in self?.openSettings(selecting: .tool(id)) }
         statusItem.onShowAbout = { AboutWindowController.show() }
 
         // Tools are registered here in phases 4-6. Order is the menu and sidebar order.
@@ -113,6 +119,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         registry.register(AwakeTool())
         registry.register(TextCaptureTool())
         registry.register(MenuBarTool())
+        registry.register(DisplayControlTool())
         registry.startEnabledTools()
         statusItem.refresh()
 
@@ -319,8 +326,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings
 
-    private func openSettings() {
+    private func openSettings(selecting section: SettingsSection? = nil) {
         if let settings {
+            if let section { settings.store.selection = section }
             settings.show()
             return
         }
@@ -332,6 +340,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
             onMenuBarIconChange: { [weak self] show in self?.setShowMenuBarIcon(show) ?? show },
             updateChannel: AppUpdater.initialChannel(config: self.store.config, state: self.store.state),
             onUpdateChannelChange: { [weak self] channel in self?.setUpdateChannel(channel) ?? channel })
+        if let section { store.selection = section }
         let controller = SettingsWindowController(store: store)
         controller.onClose = { [weak self] in self?.settings = nil }
         settings = controller

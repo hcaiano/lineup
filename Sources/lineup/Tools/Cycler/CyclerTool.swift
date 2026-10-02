@@ -378,6 +378,21 @@ final class CyclerTool: Tool {
 
     // MARK: - Settings
 
+    func makeQuickPanel() -> AnyView? {
+        let entries = settings.bindings.enumerated().map { index, binding in
+            CyclerQuickPanel.Entry(
+                id: index,
+                title: bindingTitle(for: binding.bundleIdentifiers),
+                icons: binding.bundleIdentifiers.compactMap { AppInfo.icon(forBundleIdentifier: $0) },
+                shortcut: ShortcutKit.display(keyCode: binding.keyCode, modifiers: binding.modifiers),
+                installed: binding.bundleIdentifiers.contains {
+                    NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
+                },
+                open: { [weak self] in self?.engage(binding, direction: .forward) })
+        }
+        return AnyView(CyclerQuickPanel(entries: entries, warnings: warnings))
+    }
+
     func makeSettingsPane() -> AnyView {
         // The recorder needs the window's `SettingsStore` (the sole owner of the global hotkey
         // suspension). It arrives through the environment — `SettingsStore.pane(for:)` injects it.

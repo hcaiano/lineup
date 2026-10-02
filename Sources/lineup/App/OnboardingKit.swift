@@ -35,16 +35,38 @@ enum OnboardingCopy {
     /// Accessibility is the one permission Lineup asks for up front. Input Monitoring is named
     /// here only so a new user knows it exists and knows it is not being asked for yet.
     static let accessibilityBody =
-        "Zones and Cycler need Accessibility to move and focus your windows. That is the only "
-        + "permission Lineup asks for now, and it never collects your data."
+        "Zones, Cycler and Menu Bar need Accessibility to move and focus windows. It is the only "
+        + "permission Lineup asks for now, and Lineup never collects your data."
     static let inputMonitoringNote =
-        "Input Monitoring is asked for only when you turn Hyperkey on."
+        "Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only "
+        + "when you first capture text."
 }
 
 /// The three tools as a row of app-icon tiles. This is the one view that makes Lineup 2.0 read
 /// as a suite rather than as "the window app, with extras".
 struct ToolTileRow: View {
+    /// The tools the tiles do not show, named so a new user knows where the rest of the suite is.
+    private var otherTools: String {
+        let shown = Set(OnboardingCopy.tools.map(\.id))
+        let names = ToolID.all.filter { !shown.contains($0) }.map(\.displayName)
+        guard let last = names.last else { return "" }
+        return names.count == 1 ? last : names.dropLast().joined(separator: ", ") + " and " + last
+    }
+
     var body: some View {
+        VStack(spacing: 12) {
+            tiles
+            if !otherTools.isEmpty {
+                Text("\(otherTools) are ready in Settings, off until you turn them on.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var tiles: some View {
         HStack(alignment: .top, spacing: 14) {
             ForEach(OnboardingCopy.tools) { tool in
                 VStack(spacing: 7) {
@@ -113,7 +135,7 @@ struct OnboardingBanner: View {
 
 /// Everything the shell knows about a just-run legacy import, in the form the two windows show it.
 struct OnboardingImportContext {
-    /// "Imported 6 Cycler shortcuts and your Hyper Key setup", or nil.
+    /// "Imported 6 Cycler shortcuts and your Hyperkey setup", or nil.
     var cyclerSummary: String?
     /// Cycler.app is installed (running or not) — offer to reveal it so it can be removed.
     var revealCycler: (() -> Void)?

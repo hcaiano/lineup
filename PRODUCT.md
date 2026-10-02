@@ -8,36 +8,138 @@ product
 
 Mac users who want their windows arranged without thinking about it. Two groups: Henrique (power
 user, ultrawide monitor, keyboard-driven) and his non-technical friends (first macOS utility they
-install by hand; they will not read documentation). Context: the app runs all day in the menu bar;
-the only UI most users ever see is the on-screen layout editor (once) and the drag-snap highlight
-(daily).
+install by hand; they will not read documentation). The app runs all day in the menu bar, with
+everyday controls in its panel. Zones users build their layout once in the on-screen editor and
+see the drag-snap highlight during daily use.
 
 ## Product Purpose
 
 Lineup combines independently enabled tools for window layouts, app cycling, a Hyperkey, world
-clocks and text capture. Zones snaps windows into per-screen zones the user draws themselves. It
+clocks, sleep prevention, text capture, menu bar organization and display controls. Zones snaps
+windows into per-screen zones the user draws themselves. It
 replaces Magnet/Rectangle with something you can shape: recursive zone layouts per display, snapping by shift-drag or global
 shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
 instructions, and the app then disappears into muscle memory.
 
+## Menu-bar controls
+
+Clicking the Lineup icon opens one compact native popover with icon tabs for the enabled tools.
+Each tab shows that tool's controls directly, under the tool's name. Display Control has brightness
+and volume sliders; Keep Awake has session controls; World Clock has its complete clock, place
+search and time scroll. Zones has Edit Layout and the drag-to-snap switch. Cycler lists the app
+shortcuts; clicking one opens its app as the shortcut would, and Edit opens its Settings. Hyperkey
+shows its trigger and the modifiers it sends. Text Capture has its capture button and shortcut, or
+a way to add one. A tool without its own controls shows its actions; a single action is one
+full-width button. Actions that open an editor or a capture close the panel first. Settings and app
+actions remain in the top row; right-clicking the icon opens the existing native menu.
+
+The panel shows only what the person needs in the moment. Preferences, explanations and
+compatibility details belong in Settings. The panel hugs its content, so its height follows the
+selected tab.
+
+macOS draws the popover's arrow, border and material. Native segmented tabs, sliders and toggles
+follow the system accent and appearance, including Liquid Glass on macOS 26 and later. Respect
+Light/Dark Mode, the person's Liquid Glass preference, Reduce Transparency and Increase Contrast. Earlier
+macOS versions retain their native AppKit appearance. Do not paint an extra panel background or
+force a transparency level.
+
+The first opening selects Display Control when enabled, otherwise the first available tool.
+Reopening remembers the last selected tab for the current app session. Opening a specific tool
+from Settings selects its tab. Disabling the selected tool removes its tab and selects the first
+remaining tool. Use Command-1 through Command-8 to select tabs, or Control-Tab and
+Control-Shift-Tab to move forward and backward.
+
+Closing the panel leaves Keep Awake sessions and enabled tools running. Content scrolls within
+the available display height. Escape closes the panel. In World Clock, it first leaves place
+search or editing; another Escape closes the panel. Clicking outside or clicking the Lineup icon
+again also closes it.
+
+World Clock can additionally show its own menu-bar icon or a pinned place's live time. New clock
+configurations use the Lineup panel alone; existing saved configurations keep the separate item
+until the user changes that preference. Showing or hiding this extra item never changes tool
+enablement, saved places or the pin.
+
+## Display control
+
+Display Control is an independent tool, off by default. Its controls in the Lineup popover, the
+right-click menu submenu and Settings show each connected display, its hardware controls and
+confirmed brightness or speaker volume.
+Native Apple brightness and external DDC/CI are supported when the current connection exposes
+them. The popover shows only supported controls; a display with none says so and offers detection
+again. Settings shows every control with the reason one is unsupported. An unreadable value has no
+slider or invented level. Retry detection after enabling DDC/CI on a monitor or changing its cable
+or dock. Keyboard preferences live in Settings; destination pickers and per-display exclusions
+appear only while their key group is on.
+
+Brightness and volume keys are separate, opt-in choices. Both default to the display under the
+pointer; each can instead use one explicitly selected display. Per-display preferences can
+exclude either key group. A disconnected selected display waits without redirecting keys to
+another display. A held key keeps its initial display even if the pointer moves. Option-Shift
+with a brightness or volume key makes a fine adjustment. Other modifier combinations and
+Settings shortcut recording retain their existing behavior.
+
+**Sync brightness across displays** is off by default and affects only brightness keys. The
+destination picker becomes the reference display, still under the pointer by default. Its level
+sets the shared adjustment for compatible displays included in the brightness key group. A held
+press keeps the initial reference and participating displays. Connection or routing changes
+cancel its remaining commands. A disconnected selected reference blocks the group.
+
+With sync on, each compatible display has **Minimum brightness** and **Maximum brightness**,
+defaulting to 0% and 100%. The maximum ranges from 5% to 100% and must exceed the minimum.
+Shared levels scale across this range: a 10% minimum and 80% maximum send 45% at a shared 50%.
+Users match their displays by eye; Lineup does not measure apparent brightness. Changing either
+bound writes only the preference and applies on the next brightness key press. Manual sliders
+remain individual, single-display brightness keys ignore calibration, and volume keys remain
+independent.
+
+**Black screen below minimum** is off by default and appears while brightness keys are enabled.
+Pressing Brightness Down again at minimum covers the display with black while keeping it powered
+on. With sync enabled, this happens at shared 0% for the participating displays; their configured
+hardware minimums remain unchanged. Brightness Up clears the cover and makes the normal upward
+adjustment. The display's **Restore** button clears only its cover; Escape clears all covers.
+Neither recovery control raises hardware brightness. The panel and Settings show **Black screen**
+separately from confirmed hardware percentages. This state is never saved.
+
+Confirmed key adjustments use the classic macOS brightness or volume overlay on the affected
+display. An unavailable system interface or a failure uses Lineup's feedback with native material.
+Pending changes never present a requested level as confirmed.
+Mute sets the monitor's volume to zero and restores a level observed during that connection;
+if no previous level is known, Volume Up unmutes it.
+
+Manual controls need no keyboard permission. Only optional media keys use Accessibility, through
+the shared permission and media-key services. Denial or revocation leaves manual controls working.
+Saved data contains routing, sync, calibration and black-screen preferences, never current brightness or
+volume levels. Startup and detection only read current levels. Sleep, display changes, disabling
+and quitting cancel pending writes and clear black covers. Preference changes, lost input
+permission, shortcut recording and Secure Input also clear them. A cover is refused if its
+emergency Escape shortcut cannot be registered. Wake and reconnection detect capabilities again.
+The optional black cover does not change gamma, display power or arrangement. Gradual software
+dimming, resolution changes, HDR and virtual-display controls are outside this tool's current scope.
+
 ## World Clock
 
 World Clock is an optional menu-bar tool for checking colleagues' times and comparing nearby
-hours. Its own status item opens a compact native panel, independently of the main Lineup icon.
-The default is off. With no saved places, the panel shows Local and an add button.
+hours. Its tab in the Lineup panel shows all saved places, place management and time comparison
+directly. An optional separate status item opens that same clock view,
+independently of the main Lineup icon's visibility preference. The tool starts off. With no saved
+places, the clock shows Local and an add button.
 
 Local follows the Mac's time zone and sits among the other clocks in chronological order, from
 earlier to later local time. Sort by UTC offset at the selected instant, including daylight saving;
 Local comes first among equal offsets, then cities retain their saved order. Unavailable zones go last.
-Cities can be searched offline, renamed and removed inside the panel. Manual reordering only
-changes the order of cities with equal offsets. One pinned place replaces the status icon with its name and live time; unpinning
-restores the icon. The panel's ±24-hour time scroll changes every row to the same selected instant.
-Reopening always returns to Now; the pinned status time remains real during simulation.
+Cities can be searched offline, renamed and removed inside the complete view; search results
+show each place's current time. Manual reordering only changes the order of cities with equal
+offsets. With the separate menu-bar item enabled, one pinned place replaces its icon with its name
+and live time; unpinning restores the icon. Choose the pinned place in Settings, from a clock
+row's context menu, or in edit mode. Pin controls appear only while the separate item is on.
+The ±24-hour time scroll changes every row to the same selected instant. Reopening the clock
+always returns to Now; the pinned status time remains real during simulation.
 
 Follow the system appearance and hour format. Use aligned rows, readable numeric hours and one
 blue for selection. Use a pin rather than a heart. Keep the time controls visible when a long list
-scrolls. Show day changes explicitly. Solar estimates belong only to cities with coordinates;
-the next event follows the simulated time. No calendar, location permission or network service.
+scrolls. Show day changes explicitly. Cities with coordinates show a sun or moon for day or night;
+the estimated next sunrise or sunset appears on hover and follows the simulated time. No calendar,
+location permission or network service.
 
 ## Menu bar organization
 
@@ -83,8 +185,9 @@ paste, translation, or network processing.
 ## Brand Personality
 
 Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
-`Sources/lineup/App/Brand.swift`) carries selection and controls; everything else defers to macOS
-conventions (system fonts, vibrancy, standard controls). Feature artwork uses one color per tool
+`Sources/lineup/App/Brand.swift`) carries selection and controls in Settings and the layout editor.
+The menu-bar popover and its controls inherit the system accent and appearance. Other styling
+defers to macOS conventions (system fonts, vibrancy, standard controls). Feature artwork uses one color per tool
 within the shared [enamel icon family](Design/FeatureIcons/README.md). The app should feel like
 Apple shipped it.
 
@@ -102,7 +205,8 @@ the persisted enabled flag; a tool awaiting permission retains its enabled appea
 - Amateur floating chrome: bare SF Symbol buttons in white boxes, mismatched sizes, arbitrary
   placement. The editor overlay must read as one designed surface, not controls sprinkled on glass.
 - Electron-app density and web-style cards. No faux-material design on macOS.
-- Red as an accent anywhere (explicit user rule). Warnings are orange; everything else is the blue.
+- Red as a custom app accent. Warnings are orange. Settings and editor controls use the brand
+  blue; native menu-bar controls follow the person's system accent.
 - "AI-made" tells in copy or UI: em dashes, generic icon-plus-label grids, hedging microcopy.
 
 ## Design Principles
@@ -113,8 +217,9 @@ the persisted enabled flag; a tool awaiting permission retains its enabled appea
    support, never substitute. Non-native English speakers must understand them.
 3. **Numbers users can act on.** Pixel readouts, placed where the eye already is; no unit soup.
 4. **Defer to the platform.** AppKit controls, system behaviors, native About/Settings idioms.
-5. **One blue for controls.** Selection, highlight and control accents use `Brand.blue`.
-   Feature artwork uses its assigned hue, with a shared composition and material.
+5. **One blue for app styling.** Settings and editor controls use `Brand.blue`; native menu-bar
+   controls inherit the system accent. Feature artwork uses its assigned hue, with a shared
+   composition and material.
 
 ## Accessibility & Inclusion
 
@@ -126,8 +231,10 @@ thicker strokes). No motion beyond system defaults, so no reduced-motion variant
 ## Keep Awake
 
 Keep Awake is an independent, opt-in tool for timed idle-sleep prevention. Users start and stop
-sessions from the menu bar or Settings. The active menu-bar label and countdown show the current
-state. Keeping the display on is a separate preference, off by default.
+sessions in the Lineup panel, the right-click menu or Settings. The panel exposes duration,
+Start/Stop and the display option together; an active session leads with its countdown and end
+time. The Lineup icon's active menu-bar label and the panel countdown show the current state. Keeping the display on is a separate
+preference, off by default.
 
 Sessions last 15, 30, 60, or 120 minutes. Changing duration restarts the timer; changing the display
 option preserves its deadline. Explicit sleep ends the session. Sessions never resume at wake or

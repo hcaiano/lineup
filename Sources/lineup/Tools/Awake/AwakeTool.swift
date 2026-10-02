@@ -7,7 +7,10 @@ final class AwakeTool: Tool, ObservableObject {
     let id = ToolID.awake
     let displayName = "Keep Awake"
     let summary = "Keep your Mac awake for a timed session."
-    let iconSymbol = "sun.max"
+    // A mug, not the artwork's sun: beside Display Control's brightness controls a sun reads
+    // as brightness, and coffee is the familiar "keep awake" mark on the Mac. `mug` stays
+    // legible at tab size on 1x displays; macOS 13 lacks it and gets the cup.
+    let iconSymbol = NSImage(systemSymbolName: "mug", accessibilityDescription: nil) != nil ? "mug" : "cup.and.saucer"
     let requiredPermissions: Set<Permission> = []
     let defaultEnabled = false
 
@@ -26,6 +29,7 @@ final class AwakeTool: Tool, ObservableObject {
     private let origin = ContinuousClock.now
 
     var isActive: Bool { session.isActive }
+    var panelIsActive: Bool { isActive }
     var canEdit: Bool { configError == nil && services?.config.canWrite == true }
     var statusText: String {
         guard isActive else { return "No active session" }
@@ -180,6 +184,10 @@ final class AwakeTool: Tool, ObservableObject {
         items.append(stop)
         return items
     }
+
+    func makeQuickPanel() -> AnyView? { AnyView(AwakeQuickPanel(tool: self)) }
+
+    func panelWillOpen() { tick() }
 
     func makeSettingsPane() -> AnyView { AnyView(AwakeSettingsPane(tool: self)) }
 }

@@ -354,6 +354,16 @@ final class HyperkeyTool: Tool {
 
     /// Status only, or nothing: Hyperkey has no actions of its own. A blocked state is a warning,
     /// not a menu row, so it appears at the TOP of the menu with its recovery action.
+    func makeQuickPanel() -> AnyView? {
+        // The picker's names carry a glyph suffix ("Left Option (⌥)"); a key cap needs the name.
+        let trigger = settings.triggerKey.displayName
+            .replacingOccurrences(of: #"\s*\(.*\)$"#, with: "", options: .regularExpression)
+        return AnyView(HyperkeyQuickPanel(trigger: trigger,
+                                          modifiers: settings.includeShift ? "⌃⌥⇧⌘" : "⌃⌥⌘",
+                                          isActive: controller.state == .active,
+                                          warnings: warnings))
+    }
+
     func menuItems() -> [NSMenuItem] {
         guard case .active = controller.state, let status = controller.menuStatus else { return [] }
         return [ToolMenu.info(status)]

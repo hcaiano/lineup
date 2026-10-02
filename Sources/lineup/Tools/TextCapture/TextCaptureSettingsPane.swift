@@ -29,19 +29,25 @@ private struct TextCaptureSettingsBody: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
+                    // Screen Recording is asked for on the first capture. The way back to it
+                    // only matters once it has been refused.
+                    if tool.needsPermission {
+                        BlockedBanner(message: "Text Capture needs Screen Recording to read the screen.",
+                                      systemImage: "exclamationmark.triangle.fill",
+                                      actionTitle: "Open Screen Recording Settings…",
+                                      action: { tool.openPermissionSettings() })
+                    }
                     SettingsSectionView("Capture") {
-                        SettingsRow(title: "Select a region",
-                                    detail: "Drag around text on one display. Escape cancels. Paste the copied text with Command-V.") {
-                            Button(tool.isCapturing ? "Cancel capture" : "Capture Text…") {
+                        SettingsRow(title: "Capture text",
+                                    detail: "Drag around text on screen, then paste it anywhere.") {
+                            Button(tool.isCapturing ? "Cancel" : "Capture Text…") {
                                 recorder.cancel()
                                 if tool.isCapturing { tool.cancel() } else { tool.invoke() }
                             }
                             .disabled(!tool.isRunning)
                         }
-                    }
-                    SettingsSectionView("Global shortcut") {
-                        SettingsRow(title: "Capture text", detail: "Record a shortcut. Delete clears it; Escape cancels recording.") {
-                            ShortcutField(text: shortcutText, isRecording: recorder.isRecording("capture"),
+                        SettingsRow(title: "Shortcut") {
+                            ShortcutField(text: shortcutText, isRecording: recorder.isRecording("capture"), emptyText: "Click to set",
                                           enabled: tool.canEdit, accessibilityLabel: "Capture text shortcut",
                                           rejectionCount: recorder.rejectionCount) {
                                 recorder.toggle("capture") { capture in
@@ -55,29 +61,29 @@ private struct TextCaptureSettingsBody: View {
                             }
                         }
                         if let message = tool.shortcutMessage {
-                            Text(message).accessibilityLabel("Shortcut: \(message)")
+                            SettingsCaption(text: message)
+                                .padding(.vertical, 8)
+                                .accessibilityLabel("Shortcut: \(message)")
                         }
                         if let failure = tool.shortcutFailure {
-                            Text(failure).foregroundStyle(.primary)
-                            Button("Retry shortcut") { tool.registerShortcut() }
-                        }
-                    }
-                    SettingsSectionView("Recognition and privacy") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Recognition uses Portuguese and English support in macOS. Captures and text are not saved by Lineup or sent to a service.")
-                            Text("Screen Recording is requested when you first capture, not when you enable the tool.")
-                                .foregroundStyle(.secondary)
-                            Button("Open Screen Recording Settings…") { tool.openPermissionSettings() }
+                            HStack {
+                                Text(failure).font(.callout).fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 12)
+                                Button("Retry") { tool.registerShortcut() }
+                            }
+                            .padding(.vertical, 8)
                         }
                     }
                     if let message = tool.message {
-                        Text(message)
+                        SettingsCaption(text: message, systemImage: "info.circle")
                             .accessibilityLabel("Text Capture status: \(message)")
                             .textSelection(.enabled)
                     }
+                    SettingsCaption(text: "Text is recognized on your Mac, in Portuguese and English. Nothing is saved or sent.",
+                                    systemImage: "lock")
                 }
                 .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
-                .padding(.vertical, SettingsMetrics.sectionSpacing)
+                .padding(.vertical, SettingsMetrics.panePaddingVertical)
                 .frame(maxWidth: .infinity)
             }
         }

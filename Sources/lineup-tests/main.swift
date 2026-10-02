@@ -23,6 +23,8 @@ runSuite("NightlyAutomationSuite", runNightlyAutomationTests)
 runSuite("AwakeSuite", runAwakeTests)
 runSuite("TextCaptureSuite", runTextCaptureTests)
 runSuite("MenuBarSuite", runMenuBarTests)
+runSuite("DisplayControlSuite", runDisplayControlTests)
+runSuite("MenuPanelSuite", runMenuPanelTests)
 
 // ---- Report ----
 if failures == 0 {

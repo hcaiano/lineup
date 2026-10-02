@@ -180,7 +180,7 @@ final class TextCaptureTool: Tool, ObservableObject {
         case .copy(let value):
             NSPasteboard.general.clearContents()
             if NSPasteboard.general.setString(value, forType: .string) {
-                report("Text copied. Paste with Command-V.")
+                report("Text copied. Paste with Command-V.", success: true)
             } else {
                 report("The clipboard is unavailable. Try capturing again.")
             }
@@ -205,10 +205,10 @@ final class TextCaptureTool: Tool, ObservableObject {
         }
     }
 
-    private func report(_ text: String) {
+    private func report(_ text: String, success: Bool = false) {
         // Status only. Neither captured pixels, recognized text, nor framework errors are logged.
         message = text
-        notice.show(text)
+        notice.show(text, success: success)
         services?.refreshMenu()
     }
 
@@ -259,6 +259,14 @@ final class TextCaptureTool: Tool, ObservableObject {
         guard !failures.isEmpty else { return }
         shortcutFailure = "The shortcut could not be restored. Choose another shortcut or retry."
         services?.refreshMenu()
+    }
+
+    func makeQuickPanel() -> AnyView? {
+        let shortcut = settings.shortcut.map { ShortcutKit.display(keyCode: $0.keyCode, modifiers: $0.modifiers) } ?? ""
+        return AnyView(TextCaptureQuickPanel(isCapturing: isCapturing, isRunning: isRunning,
+                                             shortcut: shortcut, warnings: warnings,
+                                             capture: { [weak self] in self?.invoke() },
+                                             cancel: { [weak self] in self?.cancel() }))
     }
 
     func menuItems() -> [NSMenuItem] {

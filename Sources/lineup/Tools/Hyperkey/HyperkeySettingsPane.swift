@@ -109,8 +109,7 @@ final class HyperkeyPaneModel: ObservableObject {
     /// rather than as a row with no control in it.
     var triggerCaption: String? {
         if settings.triggerKey.needsCapsLockRemap {
-            return "Caps Lock is remapped while Hyperkey runs. Lineup restores it when you switch "
-                + "keys, turn Hyperkey off, or quit."
+            return "Lineup restores Caps Lock when you choose another key, turn Hyperkey off or quit."
         }
         if settings.triggerKey.isFunctionKey {
             // Without the system setting the key sends its media action (brightness, volume) and
@@ -193,14 +192,14 @@ struct HyperkeySettingsPane: View {
                         }
                     }
 
-                    SettingsSectionView("Permission") {
-                        SettingsRow(
-                            title: "Input Monitoring",
-                            detail: model.inputMonitoringGranted
-                                ? "Granted. Hyperkey needs it to see the trigger key."
-                                : "Not granted. Hyperkey can't see the trigger key without it. Lineup asks for this only when you turn Hyperkey on.") {
-                            Button(model.inputMonitoringGranted ? "Open System Settings…" : "Grant…") {
-                                model.openInputMonitoringSettings()
+                    // A granted permission needs no row; General lists every grant. The blocked
+                    // status above already offers the way out when Hyperkey is waiting for it.
+                    if !model.inputMonitoringGranted && !model.needsInputMonitoring {
+                        SettingsSectionView("Permission") {
+                            SettingsRow(
+                                title: "Input Monitoring",
+                                detail: "Hyperkey needs it to see the trigger key. Lineup asks when you turn Hyperkey on.") {
+                                Button("Grant…") { model.openInputMonitoringSettings() }
                             }
                         }
                     }
@@ -215,7 +214,8 @@ struct HyperkeySettingsPane: View {
                         }
                     }
 
-                    hint
+                    // Only useful before Hyperkey is on: afterwards the user already has the key.
+                    if !model.isRunning { hint }
                 }
                 .frame(width: SettingsMetrics.contentWidth, alignment: .leading)
                 .padding(.vertical, SettingsMetrics.panePaddingVertical)
@@ -245,8 +245,8 @@ struct HyperkeySettingsPane: View {
     /// standing explanation in Settings uses.
     private var hint: some View {
         SettingsCaption(
-            text: "Zones and Cycler shortcuts use ⌃⌥⇧⌘. Turn Hyperkey on to get that from Caps "
-                + "Lock without Karabiner or Raycast.",
+            text: "Zones and Cycler shortcuts use ⌃⌥⇧⌘. Hyperkey puts all four on one key, "
+                + "without Karabiner or Raycast.",
             systemImage: "lightbulb")
     }
 }

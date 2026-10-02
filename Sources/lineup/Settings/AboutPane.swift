@@ -38,7 +38,7 @@ struct AboutPane: View {
                 VStack(spacing: 4) {
                     Text(Product.name)
                         .font(.system(size: 22, weight: .semibold))
-                    Text("Window snapping, app cycling, and a hyper key in one menu-bar app.")
+                    Text("Window layouts and everyday Mac tools, in one menu bar app.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

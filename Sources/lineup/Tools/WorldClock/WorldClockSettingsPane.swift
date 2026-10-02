@@ -10,27 +10,47 @@ struct WorldClockSettingsPane: View {
                 if let message = model.blockedMessage {
                     BlockedBanner(message: message, systemImage: "exclamationmark.triangle.fill")
                 }
+                SettingsSectionView("Places") {
+                    SettingsRow(title: placesTitle,
+                                detail: "Add, rename and remove places in the Lineup panel.") {
+                        Button("Open World Clock", action: openPanel)
+                            .disabled(!model.isRunning)
+                            .help(model.isRunning ? "" : "Turn on World Clock first")
+                    }
+                }
                 SettingsSectionView("Menu bar") {
-                    SettingsRow(title: "World Clock", detail: model.isRunning
-                                ? "Open the clock to manage cities and compare times."
-                                : "Enable World Clock to show its menu bar icon.") {
-                        Button("Open World Clock", action: openPanel).disabled(!model.isRunning)
+                    SettingsRow(title: "Separate clock", detail: "Adds a clock to the menu bar next to Lineup.") {
+                        Toggle("Separate clock", isOn: Binding(
+                            get: { model.settings.showSeparateMenuBarItem },
+                            set: { model.setSeparateMenuBarItem($0) }))
+                            .labelsHidden().toggleStyle(.switch)
+                            .disabled(!model.canEdit)
                     }
-                    SettingsRow(title: "Pinned place", detail: "Pin one place in the panel to show its name and live time instead of the clock icon.") {
-                        Text(pinnedName).foregroundStyle(.secondary)
+                    if model.settings.showSeparateMenuBarItem {
+                        SettingsRow(title: "Shows", detail: "A pinned place shows its name and live time.") {
+                            Picker("Shows", selection: Binding(get: { model.settings.pinnedID },
+                                                               set: { model.setPinned($0) })) {
+                                Text("Clock icon").tag(String?.none)
+                                Divider()
+                                Text("Local").tag(Optional("local"))
+                                ForEach(model.settings.places) { place in
+                                    Text(place.name).tag(Optional(place.id))
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 180)
+                            .disabled(!model.canEdit)
+                        }
                     }
                 }
-                SettingsSectionView("Time and places") {
-                    SettingsCaption(text: "Clocks are ordered from earlier to later, with Local in its chronological position. Local follows your Mac; all clocks use its 12- or 24-hour format. The time scroll covers 24 hours in either direction and returns to Now when reopened.")
-                        .padding(.vertical, 8)
-                    SettingsCaption(text: "Cities and solar calculations work offline. Sunrise and sunset are estimates; a time zone without a city has no solar data.")
-                        .padding(.vertical, 8)
-                }
-                HStack {
-                    Link("City data: GeoNames", destination: URL(string: "https://www.geonames.org/")!)
-                    Text("·").foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("City data:")
+                    Link("GeoNames", destination: URL(string: "https://www.geonames.org/")!)
+                    Text("·")
                     Link("CC BY 4.0", destination: URL(string: "https://creativecommons.org/licenses/by/4.0/")!)
-                }.font(.caption)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             .frame(width: SettingsMetrics.contentWidth)
             .padding(.vertical, SettingsMetrics.panePaddingVertical)
@@ -38,8 +58,11 @@ struct WorldClockSettingsPane: View {
         }
     }
 
-    private var pinnedName: String {
-        if model.settings.pinnedID == "local" { return "Local" }
-        return model.settings.places.first { $0.id == model.settings.pinnedID }?.name ?? "None"
+    private var placesTitle: String {
+        switch model.settings.places.count {
+        case 0: return "No places yet"
+        case 1: return "1 place"
+        default: return "\(model.settings.places.count) places"
+        }
     }
 }

@@ -33,7 +33,7 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
     static func makeEmbeddedContent() -> NSView {
         let host = NSHostingView(rootView: WelcomeView(
             importContext: OnboardingImportContext(
-                cyclerSummary: "Imported 6 Cycler shortcuts and your Hyper Key setup.",
+                cyclerSummary: "Imported 6 Cycler shortcuts and your Hyperkey setup.",
                 revealCycler: {}, showUninstallBanner: true),
             onGrant: {}, onLater: {})
                 .frame(width: Self.width)
@@ -85,7 +85,7 @@ private struct WelcomeView: View {
                         .accessibilityHidden(true)
                     Text("Welcome to \(Product.name)")
                         .font(.system(size: 22, weight: .semibold))
-                    Text("Three tools for your windows and your keyboard, in one menu-bar app.")
+                    Text("Window layouts and everyday Mac tools, in one menu bar app.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -136,7 +136,8 @@ private struct WelcomeView: View {
 
             HStack {
                 Button("Not now", action: onLater)
-                    .accessibilityLabel("Continue without granting Accessibility yet")
+                    .keyboardShortcut(.cancelAction)
+                    .help("Continue without granting Accessibility yet")
                 Spacer()
                 Button("Grant Access", action: onGrant)
                     .keyboardShortcut(.defaultAction)

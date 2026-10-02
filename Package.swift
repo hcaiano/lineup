@@ -19,6 +19,11 @@ let package = Package(
         .target(name: "WorldClockCore"),
         // Region geometry, recognition order and cancellation tokens for local text capture.
         .target(name: "TextCaptureCore"),
+        .target(name: "DisplayControlCore"),
+        .target(name: "DisplayHardware", linkerSettings: [
+            .linkedFramework("IOKit"), .linkedFramework("CoreGraphics"),
+            .linkedFramework("CoreFoundation"), .linkedFramework("ColorSync"),
+        ]),
         // Pure cycle-order math + the legacy ~/.config/cycler/bindings.json model.
         // Depends on HyperkeyCore only to re-export TriggerKey/HyperKeySettings for that
         // legacy file shape (see Sources/CyclerCore/Bindings.swift).
@@ -37,6 +42,8 @@ let package = Package(
                 "HyperkeyCore",
                 "WorldClockCore",
                 "TextCaptureCore",
+                "DisplayControlCore",
+                "DisplayHardware",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             // Per-tool app icons for the Settings sidebar and pane headers. `.copy` (not
@@ -54,7 +61,7 @@ let package = Package(
         // (no full Xcode / XCTest needed). Run: `swift run lineup-tests`.
         .executableTarget(
             name: "lineup-tests",
-            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore", "TextCaptureCore"]
+            dependencies: ["AppCore", "ZonesCore", "CyclerCore", "HyperkeyCore", "WorldClockCore", "TextCaptureCore", "DisplayControlCore"]
         ),
     ]
 )

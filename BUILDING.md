@@ -138,8 +138,8 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting seven independent tools, on top of six pure ("core") modules
-and one AppKit executable:
+Lineup is one app shell hosting eight independent tools, with pure core modules, a C hardware
+bridge and one AppKit executable:
 
 ```
 Sources/ZonesCore/          Pure, tested core for the Zones tool (no AppKit)
@@ -158,6 +158,8 @@ Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
 Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
 Sources/TextCaptureCore/    Display-local capture geometry, reading order, and cancellation gate
+Sources/DisplayControlCore/ Exact display targeting, command generations, DDC packets and media keys
+Sources/DisplayHardware/    Native brightness and Intel/Apple Silicon DDC bridge, with runtime checks
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
   AwakeSession.swift        Timed power-request ownership and failure cleanup
   AwakeSettings.swift       Keep Awake preferences, with unknown-key preservation
@@ -169,7 +171,8 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
   MenuBarSettings.swift     Menu Bar settings, arrow-boundary groups and auto-hide policy
   MenuBarPreferences.swift  Selective native visibility edits and recovery journal model
-Sources/lineup/              AppKit agent (the app shell + the seven tools)
+  MenuPanelSession.swift    Ephemeral tab selection, session memory and enabled-tool ordering
+Sources/lineup/              AppKit agent (the app shell + the eight tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
@@ -177,17 +180,106 @@ Sources/lineup/              AppKit agent (the app shell + the seven tools)
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
   Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
-  Tools/WorldClock/            Dedicated status item, popover, place management and Settings
-  Tools/Awake/                 IOKit idle-sleep requests, menu countdown, session settings
+  Tools/WorldClock/            Shared and standalone clock view, optional status item and Settings
+  Tools/Awake/                 IOKit idle-sleep requests, shared panel countdown, session settings
+  Tools/DisplayControl/        Hardware detection, serialized writes, native sliders and Settings
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
   Tools/TextCapture/           ScreenCaptureKit selection/capture, Vision OCR, clipboard, Settings
   Tools/MenuBar/               Menu bar inventory, arrow, native visibility and recovery
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
   main.swift                  Orchestrates the suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / NightlyAutomationSuite.swift
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / DisplayControlSuite.swift / MenuPanelSuite.swift / NightlyAutomationSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
+
+### Shared menu-bar panel
+
+`StatusItemController` owns the main status item, a transient native `NSPopover` and the existing
+right-click `NSMenu`. `MenuPanel` is 352 pt wide, with a 44 pt top row of enabled-tool icon tabs,
+Settings and app actions. It renders one selected tool at a time. Display Control and Keep Awake
+provide direct controls; World Clock provides its complete view with a 36 pt embedded header.
+Other tools reuse their native menu actions. Invoking an action closes the popover before
+starting an editor, overlay or capture. Content scrolls within the anchor display's available
+height.
+
+The native popover owns its arrow and background; SwiftUI content adds no material wrapper or
+panel fill. The tab picker uses the standard segmented style, retaining the macOS 13 baseline
+and the macOS 26 SDK build path. AppKit and SwiftUI provide the current system accent and appearance,
+including Liquid Glass on macOS 26 and later, and adapt to Light/Dark Mode, Liquid Glass settings,
+Reduce Transparency and Increase Contrast. Follow Apple's
+[Liquid Glass adoption guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
+by keeping native containers and removing custom popover backgrounds. No forced appearance or
+transparency override is needed. Panel controls inherit the system tint; `Brand.blue` continues
+to style Settings and the layout editor.
+
+`MenuPanelSession` in AppCore owns tab selection and prioritizes Display Control, Keep Awake and
+World Clock. The first opening selects Display Control when present, otherwise the first enabled
+tool. Closing clears the current selection but retains the last tab in memory for the app session.
+Disabling the selected tool falls back to the first remaining tab. Command-1 through Command-8
+select tabs; Control-Tab and Control-Shift-Tab cycle them. Escape closes the popover after a
+clock search or editing mode has consumed its own cancellation.
+
+Tools provide `makeQuickPanel` and optional `makeFullPanel` views backed by the same live tool
+instances. Only the selected tab receives `panelWillOpen`/`panelDidClose` callbacks for temporary
+refresh work; switching tabs closes the previous tool's presentation before opening the next.
+`ToolServices.openPanel` selects a requested tool in the shared panel. Presentation does not
+create a second hardware service, clock model or Keep Awake session.
+
+World Clock's `showSeparateMenuBarItem` preference lives in its existing version-1 section. A
+new `WorldClockSettings` defaults it to false. Decoding an older saved section that lacks the key
+defaults it to true, preserving its existing item and pinned time. Supported edits write the
+explicit preference and preserve unknown fields. Tool enablement stays separate from presentation.
+
+The shared panel and optional separate readouts were researched in
+[Vorssaint's panel source](https://github.com/vorssaint/vorssaint-utils/blob/6dd54e2cfbd71eeb284251f378de68144433757e/Sources/Vorssaint/UI/MenuPanel/PanelLayout.swift)
+and [status-item controller](https://github.com/vorssaint/vorssaint-utils/blob/6dd54e2cfbd71eeb284251f378de68144433757e/Sources/Vorssaint/App/StatusItemController.swift).
+Lineup uses its own implementation; no GPL code is copied or bundled.
+
+Manual verification must cover left-click opening, brightness/volume adjustments, Keep Awake
+start/change/stop, clock place management, time simulation and right-click actions. Check tab
+clicks, keyboard tab selection, reopening the last tab, disabling the selected tool, Escape and
+outside-click dismissal. Include a long clock list and display changes while the panel is open.
+Confirm the separate clock item's toggle preserves the pin and places, and that an older saved
+clock configuration keeps its item. Compilation and core tests alone do not verify native
+popover placement, focus or hardware writes.
+
+The Debug executable includes an isolated panel review:
+
+```sh
+swift build --build-system native
+menu_review_dir=$(mktemp -d /tmp/lineup-panel-review.XXXXXX)
+LINEUP_MENU_PANEL_REVIEW_DIR="$menu_review_dir" .build/debug/lineup
+```
+
+Use the native build system for appearance review, as the app-packaging script does. The default
+Swift 6.4 build system can record SDK 13.0 in the executable even when compiling against a newer
+SDK, which makes AppKit use older compatibility behavior. Check
+`xcrun vtool -show-build .build/debug/lineup`: the minimum OS stays 13.0, and the linked SDK must
+match the SDK used for the build. A screenshot from a compatibility build does not verify the
+current system material. Verify native controls with both appearances and the relevant display
+accessibility settings; let the OS render each setting.
+
+This starts only Display Control, Keep Awake, World Clock and Text Capture (which has no shortcut
+until one is recorded). Zones, Cycler and Hyperkey are registered but stay off, so Settings can show
+their panes without shortcuts, event taps or a key remapping. Menu Bar is not registered, because
+registration restores icons from the live recovery journal. The review uses a separate
+`review-config.json`, sample cities and media keys off. Detection reads hardware; a Keep Awake
+request starts only through its Start action. The gear opens the isolated Settings window.
+Quitting releases the tools. The review refuses the live config directory and the normal app
+bundle, whose updater could start before a review begins.
+
+Add `LINEUP_MENU_PANEL_CAPTURE=1` to capture each panel tab, an active Keep Awake session and the
+matching Settings panes, then exit. Capture uses `screencapture -l` on the visible windows, so it
+keeps composed materials and native control layers; the terminal needs Screen Recording. The
+active Keep Awake capture holds a real power assertion for about a second and stops it before the
+next capture. Capture also includes the Text Capture notices, the drag-snap highlight and the
+Zones, Cycler, Hyperkey and Text Capture panel widgets drawn with sample data on the popover
+material. Add `LINEUP_MENU_PANEL_REVIEW_EDITOR=1` to include the layout editor; it covers every
+display for about a second, with a sample layout and a Save that writes nothing. Add
+`LINEUP_MENU_PANEL_REVIEW_APPEARANCE=light` or `dark` for each appearance. A
+transient popover closes when another application takes focus, so capture interactions in one
+continuous session.
 
 ### Menu Bar runtime and recovery
 
@@ -267,7 +359,7 @@ The dependency-free suite checks geometry, reading order, settings persistence, 
 commit gate. It does not prove macOS permission prompts, live OCR quality, or compositor behavior.
 
 Settings live at `~/.config/lineup/config.json` — one envelope, one section per tool
-(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`/`menuBar`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
+(`zones`/`cycler`/`hyperkey`/`worldClock`/`awake`/`textCapture`/`menuBar`/`displayControl`). Lineup 1.x's `~/.config/lineup/zones.json` is read once, on first
 launch of 2.0, to import an existing Zones layout into that envelope; 2.0 **never writes to it**.
 
 ### App launch placement
@@ -337,8 +429,12 @@ and notice together. No runtime download or new package dependency is required. 
 use NOAA's fractional-year equations with a 0.833-degree apparent horizon; calculations search
 absolute instants through the city's next day, including polar and date-line cases.
 
-The tool owns its status item and observers. It refreshes on time-zone, locale, clock, display and
-wake notifications. A minute timer exists only while a place is pinned or the popover is open.
+The tool owns its optional status item, separate popover and observers. Both panel presentations
+share one clock model. It refreshes on time-zone, locale, clock, display and wake notifications.
+A minute timer exists only while the clock tab or standalone panel is open, or the visible
+separate item has a pinned place. Switching away from the clock tab cancels its search and stops
+unneeded refresh work. The shared view uses an embedded header; the standalone view retains its
+original dimensions. Opening either view returns time simulation to Now.
 Stopping removes those resources and retains saved places. The `worldClock` section has its own
 version without changing the shared envelope schema. Unreadable or future settings block editing.
 Unknown settings, place and coordinate fields survive supported edits. Removing a pinned place
@@ -478,3 +574,146 @@ with it on, and after stop, disable, and quit. Filter by the tested Lineup PID a
 `Lineup Keep Awake`; other apps may also prevent sleep. Capture the Settings and menu countdown,
 and record a start/countdown/stop interaction. Physical idle sleep and display sleep still need an
 unattended check under the machine's existing power settings.
+
+## Display control hardware and input
+
+`DisplayControlCore` owns confirmed readings, per-connection command generations, exact target
+selection, coalescing, DDC Get/Set VCP packets and media-key press ownership. `DisplayControlTool`
+executes transport work on one serial queue. Its write gate invalidates work on connection changes,
+sleep, stop and restart; stop waits for an already executing write to finish. Writes use a connection
+token and are checked against current display identity and registry entries again before sending.
+A transmission is confirmed only by a successful hardware read, never by an optimistic UI value.
+
+The original C bridge uses system frameworks with no new package dependency. Native Apple
+brightness resolves `DisplayServicesGetBrightness` and `DisplayServicesSetBrightness`. Intel
+DDC uses IOKit I2C. Apple Silicon uses optional `IOAVService` functions. The private functions
+are looked up at runtime; absent functions produce an unavailable control instead of a launch
+failure. Apple Silicon matching checks full EDID and a unique vendor/product/serial match on both
+the display and service sides. It refuses ambiguity rather than assigning services by enumeration
+order. Intel uses the display's framebuffer when available, with a unique identity fallback.
+
+Transport references are [MonitorControl's Apple Silicon implementation](https://github.com/MonitorControl/MonitorControl/blob/main/MonitorControl/Support/Arm64DDC.swift),
+[Intel implementation](https://github.com/MonitorControl/MonitorControl/blob/main/MonitorControl/Support/IntelDDC.swift)
+and [m1ddc's I2C implementation](https://github.com/waydabber/m1ddc/blob/main/sources/i2c.m).
+These describe OS interfaces and hardware constraints; Lineup does not bundle those projects.
+Brightness uses VCP `0x10`; speaker volume uses `0x62`. Reply validation checks length, address,
+checksum, opcode, requested control and range. Some monitors return an earlier reply; at most
+three reads retry malformed or communication failures. Set VCP writes are never blindly retried.
+After a DDC write, readback discards the first valid reply and requests another reading before
+confirming a level, so an older reply for the same control cannot confirm the write.
+
+`MediaKeyManager` is an app-owned service exposed through `ToolServices.mediaKeys`. It listens
+only for system media events, separate from Hyperkey's existing keyboard/flags tap and Carbon
+shortcuts. Settings shortcut recording suspends fresh presses. A claimed repeat cannot move to
+another display or fall through halfway through the press. Optional key registration uses the shared
+Accessibility permission center; sliders do not need input permission. Normal adjustments use
+1/16 of the control's range; Option-Shift uses 1/64. Other modifier chords pass through. There is
+no Keyboard Remap tool in this checkout. Its future media-key clients must use this same
+ownership service.
+
+Brightness keys default to the display under the pointer. Optional synchronization uses that
+destination as the reference and captures a group of compatible, uniquely identified displays
+included in the brightness key group. The reference and group stay fixed through a held press.
+Connection changes, sleep, stop and preference edits invalidate the generation and discard its
+remaining commands and feedback. A selected reference that is disconnected is never replaced.
+Manual sliders and volume keys keep their independent targets.
+
+`DisplayBrightnessMath` converts a shared logical level to hardware level with
+`hardware = brightnessMinimum + logical * (brightnessLimit - brightnessMinimum)`.
+The reference's inverse is
+`logical = clamp((hardware - brightnessMinimum) / (brightnessLimit - brightnessMinimum), 0...1)`.
+Per-monitor bounds default to 0 and 1, preserving the full range. Settings require
+`0 <= brightnessMinimum < brightnessLimit <= 1` and `brightnessLimit >= 0.05`.
+Shared 0% maps to the minimum; shared 100% maps to the maximum. For a 10% minimum and 80%
+maximum, shared 50% maps to 45%. Synchronization defaults off. Calibration affects only
+synchronized brightness keys. Editing either bound persists preferences without issuing
+hardware writes; the next brightness press uses the new range. Users calibrate visually;
+Lineup does not measure luminance or guarantee equal light from different displays.
+
+The optional `blackScreenBelowMinimum` setting defaults off. Another Brightness Down at logical
+zero marks the current eligible brightness group for a visual black cover. With sync off, logical
+zero is hardware zero; with sync on, it maps to each display's configured minimum. The session's
+ephemeral black-screen state stays separate from confirmed hardware readings. Brightness Up
+clears the cover and continues the normal upward adjustment. Restore and Escape clear covers
+without issuing hardware writes or restoring a previous level; hardware zero can still require
+Brightness Up before the image is visible.
+
+Firmware can read back above a requested minimum. With this option enabled, the session retains
+only the minimum request and its confirmed readback so a fresh key press can continue below it.
+Another downward press changes visibility without resending the hardware minimum. Upward or
+manual adjustments, changed readings, read failures and generation changes discard that intent.
+
+`DisplayBlackScreen` owns opaque, nonactivating panels over each display's full `NSScreen.frame`,
+including negative origins. They join Spaces, ignore mouse events and change no gamma tables,
+power state or display arrangement. Only current eligible connections receive a cover. The tool
+registers emergency Escape through the existing `HotkeyManager` before showing covers and refuses
+them if registration fails. Escape is registered only while a cover exists. An active-only watcher
+clears covers when Secure Input, shortcut recording or lost Accessibility would prevent media-key
+recovery. Sleep, topology changes, preference edits, disable and stop also clear them. Their windows
+disappear on process exit, including a crash or Force Quit. The preference is persisted; the current
+black-screen state is not.
+
+The black-cover design draws on [MonitorControl's gamma and shade controls, including full black](https://github.com/MonitorControl/MonitorControl#major-features)
+and [BetterDisplay's dimming to black](https://github.com/waydabber/BetterDisplay#key-features).
+[Lunar documents that DDC power-off cannot power a monitor back on](https://lunar.fyi/pro),
+because a powered-off or standby monitor no longer accepts those commands. Lineup uses owned
+windows so recovery does not depend on monitor power control; gradual gamma dimming and display
+disconnection are separate capabilities outside this change.
+
+`NativeDisplayOSD` submits confirmed hardware readings to macOS's classic OSD. On macOS 26 and
+27 it uses `NSXPCConnection` to `com.apple.OSDUIHelper`; other versions load the private
+`OSD.framework` at runtime and validate `OSDManager`'s argument ABI before calling it. This
+interface produces the classic overlay, not the newer corner banner. macOS owns its appearance
+and one-second fade. The interface is private and has no display acknowledgment: successful
+submission does not prove that a window appeared. Runtime or proxy failures fall back to
+`DisplayControlHUD`, a nonactivating panel with native material; failures can include text there.
+Pending writes never submit an optimistic level. Generation checks discard stale callbacks,
+while a system OSD already submitted expires under macOS control. Black-screen feedback identifies
+a known visual zero separately from the unchanged confirmed hardware reading.
+
+The system OSD routing follows the interfaces documented in
+[MonitorControl's OSD implementation](https://github.com/MonitorControl/MonitorControl/blob/main/MonitorControl/Support/OSDUtils.swift)
+and its [macOS 26/27 compatibility change](https://github.com/MonitorControl/MonitorControl/pull/1900).
+These are runtime references; Lineup does not bundle MonitorControl code.
+
+Preferences live in the existing opaque `tools.displayControl` section. Unknown keys in the section
+and per-monitor preferences survive routing, sync, calibration and black-screen edits. Invalid ranges reject
+the settings section rather than replacing it. No envelope migration, saved hardware levels,
+startup writes or legacy-file changes are required.
+
+For read-only visual inspection, a Debug build can run with
+`LINEUP_DISPLAY_CONTROL_PREVIEW=<existing-output-directory> .build/debug/lineup`. It reads current
+hardware and renders the actual Settings and menu views, then exits before opening live config,
+installing taps or registering tools. Its screenshots prove layout and read detection, not writes or
+keyboard behavior. For manual QA, record menu and Settings adjustments separately from keys; check
+one and multiple displays, unavailable connections, pointer movement during a held key, normal
+and Option-Shift fine adjustments, other modifier chords, system OSD and fallback feedback,
+Hyperkey, Settings shortcut recording, permission denial/revocation, sleep, reconnect, tool
+disable and app restart. Check synced keys with pointer and fixed references, excluded or
+unreadable displays, differing minimum/maximum ranges and connection changes during a held press.
+Editing either bound must leave actual levels unchanged until a synced key press; manual sliders
+and volume keys must remain individual. Check black covers with single and synced keys, minimum
+readback, Brightness Up, per-display Restore, Escape, conflicting Escape registration and loss of
+key recovery through Secure Input, shortcut recording or permission revocation. Restore and Escape
+must leave hardware readings unchanged; sleep, reconnect, preference edits, disable and exit must
+clear covers. Compare actual levels before and after restart to prove no
+saved-level reapplication. A captured system OSD proves only that the system service rendered
+that request; physical media-key routing, multiple-display hardware, Intel DDC and native Apple
+brightness need their own runtime checks.
+
+### HiDPI research
+
+Display Control currently changes brightness and speaker volume. Selecting existing macOS display
+modes is a separate capability from creating modes that macOS does not expose. Apple's public
+[Quartz Display Services](https://developer.apple.com/documentation/coregraphics/quartz-display-services)
+enumerates current modes with `CGDisplayCopyAllDisplayModes` and applies one with
+`CGDisplaySetDisplayMode`.
+
+[BetterDisplay's HiDPI guide](https://github.com/waydabber/BetterDisplay/wiki/Fully-scalable-HiDPI-desktop)
+describes flexible scaling through system display-configuration changes, administrator access and
+reboot, with virtual-screen mirroring or streaming as an alternative. The guide reflects version
+2.2.3; its version-specific setup needs fresh verification before any implementation here.
+[Its scaling explanation](https://github.com/waydabber/BetterDisplay/wiki/MacOS-scaling,-HiDPI,-LoDPI-explanation)
+describes rendering a larger framebuffer and scaling it to the physical screen. This does not
+change the panel's physical pixel density. Adding either mode selection or custom HiDPI requires
+its own scope, hardware checks and recovery design.

@@ -79,6 +79,7 @@ enum ToolIconLibrary {
         case .awake: return "sun.max.fill"
         case .textCapture: return "text.viewfinder"
         case .menuBar: return "menubar.rectangle"
+        case .displayControl: return "display"
         default: return "wrench.and.screwdriver.fill"
         }
     }

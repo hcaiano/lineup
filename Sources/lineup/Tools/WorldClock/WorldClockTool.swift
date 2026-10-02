@@ -7,7 +7,7 @@ import WorldClockCore
 final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
     let id = ToolID.worldClock
     let displayName = "World Clock"
-    let summary = "Local time, cities and a shared moment around the world."
+    let summary = "Compare the time in the places you work with."
     let iconSymbol = "clock"
     let requiredPermissions: Set<Permission> = []
     let defaultEnabled = false
@@ -17,6 +17,7 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var timer: Timer?
+    private var unifiedPanelVisible = false
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
     func attach(_ services: ToolServices) {
@@ -37,6 +38,7 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
             try services.config.save(settings)
         }
         model.onChange = { [weak self] in
+            self?.reconcileStatusItem()
             self?.updateStatus()
             self?.scheduleTick()
             self?.services?.refreshSettings()
@@ -48,10 +50,7 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
         self.services = services
         isRunning = true
         model.isRunning = true
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.target = self
-        item.button?.action = #selector(togglePanel)
-        statusItem = item
+        reconcileStatusItem()
         observe(.default, NSNotification.Name.NSSystemTimeZoneDidChange)
         observe(.default, NSLocale.currentLocaleDidChangeNotification)
         observe(.default, NSNotification.Name.NSSystemClockDidChange)
@@ -71,6 +70,7 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
         statusItem = nil
         model.cancelSearch()
+        unifiedPanelVisible = false
         model.isRunning = false
         isRunning = false
     }
@@ -92,7 +92,15 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
     }
 
     func showPanel() {
-        guard isRunning, let button = statusItem?.button else { return }
+        guard isRunning else { return }
+        guard model.settings.showSeparateMenuBarItem, let button = statusItem?.button else {
+            services?.openPanel(.worldClock)
+            return
+        }
+        if popover?.isShown == true {
+            popover?.contentViewController?.view.window?.makeKey()
+            return
+        }
         model.reset()
         let panel = NSPopover()
         panel.appearance = NSApp.appearance
@@ -122,8 +130,47 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
-        model.cancelSearch()
+        guard let panel = notification.object as? NSPopover, panel === popover else { return }
+        popover = nil
+        if !unifiedPanelVisible {
+            model.cancelSearch()
+            model.reset()
+        }
+        scheduleTick()
+    }
+
+    private func reconcileStatusItem() {
+        guard isRunning else { return }
+        if model.settings.showSeparateMenuBarItem {
+            guard statusItem == nil else { return }
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.button?.target = self
+            item.button?.action = #selector(togglePanel)
+            statusItem = item
+        } else {
+            let panelWasOpen = popover?.isShown == true
+            popover?.close()
+            popover = nil
+            if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+            statusItem = nil
+            if panelWasOpen { services?.openPanel(.worldClock) }
+        }
+    }
+
+    func panelWillOpen() {
+        guard isRunning, !unifiedPanelVisible else { return }
+        unifiedPanelVisible = true
+        popover?.close()
         model.reset()
+        scheduleTick()
+    }
+
+    func panelDidClose() {
+        unifiedPanelVisible = false
+        if popover?.isShown != true {
+            model.cancelSearch()
+            model.reset()
+        }
         scheduleTick()
     }
 
@@ -150,12 +197,13 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
         }
     }
 
-    /// No timer while the icon is static and the panel is closed. A pinned clock wakes once per
-    /// minute; clock/locale/zone changes and wake notifications refresh it immediately.
+    /// No timer while all panels are closed and the separate item has no pinned clock.
+    /// A visible panel or pinned item refreshes once per minute.
     private func scheduleTick() {
         timer?.invalidate()
         timer = nil
-        guard isRunning, model.settings.pinnedID != nil || popover?.isShown == true else { return }
+        guard isRunning, (statusItem != nil && model.settings.pinnedID != nil)
+            || unifiedPanelVisible || popover?.isShown == true else { return }
         let delay = 60 - Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 60) + 0.05
         let tick = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -179,6 +227,12 @@ final class WorldClockTool: NSObject, Tool, NSPopoverDelegate {
 
     func makeSettingsPane() -> AnyView {
         AnyView(WorldClockSettingsPane(model: model, openPanel: { [weak self] in self?.showPanel() }))
+    }
+
+    func makeFullPanel(maximumHeight: CGFloat, close: @escaping () -> Void) -> AnyView? {
+        AnyView(WorldClockPanel(model: model, maximumHeight: maximumHeight, embedded: true, close: close)
+            .onAppear { [weak model] in model?.reset() }
+            .onDisappear { [weak model] in model?.cancelSearch() })
     }
 }
 
