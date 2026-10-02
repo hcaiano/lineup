@@ -659,8 +659,11 @@ final class DisplayControlTool: NSObject, ObservableObject, Tool {
     }
 
     private func cancelKeyboardRequests(preservingBlackScreens: Bool = false, force: Bool = false) {
+        // A preserved cover is not pending work: counting it would cancel every slider tick
+        // on another display while any display stays black.
         let hadRequests = force || !heldKeyConnections.isEmpty || !heldBrightnessGroups.isEmpty
-            || !keyboardFeedback.isEmpty || !session.blackedOutConnections.isEmpty
+            || !keyboardFeedback.isEmpty
+            || (!preservingBlackScreens && !session.blackedOutConnections.isEmpty)
         heldKeyConnections = [:]
         heldBrightnessGroups = [:]
         cancelKeyboardFeedback()
