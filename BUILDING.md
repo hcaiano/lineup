@@ -138,7 +138,7 @@ throwaway local DMG you can bypass with `ALLOW_ADHOC_DMG=1 ./Scripts/make-dmg.sh
 
 ## Project layout
 
-Lineup is one app shell hosting seven independent tools, on top of six pure ("core") modules
+Lineup is one app shell hosting eight independent tools, on top of seven pure ("core") modules
 and one AppKit executable:
 
 ```
@@ -156,6 +156,7 @@ Sources/CyclerCore/         Pure, tested core for the Cycler tool
 Sources/HyperkeyCore/       Pure, tested core for the Hyperkey tool
   TriggerKey.swift          Trigger key enum + display names
   HyperKeySettings.swift    Persisted Hyperkey settings + legacy-format migration
+Sources/KeyboardRemapCore/  Physical keys, device selection, map composition and ownership journal
 Sources/WorldClockCore/     Place search, absolute-time simulation, formatting and solar math
 Sources/TextCaptureCore/    Display-local capture geometry, reading order, and cancellation gate
 Sources/AppCore/            Pure. Product/tool identity, the unified config envelope, legacy import
@@ -169,14 +170,17 @@ Sources/AppCore/            Pure. Product/tool identity, the unified config enve
   TextCaptureSettings.swift  Optional shortcut in the existing opaque tool-section envelope
   MenuBarSettings.swift     Menu Bar settings, arrow-boundary groups and auto-hide policy
   MenuBarPreferences.swift  Selective native visibility edits and recovery journal model
-Sources/lineup/              AppKit agent (the app shell + the seven tools)
+  KeyboardRemapSettings.swift  Versioned per-keyboard rules in the existing config envelope
+Sources/lineup/              AppKit agent (the app shell + the eight tools)
   main.swift                 Bootstrap only
   App/                        Shell: menu bar, hotkey registry, permissions, activation policy,
                                termination, single-instance, launch-at-login, brand, About
   Settings/                    Settings window: sidebar shell + shared components
   Tools/Zones/                 Layout editor, drag-to-snap, window mover
   Tools/Cycler/                App/window cycling, app picker, cycle HUD
-  Tools/Hyperkey/              Caps Lock remap controller, blocked-state pill, recovery
+  App/KeyboardMappingService.swift  Shared per-service HID map owner and recovery
+  Tools/Hyperkey/              Hyperkey event tap, blocked-state pill, legacy ownership handoff
+  Tools/KeyboardRemap/         Keyboard selection, physical key editor and layout-aware labels
   Tools/WorldClock/            Dedicated status item, popover, place management and Settings
   Tools/Awake/                 IOKit idle-sleep requests, menu countdown, session settings
   Resources/WorldClock/        Offline GeoNames city catalog and attribution
@@ -184,10 +188,57 @@ Sources/lineup/              AppKit agent (the app shell + the seven tools)
   Tools/MenuBar/               Menu bar inventory, arrow, native visibility and recovery
 Sources/lineup-tests/         Merged, dependency-free test runner (no Xcode/XCTest needed)
   main.swift                  Orchestrates the suites below
-  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / NightlyAutomationSuite.swift
+  ZonesSuite.swift / CyclerSuite.swift / HyperkeySuite.swift / KeyboardRemapSuite.swift / WorldClockSuite.swift / AppSuite.swift / AwakeSuite.swift / TextCaptureSuite.swift / MenuBarSuite.swift / NightlyAutomationSuite.swift
 Scripts/                    build-app, setup-signing, make-dmg, icon and screenshot tools,
                             notarize, Sparkle key/appcast tools, legacy appcast publisher
 ```
+
+### Keyboard maps and recovery
+
+`KeyboardMappingService` owns every `UserKeyMapping` write. Hyperkey contributes Caps Lock to
+F18 only while its Caps Lock trigger is available. Keyboard Remap contributes physical HID
+pairs selected by a built-in flag or an external hardware fingerprint. Product names are labels;
+external selection uses vendor/product IDs, transport and a serial number or location. Ambiguous
+matches block the selected rule instead of applying it to several services.
+
+The service uses Apple's per-service IOKit APIs from
+[TN2450](https://developer.apple.com/library/archive/technotes/tn2450/_index.html).
+It reads and validates each complete table, removes only exact journaled pairs, and composes
+the desired rules with external pairs. A pre-existing identical pair remains externally owned.
+Conflicting sources and incompatible F18 routes block application. Unreadable tables never
+authorize a write. Enumeration, composition, writes and recovery run on one serial queue.
+Wake and a three-second inventory refresh recover maps after sleep and reconnection.
+
+`~/.config/lineup/keyboard-mappings-recovery.json` stores ownership independently of tool
+preferences. Its boot-session identifier prevents replaying a RegistryID after reboot.
+Transactions record old and proposed owned pairs atomically before writing, re-read the table
+before applying, and verify the result before finalizing ownership. macOS provides no atomic
+compare-and-swap for this property; the re-read detects intervening writes but cannot lock out
+another remapper. Cleanup retains failed claims for retry and preserves changed destinations
+and additional external pairs. A shared menu warning and Settings recovery action remain
+available when a tool is disabled but its previous pairs could not be released.
+The bounded exit cleanup releases journaled pairs after normal termination;
+the next start recovers after an interruption.
+
+The existing schema-1 config envelope stores `tools.keyboardRemap` as an optional version-1
+section. Settings saves through `ToolConfigScope` before changing runtime rules and preserves
+unknown fields in settings, rules, selectors and pairs. Future or malformed sections block the
+tool's editing and application. Other tools keep their own sections.
+
+For visual inspection without starting tools or reading live config, the existing debug preview
+command also renders empty and configured Keyboard Remap panes:
+
+```sh
+LINEUP_RENDER_PREVIEW=<existing-output-directory> swift run lineup
+```
+
+These panes use an in-memory config and an inventory-only mapping service. They do not prove
+keyboard input behavior. Before release, verify the built-in ISO/grave swap alongside an
+external keyboard, plain and Shift input, held-key repeat, wake, reconnect, live edits, every
+Hyperkey/Keyboard Remap enable combination and quit. Check conflicts, denied or revoked Input
+Monitoring for Hyperkey, and recovery after interruption with later external changes. Capture
+the screenshots and keyboard-interaction video required by `CONTRIBUTING.md`.
+Display geometry, window dragging and capture overlays do not apply to this tool.
 
 ### Menu Bar runtime and recovery
 

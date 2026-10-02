@@ -8,17 +8,15 @@ import os
 /// whichever comes first.
 ///
 /// It cannot cover SIGKILL, Force Quit or a crash — nothing can. What survives those is the
-/// Caps Lock `hidutil` mapping, which is why its ownership is persisted: the next launch finds
-/// the flag and clears the mapping, and `CapsLockHandoff` can offer to restore Caps Lock when
-/// the owner never comes back at all.
+/// per-keyboard HID maps. KeyboardMappingService journals its exact pairs so the next launch
+/// can recover them while preserving later external changes.
 ///
 /// Standalone Cycler installed its own SIGINT/SIGTERM/SIGHUP handler that stopped the hyper-key
 /// controller and then `exit(128+sig)`'d — which, in a three-tool app, would skip Zones' and
 /// Cycler's cleanups entirely. Ownership therefore moves here: tools register a cleanup block
 /// and the shell fans out in reverse registration order.
 ///
-/// `HyperKeyController`'s static `atexit` drain is still kept (Phase 6): it covers exit while a
-/// `hidutil` remap is in flight, which no coordinator can.
+/// KeyboardMappingService's bounded `atexit` drain covers exit while a map is being applied.
 @MainActor
 final class TerminationCoordinator {
     static let shared = TerminationCoordinator()

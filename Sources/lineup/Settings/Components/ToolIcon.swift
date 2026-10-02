@@ -51,9 +51,14 @@ struct ToolIcon: View {
                 .accessibilityHidden(true)
         } else {
             AppStyleIcon(symbol: ToolIconLibrary.fallbackSymbol(for: id),
-                         tint: Brand.accent(for: id),
+                         tint: fallbackTint,
                          size: size)
         }
+    }
+
+    private var fallbackTint: NSColor {
+        let tint = Brand.accent(for: id)
+        return isEnabled ? tint : (tint.usingColorSpace(.genericGray) ?? .gray)
     }
 }
 
@@ -75,6 +80,7 @@ enum ToolIconLibrary {
         case .zones: return "square.grid.2x2.fill"
         case .cycler: return "arrow.triangle.2.circlepath"
         case .hyperkey: return "capslock.fill"
+        case .keyboardRemap: return "keyboard"
         case .worldClock: return "clock"
         case .awake: return "sun.max.fill"
         case .textCapture: return "text.viewfinder"

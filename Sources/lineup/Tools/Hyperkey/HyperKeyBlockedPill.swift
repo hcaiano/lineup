@@ -163,11 +163,11 @@ final class HyperKeyBlockedPill {
         if message.contains("Cycler is running") {
             return "Quit the standalone Cycler app. Lineup does this now."
         }
-        if message.contains("existing hidutil UserKeyMapping") {
+        if message.contains("already remaps") || message.contains("conflicts with Hyperkey") {
             return "Caps Lock is already remapped by another app."
         }
-        if message.contains("hidutil failed") {
-            return "Couldn’t remap Caps Lock. Try toggling Hyper Key off and on."
+        if message.contains("could not be recovered") || message.contains("refused to apply") || message.contains("did not keep") {
+            return "Couldn’t remap Caps Lock. Open Hyperkey Settings and retry."
         }
         if message.contains("CGEvent.tapCreate") {
             return "Couldn’t monitor the keyboard. Check Input Monitoring."

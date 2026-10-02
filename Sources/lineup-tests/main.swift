@@ -17,6 +17,7 @@ func runSuite(_ name: String, _ body: () throws -> Void) {
 runSuite("ZonesSuite", runZonesTests)
 runSuite("CyclerSuite", runCyclerTests)
 runSuite("HyperkeySuite", runHyperkeyTests)
+runSuite("KeyboardRemapSuite", runKeyboardRemapTests)
 runSuite("WorldClockSuite", runWorldClockTests)
 runSuite("AppSuite", runAppTests)
 runSuite("NightlyAutomationSuite", runNightlyAutomationTests)

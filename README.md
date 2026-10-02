@@ -25,6 +25,8 @@ Lineup combines seven tools. Enable only the tools you need:
 - **Cycler:** Cycle through apps and windows with shortcuts, including app groups and
   reverse cycling.
 - **Hyperkey:** Turn Caps Lock or another key into Control + Option + Shift + Command.
+- **Keyboard Remap:** Remap or swap physical keys on one keyboard, including the built-in
+  keyboard, while other keyboards keep their mappings.
 - **World Clock:** Compare cities with your local time, scroll through nearby hours, and pin a
   place's live time to the menu bar. City search and sunrise/sunset estimates work offline.
 - **Keep Awake:** Prevent idle sleep for 15 minutes, 30 minutes, 1 hour, or 2 hours.
@@ -89,6 +91,22 @@ Settings includes attribution links. No search or solar request leaves the Mac.
 3. Allow Accessibility access when macOS asks. Lineup needs it to inspect and move windows.
 4. If you enable Hyperkey, allow Input Monitoring when macOS asks. The other tools do not request
    this permission.
+
+## Remap keyboard keys
+
+Open Settings → Keyboard Remap, select a keyboard and add a source and destination key.
+Choose **Swap keys** to exchange two keys. The built-in keyboard preset exchanges the ISO
+section key, often labeled §/±, with the grave accent and tilde key. The selected keyboard layout
+controls the symbols shown in Settings. Rules use physical keys, including their Shift behavior.
+
+The tool starts off. Enable it after choosing your rules. Rules remain saved when a keyboard is
+disconnected and apply again on reconnection. A keyboard without rules keeps its existing map.
+Hyperkey can run alongside Keyboard Remap; Caps Lock and F18 cannot have contradictory rules.
+
+If Settings reports a conflict, change the rule or stop the app or login script that owns the
+conflicting mapping, then choose **Retry**. Lineup preserves external mappings and leaves an
+unreadable table untouched. Disabling a tool or quitting Lineup removes only the pairs it added.
+Keyboard Remap needs no extra permissions.
 
 ## Keep Awake
 

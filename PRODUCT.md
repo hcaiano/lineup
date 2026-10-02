@@ -20,6 +20,25 @@ replaces Magnet/Rectangle with something you can shape: recursive zone layouts p
 shortcuts. Success: a first-time user builds a multi-zone layout in the on-screen editor with no
 instructions, and the app then disappears into muscle memory.
 
+## Keyboard Remap
+
+Keyboard Remap is an optional tool, off by default. Settings lets users select the built-in
+keyboard or an external keyboard, add physical source and destination keys, and swap two keys.
+The built-in keyboard preset swaps the ISO section key and the grave accent key. Shift follows
+the destination key. Key labels show the symbols for the selected keyboard layout; changing
+that layout changes labels, while saved rules keep the same physical HID usages.
+
+Rules apply only to their selected keyboard. A disconnected keyboard retains its settings and
+receives them again when it reconnects. External keyboards use hardware identifiers rather than
+their product name alone. An ambiguous match waits for the user to choose a distinguishable
+device.
+
+Hyperkey and Keyboard Remap share one owner of keyboard maps. Disabling either tool removes
+only its contribution. Conflicting or unreadable external maps block the affected operation and
+show recovery in Settings, while other tools remain usable. Quitting releases Lineup's own
+pairs. Recovery after an interruption preserves external changes made after Lineup applied its
+rules. Keyboard Remap needs no event tap or additional permission.
+
 ## World Clock
 
 World Clock is an optional menu-bar tool for checking colleagues' times and comparing nearby
