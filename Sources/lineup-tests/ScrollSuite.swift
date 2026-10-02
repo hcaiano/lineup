@@ -63,6 +63,9 @@ func runScrollTests() throws {
     check(filter.axes(source: mouse, phase: changed, reversal: both) == [.vertical, .horizontal]
             && filter.axes(source: .unresolved, phase: momentum, reversal: both) == [.vertical],
           "another device's phased scrolling does not take over the trackpad gesture's inertia")
+    check(filter.axes(source: mouse, phase: momentumEnd, reversal: both) == [.vertical, .horizontal]
+            && filter.axes(source: .unresolved, phase: momentum, reversal: both) == [.vertical],
+          "another device's ending event does not end the trackpad gesture")
     check(filter.axes(source: trackpad, phase: ended, reversal: both) == [.vertical]
             && filter.axes(source: .unresolved, phase: momentum, reversal: both) == [.vertical]
             && filter.axes(source: .unresolved, phase: momentumEnd, reversal: both) == [.vertical],

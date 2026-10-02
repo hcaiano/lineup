@@ -82,7 +82,8 @@ public struct ScrollFilter: Sendable {
             if phase.startsGesture { gestureDevice = nil }
             device = phase.isPhased ? gestureDevice : nil
         }
-        if phase.endsSequence { gestureDevice = nil }
+        // Only the gesture's own events, or unresolved ones presumed to be its own, end it.
+        if phase.endsSequence, source == .unresolved || source == .device(gestureDevice) { gestureDevice = nil }
         return device.map(reversal.axes(for:)) ?? []
     }
 }
