@@ -49,12 +49,7 @@ final class KeyboardMappingService {
     func start() {
         guard !started else { return }
         started = true
-        // An old boolean claim is migrated into per-service ownership only when the competing
-        // providers are absent. A matching pair without a claim stays external.
-        legacyClaimRequested = !readOnly && SingleInstance.standaloneCyclerIsRunning() == nil
-            && !HyperKeyController.raycastCapsHyperEnabled()
-            && (UserDefaults.standard.bool(forKey: CapsLockHandoff.newKey)
-                || (UserDefaults(suiteName: CapsLockHandoff.legacySuite)?.bool(forKey: CapsLockHandoff.legacyKey) ?? false))
+        refreshLegacyClaimRequest()
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -97,6 +92,8 @@ final class KeyboardMappingService {
     func retry() { refresh() }
 
     func shutdown() {
+        // A duplicate app exits before start(). It must not reconcile the active app's journal.
+        guard started else { return }
         pollTimer?.invalidate()
         pollTimer = nil
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
@@ -112,6 +109,9 @@ final class KeyboardMappingService {
     /// Recovery is limited to journaled pairs. It cannot clear a same-shaped user-owned remap.
     func restoreOwnedCapsLock(completion: @escaping (Bool) -> Void) {
         start()
+        // A legacy provider may have exited since startup. Recheck its explicit claim before
+        // migrating ownership into the journal and releasing the owned pair.
+        refreshLegacyClaimRequest()
         let request = KeyboardMappingRequest(rules: remapEnabled ? rules : [], hyperkey: false, legacyClaim: legacyClaimRequested)
         let token = generation
         if !readOnly { backend.armExitCleanup() }
@@ -124,6 +124,14 @@ final class KeyboardMappingService {
                 completion(!snapshot.capsLockRecoveryPending && snapshot.remapStatus == nil)
             }
         }
+    }
+
+    private func refreshLegacyClaimRequest() {
+        // A matching pair without an ownership flag stays external. Live providers retain it.
+        legacyClaimRequested = !readOnly && SingleInstance.standaloneCyclerIsRunning() == nil
+            && !HyperKeyController.raycastCapsHyperEnabled()
+            && (UserDefaults.standard.bool(forKey: CapsLockHandoff.newKey)
+                || (UserDefaults(suiteName: CapsLockHandoff.legacySuite)?.bool(forKey: CapsLockHandoff.legacyKey) ?? false))
     }
 
     private func enqueue(completion: ((KeyboardMappingSnapshot) -> Void)? = nil) {
