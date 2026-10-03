@@ -392,10 +392,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
         return actual
     }
 
-    /// With the menu-bar icon hidden there is no way back in, so a Dock/Spotlight reopen has to
-    /// land on Settings.
+    /// Explicitly reopening the running app from Raycast, Spotlight, Finder or the Dock opens
+    /// Settings regardless of whether the menu-bar icon is visible.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard !store.config.general.showMenuBarIcon else { return false }
         openSettings()
         return false
     }
@@ -406,8 +405,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
         // Only when there is NO Settings window yet. This fires on every activation — including
         // the one Settings itself causes, and the one that follows dismissing an alert — so
         // reopening unconditionally de-minimized the window the user had just minimized and
-        // fought whatever sheet was on it. `applicationShouldHandleReopen` covers the Dock and
-        // Spotlight route back in for a hidden menu-bar icon.
+        // fought whatever sheet was on it. `applicationShouldHandleReopen` covers explicit
+        // reopen requests from Raycast, Spotlight, Finder and the Dock.
         if !store.config.general.showMenuBarIcon, settings == nil { openSettings() }
     }
 

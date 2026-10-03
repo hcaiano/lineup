@@ -1107,18 +1107,11 @@ private func runSettingsWindowTests() throws {
     check(about.contains("Product.buildChannel == .nightly") && about.contains(" Nightly"),
           "About labels a Nightly build while leaving Stable's version line unchanged")
 
-    // ---- Reopen path: with no menu-bar icon, Settings is the only way back in ----
+    // ---- Shell lifecycle ----
     let shell = source("Sources/lineup/App/AppShell.swift")
-    check(shell.contains("func applicationShouldHandleReopen"),
-          "the shell handles reopen (Dock / Spotlight)")
-    if let start = shell.range(of: "func applicationShouldHandleReopen") {
-        let body = shell[start.lowerBound...].prefix(300)
-        check(body.contains("showMenuBarIcon") && body.contains("openSettings()"),
-              "reopen shows Settings when the menu-bar icon is hidden")
-    }
     // didBecomeActive fires on EVERY activation — including the ones Settings itself and a
     // dismissed alert cause — so reopening unconditionally de-minimized the window the user had
-    // just minimized and fought whatever sheet was on it. The reopen handler above is the route
+    // just minimized and fought whatever sheet was on it. The explicit reopen handler is the route
     // back in; this one only has to cover "there is no window at all".
     if let start = shell.range(of: "@objc private func applicationBecameActive") {
         let body = shell[start.lowerBound...].prefix(700)

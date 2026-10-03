@@ -26,6 +26,21 @@ swift build
 swift run lineup-tests              # dependency-free test suite (no Xcode/XCTest needed)
 ```
 
+For native input recovery checks, run `swift run lineup-tests --input-recovery`. This opt-in mode
+compiles the production Hyperkey controller and keyboard mapping service into test processes.
+It requires an existing Input Monitoring grant and at least two keyboard HID services. It never
+requests permission, launches Lineup, writes keyboard maps or posts input. During its tap checks,
+F19 is temporarily intercepted; avoid using that key until the command exits. The default suite
+does not install an event tap or require permissions.
+
+For the explicit app-reopen regression, run `swift run lineup-tests --app-reopen` in a graphical
+macOS session. CI runs this mode too. It builds the app with the native build system and links
+its production owners into a temporary probe without the app entry point. The probe calls the
+real reopen delegate and checks opening, focusing, reusing and restoring the Settings window.
+It briefly shows Settings without loading user config, starting tools, requesting permissions
+or posting input. The default suite does not show windows. This mode needs the same SDK setup
+as `swift build` above.
+
 ## Assemble and run the app
 
 For a fast local build, assemble only the host architecture:
@@ -313,6 +328,14 @@ the desired rules with external pairs. A pre-existing identical pair remains ext
 Conflicting sources and incompatible F18 routes block application. Unreadable tables never
 authorize a write. Enumeration, composition, writes and recovery run on one serial queue.
 Wake and a three-second inventory refresh recover maps after sleep and reconnection.
+Each inventory uses a new HID system client, retained through that reconciliation's reads and
+writes. A long-lived simple client can retain a removed Bluetooth keyboard; retrying its dead
+service would otherwise keep Hyperkey blocked on every keyboard. Services already removed from
+the IORegistry are excluded, and the next refresh discovers reconnects under their new IDs.
+Hyperkey checks the validity and enabled state of its event tap before reporting a settled
+configuration. Its existing two-second input watch replaces an invalid tap without requiring app
+activation. Both system wake and display-only wake release held synthetic modifiers before
+reapplying settings. Disabling the tool stops this watch and removes the tap.
 The timer runs while Hyperkey is requested, nonempty remap rules are enabled, or a legacy
 ownership claim or recovery is pending. It stops after idle cleanup. Startup, wake and explicit
 Refresh still update the inventory. Requests made during a refresh coalesce into one more pass

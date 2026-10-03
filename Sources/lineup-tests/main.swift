@@ -27,6 +27,12 @@ runSuite("MenuBarSuite", runMenuBarTests)
 runSuite("ScrollSuite", runScrollTests)
 runSuite("DisplayControlSuite", runDisplayControlTests)
 runSuite("MenuPanelSuite", runMenuPanelTests)
+if CommandLine.arguments.contains("--input-recovery") {
+    runSuite("InputRecoverySuite", runInputRecoveryTests)
+}
+if CommandLine.arguments.contains("--app-reopen") {
+    runSuite("AppReopenSuite", runAppReopenTests)
+}
 
 // ---- Report ----
 if failures == 0 {
