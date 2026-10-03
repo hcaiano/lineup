@@ -15,7 +15,14 @@ Stable releases remain manual. No GitHub-hosted or self-hosted Actions runner ge
   are skipped. Initialization starts at current `main`; it never publishes the historical backlog.
 - Only users who selected Nightly receive these updates. Stable keeps its current behavior.
   Publication makes the update available; it does not force an immediate installation.
-- Generated GitHub release notes are rendered as HTML through GitHub's Markdown API before
+- Nightly notes list changes since the Stable version recorded in the release plan. GitHub's
+  generated list identifies the PRs in that exact range. Each PR's `Release notes` section supplies
+  the user-facing text; older PRs fall back to their titles without commit prefixes or attribution.
+  Other PR sections, including review evidence, are excluded. A range with no change entries stops
+  publication instead of shipping an empty changelog. Notes are saved in the job before publication
+  and reused on retry. A maintainer can supply reviewed `notes.md` in an unpublished job, including
+  its `<!-- lineup-nightly-source: <sha> -->` ownership marker.
+- GitHub release notes are rendered as HTML through GitHub's Markdown API before
   publication and inlined in the feed. The update window shows headings, lists and clickable
   links, with long URLs wrapping to its width. The internal source marker stays in the GitHub
   release body and is excluded from the update window. If rendering fails, the job retries
@@ -90,6 +97,18 @@ launchctl bootout "gui/$(id -u)/com.caiano.lineup.nightly"
 The service retains job worktrees, artifacts and staged deployments for recovery. Inspect disk use
 periodically. There is no automatic destructive cleanup or keychain modification.
 
+### Updating the installed publisher
+
+Merging a publisher fix does not update the installed copy. Compare
+`Scripts/nightly-service.py` with `~/Library/Application Support/Lineup Nightly/nightly-service.py`,
+stop the LaunchAgent using the command above, and replace the installed file with a reviewed copy.
+Preserve any local build resource limits and the existing LaunchAgent, state and job files.
+Restart with the same `launchctl bootstrap` command used for activation. These steps change
+production publication behavior and require maintainer approval.
+
+Old feed entries also keep their original notes. Updating the publisher fixes future jobs;
+correcting already published notes requires a separate approved website publication below.
+
 ## Stable and website publication
 
 Nightly feed entries are deployment state, not automatic commits to `main`. **All** publications
@@ -107,6 +126,18 @@ Nightly notes are inlined, so a later checkout cannot remove their linked notes 
 bytes under an already-published build number are rejected. A feed change during staging aborts
 the deployment instead of overwriting it. Stable version bumps, approval, signing and notarization
 remain the maintainer's existing manual process in `BUILDING.md`.
+
+To correct existing inline notes, prepare a separate website directory from the current public
+feed and change only the relevant items' HTML `description`. Review it before publishing:
+
+```sh
+python3 Scripts/nightly-service.py publish-web /path/to/reviewed-web --update-release-notes
+```
+
+This explicit option permits description changes while preserving every published item and
+rejecting changes to its other metadata, including signed enclosures and note links. Normal
+website publication still preserves existing notes. The public readback checks the notes as well
+as each download's identity. Keep the same publication lock and hosted-asset checks for repairs.
 
 Do not enable the dormant GitHub web-deploy workflow or deploy from another Mac while this service
 is active: neither participates in its local publication lock. Keep historical Stable downloads

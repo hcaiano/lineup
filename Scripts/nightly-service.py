@@ -42,6 +42,56 @@ def api(endpoint, *args):
     return json.loads(command("gh", "api", endpoint, *args))
 
 
+def nightly_notes(plan, sha):
+    # A Stable user can skip every earlier Nightly. Always describe that whole upgrade.
+    stable = plan["current_stable"]
+    generated = api(f"repos/{REPOSITORY}/releases/generate-notes", "-f", "tag_name=" + plan["tag"],
+                    "-f", "target_commitish=" + sha, "-f", "previous_tag_name=v" + stable)
+    changes = []
+    change_list = re.split(r"^## New Contributors\s*$", generated["body"], flags=re.M | re.I)[0]
+    for line in change_list.splitlines():
+        if not re.match(r"^\s*[-*] ", line):
+            continue
+        match = re.fullmatch(r"\s*[-*] (.+?) by @\S+ in https://github\.com/"
+                             + re.escape(REPOSITORY) + r"/pull/(\d+)\s*", line)
+        if not match:
+            changes.append(line)
+            continue
+        title, number = match.groups()
+        pull = api(f"repos/{REPOSITORY}/pulls/{number}")
+        # Only the explicitly public section belongs in release notes. PR bodies also
+        # contain review evidence, local paths and implementation details.
+        body = re.sub(r"<!--.*?-->", "", pull.get("body") or "", flags=re.S)
+        section = re.search(r"^## Release notes\s*\n(.*?)(?=^#{1,2} |\Z)", body, re.M | re.S | re.I)
+        summary = section.group(1).strip() if section else ""
+        if summary:
+            changes.append(summary)
+        else:
+            # Older PRs predate the release-note section. Keep their actual change,
+            # without author attribution and conventional-commit syntax.
+            title = re.sub(r"^[a-z]+(?:\(([^)]+)\))?!?:\s*",
+                           lambda m: (m[1].replace("-", " ").capitalize() + ": ") if m[1] else "",
+                           title)
+            changes.append("- " + title[0].upper() + title[1:])
+    if not changes:
+        raise RuntimeError("no release changes found; write reviewed notes in the job's notes.md before retrying")
+    return (f"## Changes since Lineup {stable}\n\n" + "\n\n".join(changes)
+            + f"\n\n[Full changelog](https://github.com/{REPOSITORY}/compare/v{stable}...{sha})")
+
+
+def render_release_notes(markdown):
+    if not markdown.strip():
+        raise RuntimeError("release notes are empty")
+    rendered = command("gh", "api", "markdown", "-H", "Accept: text/html",
+                       "-f", "mode=gfm", "-f", "context=" + REPOSITORY,
+                       "-f", "text=" + markdown, timeout=300)
+    if not rendered.strip():
+        raise RuntimeError("rendered release notes are empty")
+    return ("<meta name=\"color-scheme\" content=\"light dark\">\n"
+            "<style>body { font: 13px/1.5 -apple-system, sans-serif; "
+            "overflow-wrap: anywhere; } li { margin: .4em 0; }</style>\n" + rendered)
+
+
 def atomic_json(path, value):
     temporary = path.with_suffix(".pending")
     with temporary.open("w") as handle:
@@ -112,6 +162,47 @@ def item_identity(item):
             dict(item.find("enclosure").attrib))
 
 
+def xml_content(element):
+    """Compare XML content independently of attribute order and indentation."""
+    return (element.tag, dict(element.attrib),
+            element.text if element.text and element.text.strip() else None,
+            tuple((xml_content(child), child.tail if child.tail and child.tail.strip() else None)
+                  for child in element))
+
+
+def release_notes_identity(item):
+    return tuple(xml_content(child) for child in item
+                 if child.tag in {"description", SPARKLE + "releaseNotesLink", SPARKLE + "fullReleaseNotesLink"})
+
+
+def replace_release_notes(published, proposed, build):
+    # Only descriptions can be repaired; every other published field stays fixed.
+    metadata = []
+    for item in (published, proposed):
+        value = copy.deepcopy(item)
+        for description in value.findall("description"):
+            value.remove(description)
+        metadata.append(xml_content(value))
+    if metadata[0] != metadata[1]:
+        raise RuntimeError("notes-only repair would change published metadata: " + build)
+    descriptions = proposed.findall("description")
+    if not descriptions:
+        return
+    if len(descriptions) != 1 or not (descriptions[0].text or "").strip():
+        raise RuntimeError("notes-only repair requires one nonempty description: " + build)
+    replacement = copy.deepcopy(descriptions[0])
+    replacement.tail = None
+    previous = published.findall("description")
+    if previous:
+        index = list(published).index(previous[0])
+        replacement.tail = previous[0].tail
+        for description in previous:
+            published.remove(description)
+        published.insert(index, replacement)
+    else:
+        published.append(replacement)
+
+
 def nightly_order(build):
     match = re.fullmatch(r"([1-9]\d{0,3})\.(\d{2})\.(\d{2})a(\d{3})", build)
     if not match or not 1 <= int(match[4]) <= 255:
@@ -119,7 +210,7 @@ def nightly_order(build):
     return tuple(map(int, match.groups()))
 
 
-def merge_feed(published, proposed):
+def merge_feed(published, proposed, update_release_notes=False):
     """Preserve published entries, and reject replacement or a late older Nightly."""
     root, live = feed_items(published)
     _, additions = feed_items(proposed)
@@ -130,6 +221,8 @@ def merge_feed(published, proposed):
         if build in live:
             if item_identity(item) != item_identity(live[build]):
                 raise RuntimeError("published build would be replaced: " + build)
+            if update_release_notes:
+                replace_release_notes(live[build], item, build)
             continue
         if item.findtext(SPARKLE + "channel") == "nightly":
             if newest is not None and nightly_order(build) <= newest:
@@ -168,10 +261,10 @@ def public_feed():
     return data
 
 
-def deploy_web(state, web, proposed):
+def deploy_web(state, web, proposed, update_release_notes=False):
     """Caller holds the one Mac-wide lock, for both Stable and Nightly deploys."""
     published = public_feed()
-    merged = merge_feed(published, proposed)
+    merged = merge_feed(published, proposed, update_release_notes=update_release_notes)
     validate_hosted_assets(merged, web)
     # Keep the caller's source checkout clean. Keep failed stages for diagnosis.
     stage = state / "deployments" / str(time.time_ns())
@@ -184,6 +277,7 @@ def deploy_web(state, web, proposed):
     for attempt in range(6):
         actual = feed_items(public_feed())[1]
         if all(k in actual and item_identity(v) == item_identity(actual[k])
+               and release_notes_identity(v) == release_notes_identity(actual[k])
                for k, v in expected.items()):
             print("PASS: public feed contains every staged update", flush=True)
             return
@@ -328,16 +422,13 @@ class Service:
         notes = job / "notes.md"
         marker = "<!-- lineup-nightly-source: " + sha + " -->"
         if not notes.exists():
-            generated = api(f"repos/{REPOSITORY}/releases/generate-notes", "-f", "tag_name=" + plan["tag"],
-                            "-f", "target_commitish=" + sha)
-            notes.write_text(generated["body"] + "\n\n" + marker + "\n")
+            notes.write_text(nightly_notes(plan, sha) + "\n\n" + marker + "\n")
+        notes_text = notes.read_text()
+        if re.findall(r"<!-- lineup-nightly-source: ([^ ]+) -->", notes_text) != [sha]:
+            raise RuntimeError("notes.md must contain exactly one ownership marker: " + marker)
         # Sparkle displays HTML. Render GitHub's Markdown before any release mutation,
         # excluding the ownership marker that must remain in the GitHub release body.
-        rendered_notes = command("gh", "api", "markdown", "-H", "Accept: text/html",
-                                 "-f", "mode=gfm", "-f", "context=" + REPOSITORY,
-                                 "-f", "text=" + notes.read_text().split(marker)[0].strip(), timeout=300)
-        notes_html = ("<style>body { font-family: -apple-system, sans-serif; "
-                      "overflow-wrap: anywhere; }</style>\n" + rendered_notes)
+        notes_html = render_release_notes(notes_text.split(marker)[0].strip())
         existing = self.release_for_tag(plan["tag"])
         if self.ci(sha) != "passed":
             raise RuntimeError("source CI changed before release publication")
@@ -447,6 +538,8 @@ def main():
     sub.add_parser("install", help="write a LaunchAgent without starting it")
     deploy = sub.add_parser("publish-web", help="manual Stable/site deploy, preserving the live Nightly feed")
     deploy.add_argument("web", type=Path)
+    deploy.add_argument("--update-release-notes", action="store_true",
+                        help="allow description-only repairs of existing appcast entries")
     args = parser.parse_args()
     state = args.state_dir.expanduser().resolve()
     if args.action == "init":
@@ -459,7 +552,8 @@ def main():
                 Service(state).run(args.publish)
             else:
                 web = args.web.resolve()
-                deploy_web(state, web, (web / "appcast.xml").read_bytes())
+                deploy_web(state, web, (web / "appcast.xml").read_bytes(),
+                           update_release_notes=args.update_release_notes)
 
 
 if __name__ == "__main__":

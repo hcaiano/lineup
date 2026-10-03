@@ -75,10 +75,83 @@ class PolicyTests(unittest.TestCase):
 
     def test_rerun_preserves_published_entry_but_replacement_is_rejected(self):
         old = entry()
+        ET.SubElement(old, "description").text = "Published notes"
         self.assertEqual(len(service.feed_items(service.merge_feed(feed(old), feed(old)))[1]), 1)
+        revised = entry()
+        ET.SubElement(revised, "description").text = "Different notes"
+        preserved = service.feed_items(service.merge_feed(feed(old), feed(revised)))[1]["23"]
+        self.assertEqual(preserved.findtext("description"), "Published notes")
         changed = entry(url="https://elsewhere.invalid/changed.dmg")
         with self.assertRaisesRegex(RuntimeError, "replaced"):
             service.merge_feed(feed(old), feed(changed))
+
+    def test_explicit_notes_repair_preserves_other_entries_and_update_metadata(self):
+        stable = entry()
+        nightly = entry("23.02.72a001", "2.2.1-nightly.20260929.1", True,
+                        "https://github.com/example.dmg")
+        ET.SubElement(nightly, "pubDate").text = "Tue, 29 Sep 2026 12:00:00 +0000"
+        ET.SubElement(nightly, "description").text = "<pre>## What's Changed</pre>"
+        revised = ET.fromstring(ET.tostring(nightly))
+        revised.find("description").text = "<h2>What's Changed</h2><ul><li>Restores saved keys.</li></ul>"
+        # Reformatting the XML itself must not count as changed release metadata.
+        proposal = ET.fromstring(feed(revised))
+        ET.indent(proposal)
+        merged = service.feed_items(service.merge_feed(feed(stable, nightly), ET.tostring(proposal),
+                                                       update_release_notes=True))[1]
+        self.assertEqual(set(merged), {"23", "23.02.72a001"})
+        self.assertEqual(ET.tostring(merged["23"]), ET.tostring(stable))
+        self.assertEqual(ET.tostring(merged["23.02.72a001"]), ET.tostring(revised))
+
+    def test_explicit_notes_repair_rejects_unrelated_metadata_changes(self):
+        original = entry()
+        ET.SubElement(original, "title").text = "Lineup 2.2.0"
+        ET.SubElement(original, "pubDate").text = "Tue, 29 Sep 2026 12:00:00 +0000"
+        ET.SubElement(original, service.SPARKLE + "minimumSystemVersion").text = "13.0"
+        ET.SubElement(original, service.SPARKLE + "releaseNotesLink").text = "https://example.com/notes"
+        ET.SubElement(original, "description").text = "Old notes"
+        for field in ["title", "pubDate", service.SPARKLE + "minimumSystemVersion",
+                      service.SPARKLE + "shortVersionString", service.SPARKLE + "releaseNotesLink",
+                      "enclosure"]:
+            with self.subTest(field=field):
+                revised = ET.fromstring(ET.tostring(original))
+                revised.find("description").text = "<p>Fixed notes</p>"
+                if field == "enclosure":
+                    revised.find(field).set(service.SPARKLE + "edSignature", "different-signature")
+                else:
+                    revised.find(field).text = "changed metadata"
+                with self.assertRaisesRegex(RuntimeError, "replaced|notes-only"):
+                    service.merge_feed(feed(original), feed(revised), update_release_notes=True)
+
+    def test_deploy_requires_published_notes_to_match_for_new_releases_and_repairs(self):
+        original = entry(url="https://github.com/example.dmg")
+        ET.SubElement(original, "description").text = "Old notes"
+        for repair in [False, True]:
+            revised = ET.fromstring(ET.tostring(original)) if repair else entry("24", "2.3.0", url="https://github.com/new.dmg")
+            if revised.find("description") is None:
+                ET.SubElement(revised, "description")
+            revised.find("description").text = "<p>Restores saved keys.</p>"
+            cached = ET.fromstring(ET.tostring(revised))
+            cached.find("description").text = "<pre>## Old notes</pre>"
+            options = {"update_release_notes": True} if repair else {}
+            for stale in [True, False]:
+                with self.subTest(repair=repair, stale=stale), tempfile.TemporaryDirectory() as directory:
+                    state = Path(directory)
+                    web = state / "web"
+                    web.mkdir()
+                    visible = cached if stale else revised
+                    deployed = feed(visible) if repair else feed(original, visible)
+                    responses = [feed(original), feed(original)] + [deployed] * (6 if stale else 1)
+                    with patch.object(service, "public_feed", side_effect=responses), \
+                         patch.object(service, "command", return_value="") as command, \
+                         patch.object(service.time, "sleep"):
+                        if stale:
+                            with self.assertRaisesRegex(RuntimeError, "not verified"):
+                                service.deploy_web(state, web, feed(revised), **options)
+                        else:
+                            service.deploy_web(state, web, feed(revised), **options)
+                        staged = service.feed_items((command.call_args.kwargs["cwd"] / "appcast.xml").read_bytes())[1]
+                        self.assertEqual(staged["23" if repair else "24"].findtext("description"),
+                                         "<p>Restores saved keys.</p>")
 
     def test_older_nightly_and_challenge_html_fail_closed(self):
         newer = entry("23.02.72a002", "2.2.1-nightly.20260929.2", True)
@@ -135,6 +208,7 @@ class PublicationFixture:
         self.live = feed(entry())
         (self.web / "appcast.xml").write_bytes(self.live)
         self.plan = dict(tag="v2.2.1-nightly.20260929.1", version="2.2.1-nightly.20260929.1",
+                         current_stable="2.2.0",
                          next_patch="2.2.1", bundle_version="23.02.72a001", stable_build="23",
                          asset_name="Lineup-2.2.1-nightly.20260929.1.dmg",
                          asset_url="https://github.com/hcaiano/lineup/releases/download/v2.2.1-nightly.20260929.1/Lineup-2.2.1-nightly.20260929.1.dmg")
@@ -165,6 +239,9 @@ class PublicationFixture:
                                "https://github.com/hcaiano/lineup/compare/v2.2.0...v2.2.1</a></p>")
         self.render_failure = False
         self.existing_description = False
+        self.notes_requests = []
+        self.markdown_requests = []
+        self.pull_body = ""
 
     def crash(self, point):
         if self.fail_after == point:
@@ -177,7 +254,10 @@ class PublicationFixture:
         if endpoint == "user":
             return {"login": "hcaiano"}
         if endpoint.endswith("/releases/generate-notes"):
+            self.notes_requests.append(args)
             return {"body": self.notes}
+        if endpoint.endswith("/pulls/85"):
+            return {"body": self.pull_body}
         if "/releases/tags/" in endpoint:
             return self.release
         if endpoint.endswith("/releases?per_page=100"):
@@ -190,9 +270,9 @@ class PublicationFixture:
                 raise AssertionError("renderer must have a finite execution timeout")
             if self.render_failure:
                 raise RuntimeError("Markdown rendering unavailable")
-            if ("text=" + self.notes.strip() not in args or "mode=gfm" not in args
-                    or "context=" + service.REPOSITORY not in args):
-                raise AssertionError("renderer must receive the release Markdown without its source marker")
+            self.markdown_requests.append(next(arg[5:] for arg in args if arg.startswith("text=")))
+            if "mode=gfm" not in args or "context=" + service.REPOSITORY not in args:
+                raise AssertionError("renderer must use the repository's GitHub Markdown context")
             return self.rendered_notes
         if args[:3] == ("git", "ls-remote", "--tags"):
             return "" if self.tag_sha is None else self.tag_sha + "\trefs/tags/" + self.plan["tag"]
@@ -244,6 +324,27 @@ class PublicationFixture:
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_notes_cover_stable_upgrade_and_use_user_facing_pr_section(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = PublicationFixture(Path(directory))
+            fixture.pull_body = ("## What changed\nInternal refactor.\n\n"
+                                 "## Release notes\n<!-- Write for users. -->\n"
+                                 "- Keep screen-sharing indicators visible when hiding menu bar icons.\n"
+                                 "- Find hidden apps in a simpler Settings list.\n\n"
+                                 "## Verification\nPrivate review evidence must not appear.\n")
+            with fixture.connected() as runner:
+                runner.release(SHA)
+            self.assertIn("previous_tag_name=v2.2.0", fixture.notes_requests[0])
+            body = fixture.release["body"]
+            self.assertIn("Changes since Lineup 2.2.0", body)
+            self.assertIn("Keep screen-sharing indicators visible", body)
+            self.assertIn("Find hidden apps in a simpler Settings list", body)
+            self.assertNotIn("fix(menu-bar)", body)
+            self.assertNotIn("Private review evidence", body)
+            self.assertNotIn("Internal refactor", body)
+            self.assertNotIn("lineup-nightly-source", fixture.markdown_requests[0])
+            self.assertIn("v2.2.0..." + SHA, body)
+
     def test_nightly_feed_contains_formatted_release_notes(self):
         for existing_description in [False, True]:
             with self.subTest(existing_description=existing_description), tempfile.TemporaryDirectory() as directory:
@@ -259,6 +360,18 @@ class RecoveryTests(unittest.TestCase):
                 self.assertNotIn("lineup-nightly-source", description)
                 self.assertEqual(len(item.findall("description")), 1)
                 self.assertIn("lineup-nightly-source: " + SHA, fixture.release["body"])
+                self.assertIn("Menu bar: preserve capture indicators", fixture.release["body"])
+                self.assertNotIn("fix(menu-bar)", fixture.release["body"])
+
+    def test_empty_generated_changes_stop_before_publication(self):
+        for body in ["## What's Changed\n\n**Full Changelog**: https://github.com/hcaiano/lineup/compare/a...b",
+                     "## New Contributors\n* @someone made their first contribution in https://github.com/hcaiano/lineup/pull/85"]:
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as directory:
+                fixture = PublicationFixture(Path(directory))
+                fixture.notes = body
+                with fixture.connected() as runner, self.assertRaisesRegex(RuntimeError, "no release changes"):
+                    runner.release(SHA)
+                self.assertEqual((fixture.creations, fixture.uploads, fixture.deploys), (0, 0, 0))
 
     def test_rendering_failure_stops_before_release_mutations_and_can_retry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -272,6 +385,17 @@ class RecoveryTests(unittest.TestCase):
                 fixture.render_failure = False
                 runner.release(SHA)
             self.assertEqual(json.loads((fixture.job / "job.json").read_text())["phase"], "verified")
+
+    def test_invalid_saved_notes_stop_before_creating_a_release(self):
+        for markdown in ["- Fix keyboard recovery.",
+                         "- Fix keyboard recovery.\n<!-- lineup-nightly-source: " + OTHER + " -->",
+                         "<!-- lineup-nightly-source: " + SHA + " -->"]:
+            with self.subTest(markdown=markdown), tempfile.TemporaryDirectory() as directory:
+                fixture = PublicationFixture(Path(directory))
+                (fixture.job / "notes.md").write_text(markdown)
+                with fixture.connected() as runner, self.assertRaisesRegex(RuntimeError, "ownership marker|notes are empty"):
+                    runner.release(SHA)
+                self.assertEqual((fixture.creations, fixture.uploads, fixture.deploys), (0, 0, 0))
 
     def test_dry_run_never_advances_or_releases_and_pending_ci_stops_queue(self):
         runner = object.__new__(service.Service)

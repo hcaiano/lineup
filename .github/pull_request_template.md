@@ -6,6 +6,12 @@
 
 <!-- Explain the problem and why this approach fits Lineup. -->
 
+## Release notes
+
+<!-- Write short English bullets explaining what users can do now or which problem is fixed.
+This section is published in GitHub releases and Sparkle. Keep review details, local paths,
+test results and commit prefixes out of it. Leave it empty for changes with no user impact. -->
+
 ## Verification
 
 <!-- List the commands and manual checks you ran. -->
