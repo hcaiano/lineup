@@ -82,6 +82,9 @@ For every user-visible change:
 - Explain the problem, the change, and how you verified it.
 - Keep unrelated work in separate pull requests.
 - Call out config migrations, new permissions, shortcut changes, or release impact.
+- Fill in `Release notes` with short English bullets for user-visible changes. Explain the
+  resulting behavior and any action users need to take. The publisher uses this section in
+  GitHub releases and Sparkle; keep implementation and verification details in the other sections.
 - Do not commit local config, credentials, signing material, build output, or agent scratch files.
 
 A pull request is ready for review when its scope is clear, the required checks pass, and the visual

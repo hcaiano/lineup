@@ -193,6 +193,9 @@ setup step; recovery appears only when needed. Secondary options stay in More op
 - Both tracks keep one app identity, config file, update feed and permission grants.
 - Changing from a newer Nightly build to Stable stops Nightly updates. It waits for a newer Stable
   release; it does not install an older Stable build as a downgrade.
+- Update notes explain new features and fixes in readable headings and lists with clickable
+  links. Nightly notes include changes since the last Stable release, so users who skip builds
+  can see the complete upgrade.
 
 ## Text Capture
 
