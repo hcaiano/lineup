@@ -62,10 +62,12 @@ def nightly_notes(plan, sha):
         # Only the explicitly public section belongs in release notes. PR bodies also
         # contain review evidence, local paths and implementation details.
         body = re.sub(r"<!--.*?-->", "", pull.get("body") or "", flags=re.S)
-        section = re.search(r"^## Release notes\s*\n(.*?)(?=^#{1,2} |\Z)", body, re.M | re.S | re.I)
-        summary = section.group(1).strip() if section else ""
-        if summary:
-            changes.append(summary)
+        section = re.search(r"^## Release notes[^\S\n]*(?:\n|\Z)(.*?)(?=^#{1,2} |\Z)",
+                            body, re.M | re.S | re.I)
+        if section:
+            summary = section.group(1).strip()
+            if summary:
+                changes.append(summary)
         else:
             # Older PRs predate the release-note section. Keep their actual change,
             # without author attribution and conventional-commit syntax.

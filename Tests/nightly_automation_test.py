@@ -345,6 +345,27 @@ class RecoveryTests(unittest.TestCase):
             self.assertNotIn("lineup-nightly-source", fixture.markdown_requests[0])
             self.assertIn("v2.2.0..." + SHA, body)
 
+    def test_explicitly_empty_pr_notes_are_omitted(self):
+        for section in ["## Release notes\n<!-- No user impact. -->\n\n## Verification\nPassed.",
+                        "## Release notes\n", "## Release notes"]:
+            for has_other_changes in [False, True]:
+                with self.subTest(section=section, has_other_changes=has_other_changes), \
+                     tempfile.TemporaryDirectory() as directory:
+                    fixture = PublicationFixture(Path(directory))
+                    fixture.pull_body = section
+                    if has_other_changes:
+                        fixture.notes += "\n* Preserve saved window layouts after reconnecting a display.\n"
+                    with fixture.connected() as runner:
+                        if has_other_changes:
+                            runner.release(SHA)
+                            self.assertIn("Preserve saved window layouts", fixture.release["body"])
+                            self.assertNotIn("preserve capture indicators", fixture.release["body"])
+                            self.assertNotIn("Verification", fixture.release["body"])
+                        else:
+                            with self.assertRaisesRegex(RuntimeError, "no release changes"):
+                                runner.release(SHA)
+                            self.assertEqual((fixture.creations, fixture.uploads, fixture.deploys), (0, 0, 0))
+
     def test_nightly_feed_contains_formatted_release_notes(self):
         for existing_description in [False, True]:
             with self.subTest(existing_description=existing_description), tempfile.TemporaryDirectory() as directory:

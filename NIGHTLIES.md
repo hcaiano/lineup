@@ -18,7 +18,8 @@ Stable releases remain manual. No GitHub-hosted or self-hosted Actions runner ge
 - Nightly notes list changes since the Stable version recorded in the release plan. GitHub's
   generated list identifies the PRs in that exact range. Each PR's `Release notes` section supplies
   the user-facing text; older PRs fall back to their titles without commit prefixes or attribution.
-  Other PR sections, including review evidence, are excluded. A range with no change entries stops
+  An explicitly empty section omits that PR. Other PR sections, including review evidence, are
+  excluded. A range with no change entries stops
   publication instead of shipping an empty changelog. Notes are saved in the job before publication
   and reused on retry. A maintainer can supply reviewed `notes.md` in an unpublished job, including
   its `<!-- lineup-nightly-source: <sha> -->` ownership marker.
