@@ -22,4 +22,4 @@ jobs:
       - name: Build
         run: swift build
       - name: Test
-        run: swift run lineup-tests
+        run: swift run lineup-tests --app-reopen

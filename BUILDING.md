@@ -33,6 +33,14 @@ requests permission, launches Lineup, writes keyboard maps or posts input. Durin
 F19 is temporarily intercepted; avoid using that key until the command exits. The default suite
 does not install an event tap or require permissions.
 
+For the explicit app-reopen regression, run `swift run lineup-tests --app-reopen` in a graphical
+macOS session. CI runs this mode too. It builds the app with the native build system and links
+its production owners into a temporary probe without the app entry point. The probe calls the
+real reopen delegate and checks opening, focusing, reusing and restoring the Settings window.
+It briefly shows Settings without loading user config, starting tools, requesting permissions
+or posting input. The default suite does not show windows. This mode needs the same SDK setup
+as `swift build` above.
+
 ## Assemble and run the app
 
 For a fast local build, assemble only the host architecture:
