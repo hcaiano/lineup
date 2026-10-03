@@ -423,23 +423,27 @@ private final class KeyboardMappingBackend: @unchecked Sendable {
     }
 
     private func inventory() throws -> [Service] {
-        if client == nil { client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault) }
+        // A long-lived simple client can keep a removed Bluetooth keyboard in CopyServices.
+        // Retrying that dead service fails every write and rolls Hyperkey back on all keyboards.
+        // Keep a fresh client for this reconciliation, including its reads and writes.
+        client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
         guard let client, let raw = IOHIDEventSystemClientCopyServices(client) else {
             throw MappingFailure("The HID keyboard inventory could not be read")
         }
         guard let all = raw as? [IOHIDServiceClient] else { throw MappingFailure("The HID keyboard inventory is unreadable") }
         return try all.filter {
             IOHIDServiceClientConformsTo($0, UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Keyboard)) != 0
-        }.map { service in
+        }.compactMap { service in
             guard let number = IOHIDServiceClientGetRegistryID(service) as? NSNumber else {
                 throw MappingFailure("A keyboard has no registry identity")
             }
             let id = number.uint64Value
             let registry = IOServiceGetMatchingService(kIOMainPortDefault, IORegistryEntryIDMatching(id))
-            defer { if registry != 0 { IOObjectRelease(registry) } }
+            // A keyboard can disappear between enumeration and its property reads.
+            guard registry != 0 else { return nil }
+            defer { IOObjectRelease(registry) }
             func property(_ key: String) -> Any? {
                 if let value = IOHIDServiceClientCopyProperty(service, key as CFString) { return value }
-                guard registry != 0 else { return nil }
                 return IORegistryEntrySearchCFProperty(registry, kIOServicePlane, key as CFString,
                     kCFAllocatorDefault, IOOptionBits(kIORegistryIterateRecursively | kIORegistryIterateParents))
             }
