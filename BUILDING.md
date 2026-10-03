@@ -604,6 +604,10 @@ publication lock and preserves public Nightly entries; see [NIGHTLIES.md](NIGHTL
 
 Write the release notes first, as an HTML **fragment** in `web/release-notes/<version>.html`;
 the script inlines it as the item `<description>` and links it from `sparkle:releaseNotesLink`.
+Explain the features and fixes since the previous Stable release, including the changes already
+available in Nightlies. Use headings, lists and links; raw Markdown inside `<pre>` is displayed
+literally. Use the same user-facing changes in the GitHub release body. For automatic Nightly
+notes and repairs to published notes, see [NIGHTLIES.md](NIGHTLIES.md).
 
 Two rules the feed depends on:
 
