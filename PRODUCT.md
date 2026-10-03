@@ -23,31 +23,33 @@ instructions, and the app then disappears into muscle memory.
 
 ## Menu-bar controls
 
-Clicking the Lineup icon opens one compact native popover with icon tabs for the enabled tools.
+Clicking the Lineup icon opens one compact native popover with icon tabs for enabled quick controls:
+Display Control, Keep Awake, World Clock and Text Capture, in that order.
 Each tab shows that tool's controls directly, under the tool's name. Display Control has brightness
 and volume sliders; Keep Awake has session controls; World Clock has its complete clock, place
-search and time scroll. Zones has Edit Layout and the drag-to-snap switch. Cycler lists the app
-shortcuts; clicking one opens its app as the shortcut would, and Edit opens its Settings. Hyperkey
-shows its trigger and the modifiers it sends. Text Capture has its capture button and shortcut, or
-a way to add one. Scroll has one switch per device. Keyboard Remap shows how many keys it remaps
-and opens its Settings to edit them. A tool without its own controls shows its actions; a single action is one
-full-width button. Actions that open an editor or a capture close the panel first. Settings and app
-actions remain in the top row; right-clicking the icon opens the existing native menu.
+search and time scroll. Text Capture has its capture button and shortcut, or a way to add one.
+Starting a capture closes the panel first. Zones, Cycler, Hyperkey, Keyboard Remap, Menu Bar and
+Scroll remain in Settings and keep running independently of the panel. With no quick controls
+enabled, the panel offers Settings without claiming that every tool is off.
+Settings and app actions remain in the top row. Right-clicking the icon opens a compact native menu
+with Settings, Check for Updates, About and Quit. It also shows actionable problems from any
+running tool. Tool controls, healthy status rows and the Open at Login preference do not appear in
+that menu or the panel's app actions; Open at Login remains in General settings.
 
 The panel shows only what the person needs in the moment. Preferences, explanations and
 compatibility details belong in Settings. The panel hugs its content, so its height follows the
 selected tab.
 
-macOS draws the popover's arrow, border and material. Native segmented tabs, sliders and toggles
+The panel has no arrow above it. macOS draws its border and material. Native segmented tabs, sliders and toggles
 follow the system accent and appearance, including Liquid Glass on macOS 26 and later. Respect
 Light/Dark Mode, the person's Liquid Glass preference, Reduce Transparency and Increase Contrast. Earlier
 macOS versions retain their native AppKit appearance. Do not paint an extra panel background or
 force a transparency level.
 
-The first opening selects Display Control when enabled, otherwise the first available tool.
-Reopening remembers the last selected tab for the current app session. Opening a specific tool
+The first opening selects Display Control when enabled, otherwise the first available quick control.
+Reopening remembers the last selected tab for the current app session. Opening a quick control
 from Settings selects its tab. Disabling the selected tool removes its tab and selects the first
-remaining tool. Use Command-1 through Command-9 to select the first nine tabs, or Control-Tab and
+remaining quick control. Use Command-1 through Command-9 to select the first nine tabs, or Control-Tab and
 Control-Shift-Tab to move forward and backward.
 
 Closing the panel leaves Keep Awake sessions and enabled tools running. Content scrolls within
@@ -62,9 +64,8 @@ enablement, saved places or the pin.
 
 ## Display control
 
-Display Control is an independent tool, off by default. Its controls in the Lineup popover, the
-right-click menu submenu and Settings show each connected display, its hardware controls and
-confirmed brightness or speaker volume.
+Display Control is an independent tool, off by default. Its controls in the Lineup popover and
+Settings show each connected display, its hardware controls and confirmed brightness or speaker volume.
 Native Apple brightness and external DDC/CI are supported when the current connection exposes
 them. The popover shows only supported controls; a display with none says so and offers detection
 again. Settings shows every control with the reason one is unsupported. An unreadable value has no
@@ -208,7 +209,7 @@ paste, translation, or network processing.
 ## Scroll
 
 Scroll is an independent, opt-in tool for people who want a different direction on each device,
-most often a traditional mouse wheel with a natural trackpad. Settings and the menu bar reverse
+most often a traditional mouse wheel with a natural trackpad. Settings reverses
 the mouse and the trackpad separately; vertical and horizontal choices apply to each reversed
 device. The defaults reverse vertical mouse scrolling and keep the trackpad unchanged; horizontal
 reversal starts off because apps turn horizontal scrolling into page navigation. Settings

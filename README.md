@@ -46,14 +46,14 @@ Lineup is built with Swift, AppKit, and SwiftUI. It requires macOS 13 or later.
 
 ## Controls in one place
 
-Click the Lineup menu-bar icon to open its panel. The top row has an icon tab for each enabled
-tool. Select Display Control for hardware brightness and volume sliders, Keep Awake for duration
-and Start/Stop controls, or World Clock to manage places and compare times. Zones has **Edit
-Layout…** and the drag-to-snap switch; Cycler lists your app shortcuts, and clicking one opens that
-app; Hyperkey shows which key sends Hyper; Text Capture starts a capture and shows its shortcut;
-Scroll has a switch for the mouse and one for the trackpad; Keyboard Remap opens its key mappings.
-Settings and other app actions are in the same top row. Right-click the icon for the native menu
-and its tool submenus.
+Click the Lineup menu-bar icon to open its panel. The top row has icon tabs for enabled quick
+controls. Select Display Control for hardware brightness and volume sliders, Keep Awake for
+duration and Start/Stop controls, World Clock to manage places and compare times, or Text Capture
+to start a capture. Configure Zones, Cycler, Hyperkey, Keyboard Remap, Menu Bar and Scroll in
+Settings. They keep running without a panel tab.
+Settings and other app actions are in the same top row. Right-click the icon for Settings,
+Check for Updates, About and Quit, plus any problems that need attention. Open at Login is in
+General settings.
 
 The first opening selects Display Control when available. Later openings remember your last tab
 until Lineup quits. Disabling the selected tool switches to the first remaining tab. Select tabs
@@ -127,7 +127,7 @@ Settings includes attribution links. No search or solar request leaves the Mac.
 ## Display control
 
 Enable Display Control in Settings. Click the Lineup icon to use its brightness and volume
-sliders in the **Display Control** tab, or use its right-click menu submenu or Settings. Each
+sliders in the **Display Control** tab or in Settings. Each
 display shows only supported controls. An unavailable value stays unavailable until a valid read succeeds. Use
 **Detect Displays** in Settings, or **Detect Again** in the panel when a display shows no
 controls, after reconnecting a display, changing its cable or dock, or enabling DDC/CI in its own
@@ -204,9 +204,8 @@ Keyboard Remap needs no extra permissions.
 ## Keep Awake
 
 Enable Keep Awake in Settings, then choose a duration and press **Start** in the Lineup panel.
-The same panel shows the remaining time, **Stop**, and **Keep display on**. The right-click menu
-submenu and Settings also provide session controls. The Lineup menu-bar item shows "Awake"
-while a session is active.
+The same panel shows the remaining time, **Stop**, and **Keep display on**. Settings also provides
+session controls. The Lineup menu-bar item shows "Awake" while a session is active.
 
 "Keep display on" is off by default. Turning it on or off during a session keeps the original
 deadline. Choosing another duration starts a new session. Expiration, stopping, disabling the
@@ -235,7 +234,7 @@ language support must both be available in the local macOS recognition engine. I
 unavailable, Text Capture explains this without replacing the clipboard.
 
 Invoking capture again during selection or recognition does not start another job. Use **Cancel
-Text Capture** in the menu to stop pending work. Display changes, disabling the tool, and quitting
+Capture** in the panel to stop pending work. Display changes, disabling the tool, and quitting
 Lineup also cancel it. Captures stay in memory and are released after use; Lineup does not keep a
 capture history, log the recognized text, or send it to a service. The copied text remains on the
 system clipboard until another app or copy action replaces it.
@@ -271,8 +270,7 @@ tools still support macOS 13+.
 macOS has one scroll direction for every device. Enable **Scroll** in Settings to reverse the
 mouse, the trackpad or both, on top of that direction. By default it reverses vertical mouse
 scrolling and leaves the trackpad unchanged. **Vertical** and **Horizontal** choose the directions
-reversed on each selected device. Changes apply to the next scroll, and the Lineup menu bar offers
-quick switches for each device.
+reversed on each selected device. Changes apply to the next scroll.
 
 Settings shows what reversal means with your current macOS preference. Lineup never changes
 **Natural scrolling** in System Settings; turning Scroll off or quitting Lineup restores the macOS

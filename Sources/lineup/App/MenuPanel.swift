@@ -197,8 +197,8 @@ struct MenuPanel: View {
             }
         } else {
             VStack(spacing: 8) {
-                Text("No tools turned on").font(.headline)
-                Text("Choose the tools you want in Settings.")
+                Text("No quick controls turned on").font(.headline)
+                Text("Enable Display Control, Keep Awake, World Clock or Text Capture in Settings.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("Open Settings", action: model.openSettings)
                     .buttonStyle(.borderedProminent)
