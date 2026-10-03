@@ -85,7 +85,7 @@ final class HyperKeyController {
     private var keyboardMappings = KeyboardMappingService.shared
     private var mappingObserver: UUID?
     private var appliedSettings = HyperKeySettings.disabled
-    private var secureInputTimer: Timer?
+    private var inputStateTimer: Timer?
 
     func useKeyboardMappings(_ service: KeyboardMappingService) {
         if let mappingObserver { keyboardMappings.removeObserver(mappingObserver) }
@@ -137,15 +137,20 @@ final class HyperKeyController {
     /// Secure Input is deliberately NOT part of this: its own 2s timer owns that transition and
     /// calls `apply()` directly, so gating on it here would only duplicate the check.
     func isSettled(for settings: HyperKeySettings) -> Bool {
-        guard settings.enabled, state == .active, tap != nil else { return false }
+        guard settings.enabled, state == .active, tapIsHealthy else { return false }
         guard activeTrigger == settings.triggerKey, includeShift == settings.includeShift else { return false }
         guard settings.triggerKey.needsCapsLockRemap else { return true }
         return didApplyMapping && !blockedByStandaloneCycler
     }
 
+    private var tapIsHealthy: Bool {
+        guard let tap else { return false }
+        return CFMachPortIsValid(tap) && CGEvent.tapIsEnabled(tap: tap)
+    }
+
     func apply(_ settings: HyperKeySettings) {
         appliedSettings = settings
-        updateSecureInputWatch(enabled: settings.enabled)
+        updateInputStateWatch(enabled: settings.enabled)
         let operationID = nextMappingOperationID()
         guard settings.enabled else {
             stopAndClearMapping(settingState: .disabled)
@@ -189,29 +194,34 @@ final class HyperKeyController {
         keyboardMappings.setHyperkeyEnabled(false) { _ in }
     }
 
-    private func updateSecureInputWatch(enabled: Bool) {
+    private func updateInputStateWatch(enabled: Bool) {
         guard enabled else {
-            secureInputTimer?.invalidate()
-            secureInputTimer = nil
+            inputStateTimer?.invalidate()
+            inputStateTimer = nil
             return
         }
-        guard secureInputTimer == nil else { return }
+        guard inputStateTimer == nil else { return }
         // `.common` mode, not the default one: a tracking run loop (a menu held open, a window
-        // drag) would otherwise stall the Secure Input reconcile for as long as it lasts.
+        // drag) would otherwise stall Secure Input and tap recovery for as long as it lasts.
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reconcileSecureInput() }
+            MainActor.assumeIsolated { self?.reconcileInputState() }
         }
         timer.tolerance = 0.5
         RunLoop.main.add(timer, forMode: .common)
-        secureInputTimer = timer
+        inputStateTimer = timer
     }
 
-    private func reconcileSecureInput() {
+    private func reconcileInputState() {
         guard appliedSettings.enabled else { return }
         let secureInputActive = IsSecureEventInputEnabled()
         if secureInputActive, state != .blocked(Self.secureInputBlockedMessage) {
             apply(appliedSettings)
         } else if !secureInputActive, state == .blocked(Self.secureInputBlockedMessage) {
+            apply(appliedSettings)
+        } else if state == .active, tap != nil, !tapIsHealthy {
+            // An invalid port cannot deliver a disabled-tap callback. Recover without requiring
+            // app activation, while leaving permission-blocked states to their explicit retry.
+            resetTriggerState()
             apply(appliedSettings)
         }
     }
@@ -256,13 +266,22 @@ final class HyperKeyController {
     }
 
     private func startTap(trigger: TriggerKey) -> StartResult {
+        if let tap, !CFMachPortIsValid(tap) {
+            // Keep the confirmed keyboard mapping while replacing only the invalid event tap.
+            stopTap()
+        }
         if let tap {
             // A live tap is not necessarily an ENABLED one: the system disables it on timeout, on
             // a user-input storm, and across sleep. Without this check the wake re-apply — the
             // whole reason `didWakeNotification` is observed — was a no-op and the hyper key
             // stayed dead until the tool was toggled off and on.
             if !CGEvent.tapIsEnabled(tap: tap) {
+                resetTriggerState()
                 CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            guard tapIsHealthy else {
+                stop(invalidatingPending: false, settingState: state)
+                return .blocked("CGEvent.tapEnable failed")
             }
             return .started
         }
@@ -294,6 +313,10 @@ final class HyperKeyController {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
         CGEvent.tapEnable(tap: created, enable: true)
+        guard tapIsHealthy else {
+            stop(invalidatingPending: false, settingState: state)
+            return .blocked("CGEvent.tapEnable failed")
+        }
         activeTrigger = trigger
         return .started
     }
@@ -308,8 +331,8 @@ final class HyperKeyController {
     }
 
     func stop() {
-        secureInputTimer?.invalidate()
-        secureInputTimer = nil
+        inputStateTimer?.invalidate()
+        inputStateTimer = nil
         appliedSettings = .disabled
         stop(invalidatingPending: true)
     }
@@ -326,19 +349,7 @@ final class HyperKeyController {
         if invalidatingPending {
             _ = nextMappingOperationID()
         }
-        releaseSyntheticModifiers()
-        if let tap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            CFMachPortInvalidate(tap)
-        }
-        if let source {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
-            CFRunLoopSourceInvalidate(source)
-        }
-        tap = nil
-        source = nil
-        triggerDown = false
-        activeTrigger = nil
+        stopTap()
 
         let hadMapping = didApplyMapping
         didApplyMapping = false
@@ -349,6 +360,21 @@ final class HyperKeyController {
         if state != newState {
             state = newState
         }
+    }
+
+    private func stopTap() {
+        resetTriggerState()
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        if let source {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CFRunLoopSourceInvalidate(source)
+        }
+        tap = nil
+        source = nil
+        activeTrigger = nil
     }
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {

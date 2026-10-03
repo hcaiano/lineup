@@ -60,6 +60,10 @@ configurations use the Lineup panel alone; existing saved configurations keep th
 until the user changes that preference. Showing or hiding this extra item never changes tool
 enablement, saved places or the pin.
 
+Explicitly reopening an already-running Lineup from Raycast, Spotlight, Finder or the Dock opens
+Settings, whether the main menu-bar icon is visible or hidden. If the Settings window already
+exists, Lineup brings that same window to the front.
+
 ## Display control
 
 Display Control is an independent tool, off by default. Its controls in the Lineup popover, the

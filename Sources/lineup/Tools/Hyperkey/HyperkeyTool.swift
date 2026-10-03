@@ -129,6 +129,7 @@ final class HyperkeyTool: Tool {
 
         // Sleep can disable the tap and drop HID mappings; reconcile both on wake.
         observe(NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)
+        observe(NSWorkspace.shared.notificationCenter, NSWorkspace.screensDidWakeNotification)
         // Coming back from System Settings is when a fresh Input Monitoring grant becomes visible
         // — and when a just-quit standalone Cycler stops blocking us.
         observe(NotificationCenter.default, NSApplication.didBecomeActiveNotification)
@@ -159,7 +160,7 @@ final class HyperkeyTool: Tool {
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name) {
-        let didWake = name == NSWorkspace.didWakeNotification
+        let didWake = name == NSWorkspace.didWakeNotification || name == NSWorkspace.screensDidWakeNotification
         let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isRunning else { return }
