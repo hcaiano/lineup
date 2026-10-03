@@ -217,17 +217,18 @@ Scripts/                    build-app, setup-signing, make-dmg, icon and screens
 
 ### Shared menu-bar panel
 
-`StatusItemController` owns the main status item, a transient native `NSPopover` and the existing
-right-click `NSMenu`. `MenuPanel` is 352 pt wide, with a 44 pt top row of enabled-tool icon tabs,
+`StatusItemController` owns the main status item, a transient native `NSPopover` and the
+right-click `NSMenu`. `MenuPanel` is 352 pt wide, with a 44 pt top row of quick-control icon tabs,
 Settings and app actions. It renders one selected tool at a time. Display Control and Keep Awake
 provide direct controls; World Clock provides its complete view with a 36 pt embedded header.
-Other tools reuse their native menu actions. Invoking an action closes the popover before
-starting an editor, overlay or capture. Content scrolls within the anchor display's available
-height.
+Text Capture provides capture and cancellation controls. Starting a capture closes the popover
+first. Content scrolls within the anchor display's available height.
 
-The native popover owns its arrow and background; SwiftUI content adds no material wrapper or
-panel fill. The tab picker uses the standard segmented style, retaining the macOS 13 baseline
-and the macOS 26 SDK build path. AppKit and SwiftUI provide the current system accent and appearance,
+The native popover owns its border and background; SwiftUI content adds no material wrapper or
+panel fill. The shared panel hides its arrow through AppKit's private `shouldHideAnchor` property,
+after checking for `setShouldHideAnchor:` at runtime. If the setter is unavailable, the native
+popover keeps its arrow and still opens normally. The tab picker uses the standard segmented style,
+retaining the macOS 13 baseline and the macOS 26 SDK build path. AppKit and SwiftUI provide the current system accent and appearance,
 including Liquid Glass on macOS 26 and later, and adapt to Light/Dark Mode, Liquid Glass settings,
 Reduce Transparency and Increase Contrast. Follow Apple's
 [Liquid Glass adoption guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
@@ -235,12 +236,20 @@ by keeping native containers and removing custom popover backgrounds. No forced 
 transparency override is needed. Panel controls inherit the system tint; `Brand.blue` continues
 to style Settings and the layout editor.
 
-`MenuPanelSession` in AppCore owns tab selection and prioritizes Display Control, Keep Awake and
-World Clock. The first opening selects Display Control when present, otherwise the first enabled
-tool. Closing clears the current selection but retains the last tab in memory for the app session.
+`MenuPanelSession` in AppCore owns tab selection and limits the panel to running Display Control,
+Keep Awake, World Clock and Text Capture, in that order. Other tools keep their lifecycle and
+Settings panes without a panel tab. The first opening selects Display Control when present,
+otherwise the first available quick control. Closing clears the current selection but retains the
+last tab in memory for the app session.
 Disabling the selected tool falls back to the first remaining tab. Command-1 through Command-9
 select the first nine tabs; Control-Tab and Control-Shift-Tab cycle them. Escape closes the popover after a
 clock search or editing mode has consumed its own cancellation.
+
+The right-click menu contains Settings, Check for Updates, About and Quit, plus warnings from
+all running tools. It does not call tools' `menuItems` or show healthy tool states. The panel's
+app-actions menu shares the update, About and Quit actions. Open at Login belongs in General
+settings. With background tools alone, the panel shows an empty quick-controls state and a
+Settings button.
 
 Tools provide `makeQuickPanel` and optional `makeFullPanel` views backed by the same live tool
 instances. Only the selected tab receives `panelWillOpen`/`panelDidClose` callbacks for temporary

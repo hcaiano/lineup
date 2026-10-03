@@ -104,6 +104,10 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         }
         let panel = NSPopover()
         panel.appearance = NSApp.appearance
+        // AppKit's arrow switch is private. Guard the setter so unsupported systems still open the panel.
+        if panel.responds(to: NSSelectorFromString("setShouldHideAnchor:")) {
+            panel.setValue(true, forKey: "shouldHideAnchor")
+        }
         panel.behavior = .transient
         panel.animates = false
         panel.delegate = self
@@ -175,15 +179,12 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     }
 
     private func appActions() -> [NSMenuItem] {
-        let login = actionItem("Open at Login", symbol: "power") { [weak self] in
-            LaunchAtLogin.toggle()
-            self?.refresh()
-        }
-        login.state = LaunchAtLogin.isEnabled ? .on : .off
         let update = NSMenuItem(title: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        update.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
         update.target = AppUpdater.shared
         update.isEnabled = AppUpdater.shared.updater.canCheckForUpdates
-        return [login, update,
+        return [update,
                 actionItem("About Lineup", symbol: "info.circle") { [weak self] in self?.onShowAbout() },
                 .separator(),
                 actionItem("Quit Lineup", key: "q", symbol: "xmark.circle") { NSApp.terminate(nil) }]
@@ -217,57 +218,11 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         }
         if !warnings.isEmpty { menu.addItem(.separator()) }
 
-        // Tools, in registry order. Only running tools contribute rows.
-        var addedToolSection = false
-        for tool in registry.tools where tool.isRunning {
-            let items = tool.menuItems()
-            guard !items.isEmpty else { continue }
-            addedToolSection = true
-            if items.count == 1, let only = items.first {
-                menu.addItem(only)
-            } else {
-                let active = (tool as? AwakeTool)?.isActive == true
-                let parent = NSMenuItem(title: active ? "Keep Awake · Active" : tool.displayName,
-                                        action: nil, keyEquivalent: "")
-                parent.image = NSImage(systemSymbolName: tool.iconSymbol, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
-                let submenu = NSMenu()
-                submenu.autoenablesItems = false
-                for item in items { submenu.addItem(item) }
-                parent.submenu = submenu
-                menu.addItem(parent)
-            }
-        }
-        if addedToolSection { menu.addItem(.separator()) }
-
         menu.addItem(actionItem("Settings…", key: ",", symbol: "gearshape") { [weak self] in
             self?.onOpenSettings()
         })
-        let loginItem = actionItem("Open at Login", symbol: "power") { [weak self] in
-            LaunchAtLogin.toggle()
-            self?.refresh()
-        }
-        loginItem.state = LaunchAtLogin.isEnabled ? .on : .off
-        menu.addItem(loginItem)
-
         menu.addItem(.separator())
-        // Sparkle owns this item: it runs the check AND enables/disables the item via
-        // canCheckForUpdates, so it targets the updater controller, not us.
-        let updatesItem = NSMenuItem(title: "Check for Updates…",
-                                     action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
-                                     keyEquivalent: "")
-        updatesItem.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
-        updatesItem.target = AppUpdater.shared
-        menu.addItem(updatesItem)
-        menu.addItem(actionItem("About \(Product.name)", symbol: "info.circle") { [weak self] in
-            self?.onShowAbout()
-        })
-
-        menu.addItem(.separator())
-        menu.addItem(actionItem("Quit \(Product.name)", key: "q", symbol: "xmark.circle") {
-            NSApp.terminate(nil)
-        })
+        for item in appActions() { menu.addItem(item) }
         return menu
     }
 

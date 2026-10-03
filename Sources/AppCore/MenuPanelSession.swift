@@ -8,13 +8,12 @@ public struct MenuPanelSession: Equatable {
     public init() {}
 
     public mutating func update(runningTools: [ToolID]) {
-        var seen = Set<ToolID>()
-        let unique = runningTools.filter { seen.insert($0).inserted }
-        // Frequent controls appear before actions that open an editor or change input behavior.
-        let widgets: [ToolID] = [.displayControl, .awake, .worldClock]
-        visibleTools = widgets.filter { seen.contains($0) } + unique.filter { !widgets.contains($0) }
-        if let lastTool, !seen.contains(lastTool) { self.lastTool = nil }
-        if isOpen, !(selectedTool.map { seen.contains($0) } ?? false) {
+        let running = Set(runningTools)
+        // Background tools keep running; their preferences belong in Settings.
+        let controls: [ToolID] = [.displayControl, .awake, .worldClock, .textCapture]
+        visibleTools = controls.filter { running.contains($0) }
+        if let lastTool, !visibleTools.contains(lastTool) { self.lastTool = nil }
+        if isOpen, !(selectedTool.map { visibleTools.contains($0) } ?? false) {
             selectedTool = visibleTools.first
             lastTool = selectedTool
         }
