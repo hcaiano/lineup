@@ -536,6 +536,30 @@ final class AppShell: NSObject, NSApplicationDelegate {
             tool.paneDidDisappear()
         }
         mappings.shutdown()
+
+        // Render Scroll settings without starting an event tap or using live user data.
+        for configured in [false, true] {
+            var config = LineupAppConfig()
+            var settings = ScrollSettings()
+            settings.constantWheelScrolling = configured
+            try? config.setSettings(settings, for: .scroll)
+            let store = LineupAppConfigStore(
+                url: URL(fileURLWithPath: dir).appendingPathComponent("scroll-preview-config.json"),
+                config: config)
+            let tool = ScrollTool()
+            tool.attach(ToolServices(
+                id: .scroll, config: ToolConfigScope(owner: .scroll, store: store),
+                permissions: .shared, activation: .shared, termination: .shared,
+                refreshMenu: {}, refreshSettings: {}, peers: { [:] }))
+            let view = ToolPane(id: tool.id, title: tool.displayName, summary: tool.summary,
+                                isOn: .constant(true)) { tool.makeSettingsPane() }
+                .tint(Color(nsColor: Brand.blue))
+                .environment(\.colorScheme, .light)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .frame(width: 650, height: 880)
+            write(sized(NSHostingView(rootView: view), NSSize(width: 650, height: 880)),
+                  configured ? "preview-scroll-constant.png" : "preview-scroll-default.png")
+        }
     }
     #endif
 }

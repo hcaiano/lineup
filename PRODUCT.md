@@ -223,13 +223,19 @@ reversal starts off because apps turn horizontal scrolling into page navigation.
 explains the result relative to the current macOS Natural scrolling preference, which Lineup only
 reads.
 
-Changes apply to the next scroll. Reversal changes only the sign of each scroll: speed and inertia
+Changes apply to the next scroll. With Constant scrolling off, reversal changes only the sign of each scroll: speed and inertia
 stay as macOS delivers them, gesture events such as zoom, rotation and space swipes are never
 touched, and no event is added or removed. A gesture keeps one device through its inertia.
 Scrolling that cannot be attributed to a mouse or trackpad, including input posted by other apps,
 keeps the macOS direction. Missing Accessibility leaves scrolling unchanged
 and shows recovery in Settings. Disabling the tool or quitting ends interception immediately.
-Smoothing, acceleration, button remapping and per-app rules are out of scope.
+**Constant scrolling** is an optional mouse-wheel setting, off by default. It removes acceleration
+from vertical, non-continuous wheel events by assigning the same number of lines to each event.
+**Lines per step** ranges from 1 to 10 and starts at 3. It works independently of direction reversal;
+when both are selected, the constant step follows the chosen direction. Horizontal scrolling,
+continuous Magic Mouse input, trackpads and gesture momentum retain their existing behavior.
+Unknown devices and app-posted events remain unchanged. No events are synthesized or delayed.
+Smoothing, button remapping and per-app rules are out of scope.
 
 ## Brand Personality
 

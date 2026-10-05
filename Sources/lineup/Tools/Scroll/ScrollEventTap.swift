@@ -17,14 +17,14 @@ final class ScrollEventTap {
         case refused
     }
 
-    private let reversal = ReversalBox()
+    private let options = OptionsBox()
     // Main thread only.
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var runLoop: CFRunLoop?
 
     /// Read on the tap thread for every event, so a change applies to the next scroll.
-    func setReversal(_ value: ScrollReversal) { reversal.value = value }
+    func setOptions(_ value: ScrollOptions) { options.value = value }
 
     func start() throws {
         // macOS can invalidate a tap, for example across an Accessibility revocation and grant.
@@ -34,7 +34,7 @@ final class ScrollEventTap {
             return
         }
         guard HIDEvent.isAvailable else { throw StartFailure.unsupported }
-        let session = TapSession(reversal: reversal)
+        let session = TapSession(options: options)
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .tailAppendEventTap,
@@ -90,11 +90,11 @@ private final class Handoff: @unchecked Sendable {
     var loop: CFRunLoop?
 }
 
-private final class ReversalBox: @unchecked Sendable {
+private final class OptionsBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var stored = ScrollReversal()
+    private var stored = ScrollOptions()
 
-    var value: ScrollReversal {
+    var value: ScrollOptions {
         get { lock.withLock { stored } }
         set { lock.withLock { stored = newValue } }
     }
@@ -102,12 +102,12 @@ private final class ReversalBox: @unchecked Sendable {
 
 /// One installation's state. Touched only on the tap thread after `start()` hands it over.
 private final class TapSession {
-    let reversal: ReversalBox
+    let options: OptionsBox
     var port: CFMachPort?
     private var filter = ScrollFilter()
     private var devices: [UInt64: ScrollDevice?] = [:]
 
-    init(reversal: ReversalBox) { self.reversal = reversal }
+    init(options: OptionsBox) { self.options = options }
 
     func handle(_ type: CGEventType, _ event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -116,14 +116,22 @@ private final class TapSession {
             return
         }
         guard type == .scrollWheel else { return }
-        let reversal = reversal.value
-        guard !reversal.isEmpty else { return }
+        let options = options.value
+        guard !options.isEmpty else { return }
         let hid = HIDEvent(event)
         let phase = ScrollPhase(scroll: event.getIntegerValueField(.scrollWheelEventScrollPhase),
                                 momentum: event.getIntegerValueField(.scrollWheelEventMomentumPhase))
-        let axes = filter.axes(source: hid.map { source(for: $0.senderID) } ?? .software,
-                               phase: phase, reversal: reversal)
-        guard !axes.isEmpty else { return }
+        let source = hid.map { source(for: $0.senderID) } ?? .software
+        let axes = filter.axes(source: source, phase: phase, reversal: options.reversal)
+        let wheelStep = options.wheelStep(
+            source: source, phase: phase,
+            isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0,
+            pointDelta: event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
+        guard !axes.isEmpty || wheelStep != nil else { return }
+        if let wheelStep {
+            // Let Core Graphics derive matching point/fixed deltas from the constant line step.
+            event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: wheelStep)
+        }
         let deltas = ScrollDeltas(
             line: (event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
                    event.getIntegerValueField(.scrollWheelEventDeltaAxis2)),

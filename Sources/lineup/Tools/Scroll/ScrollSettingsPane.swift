@@ -15,8 +15,23 @@ struct ScrollSettingsPane: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: SettingsMetrics.sectionSpacing) {
                     if tool.state == .idle {
-                        SettingsCaption(text: "Nothing is reversed. Choose a device and a direction.",
+                        SettingsCaption(text: "No scroll adjustments are selected.",
                                         systemImage: "info.circle")
+                    }
+                    SettingsSectionView("Mouse wheel", caption: "Applies to vertical scrolling with a physical wheel. Trackpad and Magic Mouse gestures keep their existing behavior.") {
+                        toggle("Constant scrolling", detail: "Remove acceleration so each wheel event moves the same distance.",
+                               isOn: tool.settings.constantWheelScrolling, set: tool.setConstantWheelScrolling)
+                        if tool.settings.constantWheelScrolling {
+                            SettingsRow(title: "Lines per step", detail: "Lower values scroll less. Changes apply immediately.") {
+                                Stepper(value: Binding(get: { tool.settings.wheelLines }, set: tool.setWheelLines),
+                                        in: 1...10) {
+                                    Text("\(tool.settings.wheelLines)")
+                                        .monospacedDigit()
+                                }
+                                .accessibilityLabel("Lines per wheel step")
+                                .disabled(!tool.canEdit)
+                            }
+                        }
                     }
                     SettingsSectionView("Reverse scrolling", caption: directionCaption) {
                         toggle("Mouse", detail: "Scroll wheels and Magic Mouse.",
@@ -56,7 +71,7 @@ struct ScrollSettingsPane: View {
         if let blocked = tool.blockedMessage { return (blocked, nil, nil) }
         switch tool.state {
         case .needsAccessibility:
-            return ("Allow Accessibility for Lineup to reverse scrolling. Until then, scrolling keeps the macOS direction.",
+            return ("Allow Accessibility for Lineup to adjust scrolling. Until then, scrolling keeps the macOS direction.",
                     "Open Accessibility Settings…", { tool.openAccessibilitySettings() })
         case .refused:
             return ("macOS did not let Scroll read scroll events, so scrolling keeps the macOS direction. Check Lineup in Accessibility settings.",
