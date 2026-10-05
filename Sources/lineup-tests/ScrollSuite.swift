@@ -98,6 +98,37 @@ func runScrollTests() throws {
     let noHID = ScrollDeltas(line: (y: 1, x: 0), point: (y: 10, x: 0), fixed: (y: 1, x: 0))
     check(noHID.reversed(.vertical).hid == nil, "an event without HID data gains none")
 
+    // Captured wheel bursts on macOS 27 grew from 1 to 74 points. Every event should
+    // produce the chosen line step, without normalizing gestures or untrusted sources.
+    var wheel = ScrollOptions(wheelLines: 3)
+    for delta: Double in [1, 7, 11, 44, 58, 68, 74, -1, -11, -74] {
+        check(wheel.wheelStep(source: mouse, phase: .init(), isContinuous: false,
+                              pointDelta: delta) == (delta > 0 ? 3 : -3),
+              "constant wheel scrolling removes acceleration while preserving direction")
+    }
+    for source in [trackpad, .unresolved, .software, .device(nil)] {
+        check(wheel.wheelStep(source: source, phase: .init(), isContinuous: false, pointDelta: 44) == nil,
+              "constant scrolling only changes identified mouse wheel events")
+    }
+    for phase in [began, changed, ended, momentum, momentumEnd] {
+        check(wheel.wheelStep(source: mouse, phase: phase, isContinuous: false, pointDelta: 44) == nil,
+              "gestures and momentum keep their original deltas")
+    }
+    check(wheel.wheelStep(source: mouse, phase: .init(), isContinuous: true, pointDelta: 44) == nil,
+          "continuous mouse surfaces keep their precision")
+    for delta: Double in [0, .infinity, -.infinity, .nan] {
+        check(wheel.wheelStep(source: mouse, phase: .init(), isContinuous: false, pointDelta: delta) == nil,
+              "zero or invalid vertical motion never creates a wheel step")
+    }
+    check(!wheel.isEmpty, "constant scrolling works with all direction reversal disabled")
+    wheel.wheelLines = 7
+    check(wheel.wheelStep(source: mouse, phase: .init(), isContinuous: false, pointDelta: -74) == -7,
+          "a speed change applies to the next wheel event")
+    wheel.wheelLines = nil
+    check(wheel.isEmpty && wheel.wheelStep(source: mouse, phase: .init(), isContinuous: false,
+                                          pointDelta: 74) == nil,
+          "disabling constant scrolling with no reversal stops interception")
+
     // Persistence uses the shared store and preserves unknown fields.
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lineup-scroll-\(UUID())")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -110,6 +141,10 @@ func runScrollTests() throws {
         from: Data(#"{"reverseTrackpad":true,"futureOption":"preserve"}"#.utf8))
     check(saved.reverseMouse && saved.reverseTrackpad && saved.reverseVertical && !saved.reverseHorizontal,
           "missing Scroll fields use their defaults")
+    check(!saved.constantWheelScrolling && saved.options.wheelLines == nil,
+          "loading older settings does not silently change mouse speed")
+    saved.constantWheelScrolling = true
+    saved.wheelLines = 5
     saved.reverseHorizontal = true
     try store.setSettings(saved, for: .scroll)
     let reloaded = LineupAppConfigStore(url: url)
@@ -122,4 +157,11 @@ func runScrollTests() throws {
     do { _ = try JSONDecoder().decode(ScrollSettings.self, from: Data(#"{"reverseMouse":"yes"}"#.utf8)) }
     catch { rejected = true }
     check(rejected, "malformed Scroll settings are rejected instead of replaced by defaults")
+    for json in [#"{"wheelLines":0}"#, #"{"wheelLines":11}"#, #"{"wheelLines":2.5}"#,
+                 #"{"wheelLines":"3"}"#, #"{"constantWheelScrolling":"yes"}"#] {
+        var invalid = false
+        do { _ = try JSONDecoder().decode(ScrollSettings.self, from: Data(json.utf8)) }
+        catch { invalid = true }
+        check(invalid, "invalid wheel preferences block loading instead of replacing saved data")
+    }
 }

@@ -6,13 +6,13 @@ import SwiftUI
 /// Reverses mouse and trackpad scrolling independently, on top of the single macOS direction.
 ///
 /// Off by default: a silent update must never change how the user's scrolling behaves. The tap is
-/// installed only while the tool runs with something to reverse and Accessibility is granted;
+/// installed only while the tool runs with a scroll adjustment and Accessibility is granted;
 /// every other state leaves scrolling exactly as macOS delivers it.
 @MainActor
 final class ScrollTool: Tool, ObservableObject {
     enum State: Equatable {
         case off
-        /// Running with no device or direction selected, so nothing is intercepted.
+        /// Running with no scroll adjustment selected, so nothing is intercepted.
         case idle
         case active
         case needsAccessibility
@@ -24,7 +24,7 @@ final class ScrollTool: Tool, ObservableObject {
 
     let id = ToolID.scroll
     var displayName: String { id.displayName }
-    let summary = "Reverse mouse and trackpad scrolling separately."
+    let summary = "Adjust mouse wheel speed and reverse scrolling per device."
     let iconSymbol = "arrow.up.arrow.down"
     let requiredPermissions: Set<Permission> = [.accessibility]
     let defaultEnabled = false
@@ -99,12 +99,12 @@ final class ScrollTool: Tool, ObservableObject {
     func reconcile() {
         let natural = UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") as? Bool ?? true
         if natural != systemUsesNaturalScrolling { systemUsesNaturalScrolling = natural }
-        let reversal = sectionUnreadable ? ScrollReversal() : settings.reversal
-        tap.setReversal(reversal)
+        let options = sectionUnreadable ? ScrollOptions() : settings.options
+        tap.setOptions(options)
         let next: State
         if !isRunning {
             next = .off
-        } else if reversal.isEmpty {
+        } else if options.isEmpty {
             next = .idle
         } else if services?.permissions.isAccessibilityTrusted != true {
             next = .needsAccessibility
@@ -139,6 +139,8 @@ final class ScrollTool: Tool, ObservableObject {
 
     // MARK: - Settings
 
+    func setConstantWheelScrolling(_ on: Bool) { save { $0.constantWheelScrolling = on } }
+    func setWheelLines(_ lines: Int) { save { $0.wheelLines = min(10, max(1, lines)) } }
     func setReverseMouse(_ on: Bool) { save { $0.reverseMouse = on } }
     func setReverseTrackpad(_ on: Bool) { save { $0.reverseTrackpad = on } }
     func setReverseVertical(_ on: Bool) { save { $0.reverseVertical = on } }

@@ -657,7 +657,7 @@ The full release sequence is therefore: `build-app.sh` → `notarize.sh` (app) �
 ## Scroll event tap
 
 Scroll installs one active session event tap for scroll-wheel events only, appended after other
-session taps, and only while the tool runs with a device and direction selected and Accessibility
+session taps, and only while the tool runs with reversal or constant wheel scrolling selected and Accessibility
 is granted. The tap's run-loop source lives on a dedicated thread: every scroll on the Mac waits
 for an active tap, so the main thread must not delay it. The callback always returns the original
 event, modified in place; it never posts events. When macOS disables the tap for a timeout, the
@@ -679,6 +679,18 @@ events has an unresolved sender.
 Reversal negates the line, fixed-point and point deltas and the HID event's scroll values, which
 WebKit reads. The line delta is written first because Core Graphics recomputes the other two from
 it. Accelerated and raw delta fields are left untouched, as in other scroll utilities.
+
+Optional constant wheel scrolling uses `ScrollOptions.wheelStep` to accept only identified mouse
+input with no continuous flag, scroll phase or momentum phase. The sign of the vertical point
+delta selects a fixed line step, clamped to 1–10. Writing that line delta lets Core Graphics derive
+its corresponding point and fixed deltas before the existing reversal runs. Raw HID deltas remain
+raw, apart from direction reversal. Horizontal motion is not normalized. The same options snapshot
+controls tap lifetime, so constant scrolling works with every reversal switch off. Old settings
+default the option off; invalid line counts block section loading.
+
+For this option, compare slow and fast wheel bursts with reversal on and off, adjust Lines per
+step while scrolling, then turn Constant scrolling off. Test native and browser content. Check
+that horizontal wheel motion, Magic Mouse, trackpad gestures and inertia retain their behavior.
 
 Accessibility grants and revocations are observed through the `com.apple.accessibility.api`
 notification, rechecked a second later, and on activation and wake. While access is missing, a

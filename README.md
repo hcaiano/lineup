@@ -265,7 +265,7 @@ This tool uses a private macOS 27 interface. If macOS no longer offers it, the a
 nothing hides, and Settings says so. Menu Bar is unavailable on other macOS versions; the other
 tools still support macOS 13+.
 
-## Reverse scrolling
+## Scroll direction and mouse wheel speed
 
 macOS has one scroll direction for every device. Enable **Scroll** in Settings to reverse the
 mouse, the trackpad or both, on top of that direction. By default it reverses vertical mouse
@@ -279,11 +279,17 @@ granted, scrolling keeps the macOS direction and the other tools keep working.
 
 Each scroll is matched to the mouse or trackpad that produced it, so alternating devices, sleep,
 and connecting a device need no action. Magic Mouse counts as a mouse. Speed and inertia are
-preserved. Zoom, rotation, Mission Control and swipes between spaces are gestures, not scrolling,
+preserved unless Constant scrolling is enabled for a physical wheel. Zoom, rotation, Mission Control and swipes between spaces are gestures, not scrolling,
 and are unchanged. Apps that turn horizontal scrolling into page navigation, such as Safari, follow
 the reversed horizontal direction; horizontal reversal is off by default. Scrolling posted by
 other apps, such as remote-control or mouse utilities, and devices that are neither a mouse nor a
 trackpad keep the macOS direction.
+
+Enable **Constant scrolling** under **Mouse wheel** to remove vertical wheel acceleration.
+**Lines per step** adjusts the distance from 1 to 10 lines, with 3 as the starting value. You can
+use this without reversing either device. The option starts off, applies immediately, and leaves
+horizontal scrolling, trackpad and Magic Mouse gestures unchanged. It does not add smoothing or
+fix delays caused by a wireless connection or an unresponsive app.
 
 ## Update tracks
 
