@@ -2450,11 +2450,12 @@ private func runVisualDesignTests() throws {
         check(text.contains("HUDMotion.duration(HUDMotion.fadeIn)")
                 && text.contains("HUDMotion.duration(HUDMotion.fadeOut)"),
               "\(path) takes both fades from HUDMotion")
-        check(text.contains("glass.appearance = NSAppearance(named: .darkAqua)"),
-              "\(path) pins its glass dark, because its labels are hard white")
-        check(text.contains("NSAppearance(named: .vibrantDark)"),
-              "\(path)'s pre-26 fallback keeps forcing a dark vibrancy, for the same reason")
     }
+    let cycleHUD = source("Sources/lineup/Tools/Cycler/CycleHUD.swift")
+    check(cycleHUD.contains("glass.appearance = NSAppearance(named: .darkAqua)"),
+          "Cycler pins its glass dark because its labels are hard white")
+    check(cycleHUD.contains("NSAppearance(named: .vibrantDark)"),
+          "Cycler's pre-26 fallback keeps a dark vibrancy for its white labels")
 
     // ---- 4. One rhythm for every pane ----
     let metrics = source("Sources/lineup/Settings/Components/SettingsSection.swift")

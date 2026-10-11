@@ -35,6 +35,8 @@ final class HyperkeyTool: Tool {
     private(set) var sectionLoadError: String?
 
     private let controller = HyperKeyController()
+    private var secureInputDiagnostic: SecureInputDiagnostic?
+    private var blockedAttempts: HyperkeyBlockedAttemptObserver?
     private var log = Logger(subsystem: Product.logSubsystem, category: "hyperkey-tool")
     /// Handed over at REGISTRATION and kept for the whole process lifetime, `stop()` included: the
     /// pane is rendered even when the tool is off, and picking a trigger before turning Hyperkey on
@@ -65,6 +67,7 @@ final class HyperkeyTool: Tool {
         controller.useKeyboardMappings(services.keyboardMappings)
         mappingObserver = services.keyboardMappings.observe { [weak self] in
             guard let self else { return }
+            self.blockedAttempts?.reconcile()
             self.refreshRecoveryState(force: true)
             self.paneModel.refresh()
             self.services?.refreshMenu()
@@ -93,6 +96,19 @@ final class HyperkeyTool: Tool {
         guard !isRunning else { return }
         self.services = services
         isTerminating = false
+        blockedAttempts = HyperkeyBlockedAttemptObserver(
+            hotkeys: services.hotkeys,
+            snapshot: { [weak self] in
+                guard let self else {
+                    return .init(isRunning: false, isBlocked: false, trigger: .capsLock,
+                                 keyCode: 79, capsMappingReady: false)
+                }
+                return self.blockedAttemptSnapshot
+            },
+            onAttempt: { [weak self] in self?.showBlockedAttempt() },
+            onFailure: { [weak self] failure in
+                self?.log.error("Hyperkey blocked-attempt shortcut unavailable: \(failure.displayReason, privacy: .public)")
+            })
 
         // Before the first apply(): a Caps Lock remap left by a previous standalone-Cycler install
         // must become ours, or we would use it and never clean it up (plan §5.2).
@@ -103,11 +119,14 @@ final class HyperkeyTool: Tool {
         controller.onStateChange = { [weak self] state in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.blockedAttempts?.reconcile()
                 if case .blocked(let message) = state {
                     self.log.error("Hyper Key blocked: \(message, privacy: .public)")
-                    HyperKeyBlockedPill.shared.show(message: message)
+                    self.refreshSecureInputDiagnostic()
+                    HyperKeyBlockedPill.shared.show(message: message, diagnostic: self.secureInputDiagnostic)
                 } else {
-                    HyperKeyBlockedPill.shared.hide()
+                    self.secureInputDiagnostic = nil
+                    HyperKeyBlockedPill.shared.endEpisode()
                 }
                 self.refreshRecoveryState()
                 self.services?.refreshMenu()
@@ -122,8 +141,10 @@ final class HyperkeyTool: Tool {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.isTerminating = true
+                self.blockedAttempts?.stop()
                 self.controller.stop()
-                HyperKeyBlockedPill.shared.hide()
+                self.secureInputDiagnostic = nil
+                HyperKeyBlockedPill.shared.endEpisode()
             }
         }
 
@@ -133,6 +154,7 @@ final class HyperkeyTool: Tool {
         // Coming back from System Settings is when a fresh Input Monitoring grant becomes visible
         // — and when a just-quit standalone Cycler stops blocking us.
         observe(NotificationCenter.default, NSApplication.didBecomeActiveNotification)
+        observe(NSWorkspace.shared.notificationCenter, NSWorkspace.didActivateApplicationNotification)
 
         isRunning = true
         // The tool flag is authoritative and it is now true; mirror it into the blob.
@@ -145,11 +167,14 @@ final class HyperkeyTool: Tool {
     func stop() {
         guard isRunning else { return }
         isRunning = false
+        blockedAttempts?.stop()
+        blockedAttempts = nil
         // Disables the tap, removes the run-loop source, invalidates the Secure Input timer and
         // removes only Hyperkey’s contribution through the shared mapping service.
         controller.stop()
         controller.onStateChange = nil
-        HyperKeyBlockedPill.shared.hide()
+        secureInputDiagnostic = nil
+        HyperKeyBlockedPill.shared.endEpisode()
         services?.termination.removeCleanup(.hyperkey)
         for entry in observers { entry.center.removeObserver(entry.token) }
         observers.removeAll()
@@ -161,11 +186,24 @@ final class HyperkeyTool: Tool {
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name) {
         let didWake = name == NSWorkspace.didWakeNotification || name == NSWorkspace.screensDidWakeNotification
+        let appActivated = name == NSWorkspace.didActivateApplicationNotification
         let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isRunning else { return }
+                guard !appActivated || self.controller.isBlockedBySecureInput else { return }
                 // Share the cached recovery state across frequent app activations.
                 self.refreshRecoveryState()
+                if appActivated {
+                    self.blockedAttempts?.reconcile()
+                    self.refreshSecureInputDiagnostic()
+                    if case .blocked(let message) = self.controller.state {
+                        HyperKeyBlockedPill.shared.show(message: message, diagnostic: self.secureInputDiagnostic)
+                    }
+                    self.services?.refreshMenu()
+                    self.services?.refreshSettings()
+                    self.paneModel.refresh()
+                    return
+                }
                 if didWake {
                     // Sleep can eat the trigger's key-up, leaving our synthetic ⌃⌥⇧⌘ latched for
                     // the rest of the session, and it can disable the tap and drop the mapping —
@@ -197,6 +235,29 @@ final class HyperkeyTool: Tool {
         // application; wake and settings changes still force reconciliation.
         guard force || !controller.isSettled(for: effective) else { return }
         controller.apply(effective)
+        blockedAttempts?.reconcile()
+    }
+
+    private var blockedAttemptSnapshot: HyperkeyBlockedAttemptObserver.Snapshot {
+        let isBlocked: Bool
+        if case .blocked = controller.state { isBlocked = true } else { isBlocked = false }
+        return .init(isRunning: isRunning && !isTerminating, isBlocked: isBlocked,
+                     trigger: settings.triggerKey, keyCode: controller.currentTriggerKeyCode,
+                     capsMappingReady: services?.keyboardMappings.hyperkeyReady == true)
+    }
+
+    private func showBlockedAttempt() {
+        guard blockedAttemptSnapshot.eligibleKey != nil,
+              case .blocked(let message) = controller.state else { return }
+        refreshSecureInputDiagnostic()
+        HyperKeyBlockedPill.shared.showAfterAttempt(message: message, diagnostic: secureInputDiagnostic)
+        services?.refreshMenu()
+        services?.refreshSettings()
+        paneModel.refresh()
+    }
+
+    func hotkeysFailedToRestore(_ failures: [HotkeyRestoreFailure]) {
+        blockedAttempts?.hotkeysFailedToRestore(failures)
     }
 
     /// Start/stop path only. Writing `config.json` on every launch just to restate a flag nothing
@@ -338,7 +399,21 @@ final class HyperkeyTool: Tool {
         apply(force: true)
     }
 
-    var statusText: String? { controller.settingsStatus }
+    private func refreshSecureInputDiagnostic() {
+        let diagnostic = controller.isBlockedBySecureInput ? SecureInputDiagnostics.sample() : nil
+        guard diagnostic != secureInputDiagnostic else { return }
+        secureInputDiagnostic = diagnostic
+        if let diagnostic {
+            log.info("Secure Input app hint: \(diagnostic.attribution, privacy: .public)")
+        }
+    }
+
+    var statusText: String? {
+        if controller.isBlockedBySecureInput {
+            return "Blocked: Secure Input is active. \((secureInputDiagnostic ?? SecureInputDiagnostic()).detail)"
+        }
+        return controller.settingsStatus
+    }
     var needsInputMonitoring: Bool { controller.needsInputMonitoring }
     var permissions: PermissionCenter? { services?.permissions ?? PermissionCenter.shared }
 
@@ -390,7 +465,10 @@ final class HyperkeyTool: Tool {
             let needsIM = controller.needsInputMonitoring
             out.append(ToolWarning(
                 id: needsIM ? "hyperkey.inputMonitoring" : "hyperkey.blocked",
-                text: status,
+                text: controller.isBlockedBySecureInput ? "⚠︎ Hyperkey blocked: Secure Input is active" : status,
+                detailLines: controller.isBlockedBySecureInput
+                    ? [(secureInputDiagnostic ?? SecureInputDiagnostic()).attribution,
+                       (secureInputDiagnostic ?? SecureInputDiagnostic()).recovery] : [],
                 actionTitle: needsIM ? "Grant Input Monitoring…" : nil,
                 action: needsIM ? { [weak self] in
                     self?.permissions?.openInputMonitoringSettings()

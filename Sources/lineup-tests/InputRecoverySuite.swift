@@ -1,6 +1,5 @@
 import Foundation
 
-/// Opt-in native checks compile the real app owners; the default suite stays permission-free.
 func runInputRecoveryTests() throws {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     let temporary = FileManager.default.temporaryDirectory
@@ -8,11 +7,12 @@ func runInputRecoveryTests() throws {
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
 
-    func run(_ executable: URL, _ arguments: [String]) throws -> (Int32, String) {
+    func run(_ executable: URL, _ arguments: [String], environment: [String: String] = [:]) throws -> (Int32, String) {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
         process.currentDirectoryURL = root
+        process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
         let output = Pipe()
         process.standardOutput = output
         process.standardError = output
@@ -45,17 +45,41 @@ func runInputRecoveryTests() throws {
         "Sources/lineup/App/SingleInstance.swift",
         "Sources/lineup/Tools/Hyperkey/CapsLockHandoff.swift",
     ]
-    for name in ["KeyboardMappingInventoryProbe", "HyperkeyRuntimeProbe"] {
+    let permissionFree = CommandLine.arguments.contains("--permission-free")
+    let names = permissionFree ? ["HyperkeySecureInputProbe", "HyperkeyBlockedWarningProbe", "HyperkeyBlockedAttemptProbe"]
+        : ["HyperkeySecureInputProbe", "HyperkeyBlockedWarningProbe", "HyperkeyBlockedAttemptProbe", "KeyboardMappingInventoryProbe", "HyperkeyRuntimeProbe"]
+    for name in names {
+        let probeOwners: [String]
+        switch name {
+        case "HyperkeySecureInputProbe": probeOwners = [owners[0]]
+        case "HyperkeyBlockedWarningProbe":
+            probeOwners = ["Sources/lineup/Tools/Hyperkey/HyperKeyBlockedPill.swift",
+                           "Sources/lineup/Tools/Hyperkey/SecureInputDiagnostics.swift",
+                           "Sources/lineup/App/HUDMotion.swift"]
+        case "HyperkeyBlockedAttemptProbe":
+            probeOwners = ["Sources/lineup/Tools/Hyperkey/HyperkeyTool.swift",
+                           "Sources/lineup/Tools/Hyperkey/HyperkeyBlockedAttemptObserver.swift",
+                           "Sources/lineup/Tools/Hyperkey/HyperKeyBlockedPill.swift",
+                           "Sources/lineup/App/HotkeyManager.swift",
+                           "Sources/lineup/App/ShortcutKit.swift",
+                           "Sources/lineup/App/Tool.swift",
+                           "Sources/lineup/App/HUDMotion.swift"]
+        default: probeOwners = owners
+        }
         let executable = temporary.appendingPathComponent(name)
         let (compileStatus, compileOutput) = try run(xcrun,
-            ["swiftc", "-I", modules.path] + owners + ["Scripts/Tests/\(name).swift"]
+            ["swiftc", "-I", modules.path] + probeOwners + ["Scripts/Tests/\(name).swift"]
                 + objects + ["-o", executable.path])
         guard compileStatus == 0 else {
             check(false, "compile \(name): \(compileOutput)")
             continue
         }
-        let (status, output) = try run(executable, [])
-        print(output, terminator: "")
-        check(status == 0, "\(name) exercises production input recovery")
+        let appearances = name == "HyperkeyBlockedWarningProbe" ? ["light", "dark"] : [""]
+        for appearance in appearances {
+            let environment = appearance.isEmpty ? [:] : ["LINEUP_WARNING_APPEARANCE": appearance]
+            let (status, output) = try run(executable, [], environment: environment)
+            print(output, terminator: "")
+            check(status == 0, "\(name) exercises production input recovery \(appearance)")
+        }
     }
 }
