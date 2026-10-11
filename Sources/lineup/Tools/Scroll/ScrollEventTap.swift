@@ -121,7 +121,7 @@ private final class TapSession {
         let hid = HIDEvent(event)
         let phase = ScrollPhase(scroll: event.getIntegerValueField(.scrollWheelEventScrollPhase),
                                 momentum: event.getIntegerValueField(.scrollWheelEventMomentumPhase))
-        let source = hid.map { source(for: $0.senderID) } ?? .software
+        let source: ScrollSource = hid.map { self.source(for: $0.senderID) } ?? .software
         let axes = filter.axes(source: source, phase: phase, reversal: options.reversal)
         let wheelStep = options.wheelStep(
             source: source, phase: phase,
