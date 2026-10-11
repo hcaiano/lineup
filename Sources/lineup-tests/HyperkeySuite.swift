@@ -13,6 +13,7 @@ import HyperkeyCore
 // hidutil paths themselves need Input Monitoring and a signed bundle, so they are manual QA.
 
 func runHyperkeyTests() throws {
+    runHyperkeyWarningTests()
     try runHyperkeyModelTests()
     try runCapsLockMappingTests()
     try runHyperkeyToolSectionTests()

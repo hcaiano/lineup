@@ -123,6 +123,23 @@ emergency Escape shortcut cannot be registered. Wake and reconnection detect cap
 The optional black cover does not change gamma, display power or arrangement. Gradual software
 dimming, resolution changes, HDR and virtual-display controls are outside this tool's current scope.
 
+## Hyperkey
+
+Secure Input temporarily pauses Hyperkey shortcuts. If Caps Lock is already remapped for
+Hyperkey, that remap stays in place during the pause so the key cannot turn on native Caps Lock.
+Shortcuts resume automatically when Secure Input ends. Disabling Hyperkey, quitting Lineup or
+choosing a different trigger releases Lineup's Caps Lock remap.
+
+A blocked Hyperkey shows a click-through notice at the top right of the selected display for
+four seconds, following the system's light or dark appearance. A new attempt with a mapped Caps
+Lock or function-key trigger shows it again. Repeated attempts while it is visible do not extend
+its deadline. The reminder needs an available global shortcut; modifier-only triggers cannot
+show it during Secure Input. The menu warning and
+Hyperkey Settings retain the status and recovery instructions. For Secure Input, a possible app
+name is a hint, not confirmed attribution; an unavailable hint says "App unknown." Leave password
+fields first. If the pause persists, quit and reopen the suspected app or the app holding Secure
+Input. Hyperkey resumes automatically.
+
 ## Keyboard Remap
 
 Keyboard Remap is an optional tool, off by default. Settings lets users select the built-in

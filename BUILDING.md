@@ -26,6 +26,22 @@ swift build
 swift run lineup-tests              # dependency-free test suite (no Xcode/XCTest needed)
 ```
 
+For the permission-free Secure Input regression, run
+`swift run lineup-tests --input-recovery --permission-free`. It compiles the production Hyperkey
+controller with simulated platform operations and exercises the production mapping planner.
+The probe checks remap retention, asynchronous delivery and explicit cleanup without accessing
+keyboard input or changing live maps.
+
+This mode also compiles the shipping blocked-notice panel, `HUDMotion` and Secure Input diagnosis
+adapter into an isolated native probe. It briefly shows a nonactivating, click-through notice
+without launching Lineup or loading config. A controlled clock checks the four-second deadline,
+continuous blocked episodes, explicit attempts after dismissal, recovery, stale callbacks and stop.
+Light and dark captures use the isolated process's appearance without changing system settings.
+Simulated registry and app reads
+check candidate resolution and the before/after Secure Input guards. Set
+`LINEUP_WARNING_CAPTURE_DIR` to an existing directory outside the checkout to save permission-free
+view captures. These probes do not establish hardware Secure Input attribution or input recovery.
+
 For native input recovery checks, run `swift run lineup-tests --input-recovery`. This opt-in mode
 compiles the production Hyperkey controller and keyboard mapping service into test processes.
 It requires an existing Input Monitoring grant and at least two keyboard HID services. It never
@@ -316,7 +332,34 @@ continuous session.
 ### Keyboard maps and recovery
 
 `KeyboardMappingService` owns every `UserKeyMapping` write. Hyperkey contributes Caps Lock to
-F18 only while its Caps Lock trigger is available. Keyboard Remap contributes physical HID
+F18 while its Caps Lock trigger is available. A temporary Secure Input block retains an existing
+or pending contribution while removing the event tap. Every tap start rechecks Secure Input,
+including starts reached through mapping observers or completion callbacks. Explicit disable,
+shutdown or a switch away from the Caps Lock trigger releases the contribution.
+
+`HyperKeyBlockedPill` auto-dismisses after four seconds and retains its blocked episode until
+recovery or shutdown. `showAfterAttempt` starts a new deadline after dismissal; ordinary state
+updates and repeated attempts during an active deadline do not extend it. Semantic label colors
+and inherited glass or blur appearance support light and dark mode. It uses `HUDMotion` for Reduce Motion and
+clamps its top-right frame to the selected screen's `visibleFrame`, with a maximum width of 340.
+`HyperkeyTool` caches a `SecureInputDiagnostic` on a blocked transition and refreshes it on workspace
+app activation. Menu warnings and Settings keep the full recovery advice after the notice hides.
+While blocked, `HyperkeyBlockedAttemptObserver` temporarily registers the effective function key
+through the existing tool-scoped Carbon hotkey service. Caps Lock is eligible only while the
+shared mapping service confirms its contribution is ready. Recovery, trigger changes, mapping
+loss, disable and shutdown unregister the token. A conflict leaves the menu and Settings status
+available and logs the registration failure; shortcut recording suspends the registration.
+Modifier-only triggers have no Carbon key equivalent. Permission-free attempt probes exercise
+the shipping tool, helper, hotkey service and panel with simulated controller, mapping and Carbon
+operations; they do not establish delivery of physical keys during Secure Input.
+`SecureInputDiagnostics` reads the IORegistry root's `IOConsoleUsers` without subprocesses and
+releases its root handle. It accepts only one on-console session for `getuid()` with a positive
+Int32 `kCGSSessionSecureInputPID`, resolves the running app's localized name and requires
+`IsSecureEventInputEnabled()` before and after sampling. Missing or ambiguous data stays unknown.
+The PID is only a heuristic and can identify a different app, as documented in
+[OpenRadar 48953777](https://github.com/lionheart/openradar-mirror/issues/21098).
+
+Keyboard Remap contributes physical HID
 pairs selected by a built-in flag or an external hardware fingerprint. Product names are labels;
 external selection uses vendor/product IDs, transport and a serial number or location. Ambiguous
 matches block the selected rule instead of applying it to several services.

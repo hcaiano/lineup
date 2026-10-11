@@ -1,24 +1,26 @@
 import AppKit
+import HyperkeyCore
 
-/// Persistent, non-activating status pill shown while Hyper Key cannot receive keyboard events.
-/// It stays visible across Spaces and disappears as soon as HyperKeyController recovers.
-///
-/// Copied from standalone Cycler; the user-facing detail lines are retargeted to Lineup and one
-/// case is new (standalone Cycler.app still running). Deliberately NOT an activation-policy
-/// client — it is an ambient overlay, like the cycle HUD and the layout editor.
 @MainActor
 final class HyperKeyBlockedPill {
     static let shared = HyperKeyBlockedPill()
 
     private let panel: NSPanel
-    private let messageLabel = NSTextField(labelWithString: "")
-    private let width: CGFloat = 620
-    private let height: CGFloat = 44
-    private var generation = 0
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let hintLabel = NSTextField(labelWithString: "")
+    private enum Episode: Equatable {
+        case ready
+        case notified(UUID)
+    }
+    private var episode = Episode.ready
+    private var animationGeneration = UUID()
+    private var cancelAutoDismissal: (() -> Void)?
+    private let scheduleDismissal: @MainActor (TimeInterval, @escaping () -> Void) -> () -> Void
 
-    private init() {
+    init(scheduleDismissal: @escaping @MainActor (TimeInterval, @escaping () -> Void) -> () -> Void = HyperKeyBlockedPill.schedule) {
+        self.scheduleDismissal = scheduleDismissal
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 64),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false)
@@ -34,127 +36,154 @@ final class HyperKeyBlockedPill {
         panel.contentView = buildContainer()
     }
 
-    func show(message: String) {
-        generation += 1
-        messageLabel.attributedStringValue = Self.message(Self.displayDetail(for: message))
-        position()
-        if !panel.isVisible {
-            panel.alphaValue = 0
-            panel.orderFrontRegardless()
+    func show(message: String, diagnostic: SecureInputDiagnostic? = nil) {
+        titleLabel.stringValue = diagnostic == nil ? "Hyperkey unavailable" : "Hyperkey paused by Secure Input"
+        hintLabel.stringValue = diagnostic?.notice ?? Self.displayDetail(for: message)
+        guard episode == .ready else {
+            if panel.isVisible { position() }
+            return
         }
+        let id = UUID()
+        episode = .notified(id)
+        animationGeneration = UUID()
+        position()
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = HUDMotion.duration(HUDMotion.fadeIn)
             panel.animator().alphaValue = 1
         }
+        cancelAutoDismissal = scheduleDismissal(4) { [weak self] in
+            guard let self, self.episode == .notified(id) else { return }
+            self.cancelAutoDismissal = nil
+            self.dismiss()
+        }
     }
 
-    func hide() {
+    func endEpisode() {
+        episode = .ready
+        cancelAutoDismissal?()
+        cancelAutoDismissal = nil
+        dismiss()
+    }
+
+    func showAfterAttempt(message: String, diagnostic: SecureInputDiagnostic? = nil) {
+        if cancelAutoDismissal == nil { endEpisode() }
+        show(message: message, diagnostic: diagnostic)
+    }
+
+    private func dismiss() {
+        animationGeneration = UUID()
+        let generation = animationGeneration
         guard panel.isVisible else { return }
-        generation += 1
-        let hiddenGeneration = generation
         NSAnimationContext.runAnimationGroup { context in
             context.duration = HUDMotion.duration(HUDMotion.fadeOut)
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.generation == hiddenGeneration else { return }
+                guard let self, self.animationGeneration == generation else { return }
                 self.panel.orderOut(nil)
             }
         }
     }
 
+    private static func schedule(_ delay: TimeInterval, _ action: @escaping () -> Void) -> () -> Void {
+        let timer = Timer(timeInterval: delay, repeats: false) { _ in
+            MainActor.assumeIsolated { action() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return { timer.invalidate() }
+    }
+
+    static func frame(in visible: NSRect, height: CGFloat) -> NSRect {
+        let inset = min(16, max(0, min(visible.width, visible.height) / 4))
+        let width = min(340, max(0, visible.width - inset * 2))
+        let height = min(height, max(0, visible.height - inset * 2))
+        return NSRect(x: visible.maxX - inset - width, y: visible.maxY - inset - height,
+                      width: width, height: height)
+    }
+
     private func position() {
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
-        let origin = NSPoint(
-            x: round(visible.midX - width / 2),
-            y: round(visible.minY + 28))
-        panel.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
+        let width = Self.frame(in: visible, height: 0).width
+        let textWidth = max(1, width - 59)
+        for label in [titleLabel, hintLabel] { label.preferredMaxLayoutWidth = textWidth }
+        func height(of label: NSTextField) -> CGFloat {
+            ceil(label.attributedStringValue.boundingRect(
+                with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]).height)
+        }
+        let height = height(of: titleLabel) + height(of: hintLabel) + 28
+        panel.setFrame(Self.frame(in: visible, height: height), display: true)
+        panel.contentView?.layoutSubtreeIfNeeded()
     }
 
     private func buildContainer() -> NSView {
         let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-        // A warning glyph is orange everywhere in Lineup; the tool hue belongs to its artwork.
+        icon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")
         icon.contentTintColor = .systemOrange
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.translatesAutoresizingMaskIntoConstraints = false
 
-        messageLabel.lineBreakMode = .byTruncatingTail
-        messageLabel.maximumNumberOfLines = 1
-        messageLabel.cell?.usesSingleLineMode = true
-        messageLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let row = NSStackView(views: [icon, messageLabel])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 9
-        row.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        hintLabel.font = .systemFont(ofSize: 12)
+        hintLabel.textColor = .secondaryLabelColor
+        for label in [titleLabel, hintLabel] {
+            label.lineBreakMode = .byWordWrapping
+            label.maximumNumberOfLines = 0
+            label.cell?.wraps = true
+            label.cell?.usesSingleLineMode = false
+            label.cell?.isScrollable = false
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            label.translatesAutoresizingMaskIntoConstraints = false
+        }
 
         let content = NSView()
         content.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(row)
+        for view in [icon, titleLabel, hintLabel] { content.addSubview(view) }
         NSLayoutConstraint.activate([
-            content.widthAnchor.constraint(equalToConstant: width),
-            content.heightAnchor.constraint(equalToConstant: height),
             icon.widthAnchor.constraint(equalToConstant: 17),
             icon.heightAnchor.constraint(equalToConstant: 17),
-            row.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            row.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            row.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            icon.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            icon.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            titleLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
+            hintLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            hintLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            hintLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            hintLabel.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
         ])
 
+        let container: NSView
         if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
             glass.style = .regular
-            glass.cornerRadius = height / 2
-            glass.tintColor = NSColor(white: 0, alpha: 0.48)
+            glass.cornerRadius = 16
             glass.contentView = content
-            // The pill's text is hard white, so its surface is pinned dark rather than left to
-            // follow the desktop — the same reason the pre-26 fallback below forces .vibrantDark.
-            glass.appearance = NSAppearance(named: .darkAqua)
-            glass.translatesAutoresizingMaskIntoConstraints = false
-            return glass
+            container = glass
+        } else {
+            let blur = NSVisualEffectView()
+            blur.material = .hudWindow
+            blur.blendingMode = .behindWindow
+            blur.state = .active
+            blur.wantsLayer = true
+            blur.layer?.cornerRadius = 16
+            blur.layer?.masksToBounds = true
+            blur.addSubview(content)
+            container = blur
         }
-
-        let blur = NSVisualEffectView()
-        blur.material = .hudWindow
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.appearance = NSAppearance(named: .vibrantDark)
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = height / 2
-        blur.layer?.masksToBounds = true
-        blur.translatesAutoresizingMaskIntoConstraints = false
-        blur.addSubview(content)
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
-            content.topAnchor.constraint(equalTo: blur.topAnchor),
-            content.bottomAnchor.constraint(equalTo: blur.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            content.topAnchor.constraint(equalTo: container.topAnchor),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
-        return blur
-    }
-
-    private static func message(_ detail: String) -> NSAttributedString {
-        let result = NSMutableAttributedString(
-            string: "Hyperkey unavailable",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.white,
-            ])
-        result.append(NSAttributedString(
-            string: "  ·  \(detail)",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .regular),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.7),
-            ]))
-        return result
+        return container
     }
 
     private static func displayDetail(for message: String) -> String {
-        if message.contains("Secure Input") {
-            return "Secure Input is active. Quit and reopen your password app."
-        }
         if message.contains("Input Monitoring") {
             return "Allow Lineup in System Settings → Input Monitoring."
         }

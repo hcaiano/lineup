@@ -22,7 +22,7 @@ final class HyperKeyController {
     private static let capsLockKeyCode = 57
     private static let inputMonitoringBlockedMessage = "Input Monitoring permission required"
     private static let secureInputBlockedMessage =
-        "Secure Input is active; if this persists, quit and reopen your password app. Hyper Key will retry automatically"
+        "Secure Input is active. Leave password fields first. If it persists, quit and reopen the app holding Secure Input. Hyperkey resumes automatically."
     /// Set on the standalone Cycler.app guard (see `HyperkeyTool.apply()`); its own tap and its
     /// own Caps Lock remap would fight ours.
     static let standaloneCyclerBlockedMessage = "Cycler is running. Quit it to use Hyperkey here"
@@ -87,6 +87,8 @@ final class HyperKeyController {
     private var appliedSettings = HyperKeySettings.disabled
     private var inputStateTimer: Timer?
 
+    var currentTriggerKeyCode: Int { Int(Self.watchKeyCode(for: appliedSettings.triggerKey)) }
+
     func useKeyboardMappings(_ service: KeyboardMappingService) {
         if let mappingObserver { keyboardMappings.removeObserver(mappingObserver) }
         keyboardMappings = service
@@ -130,6 +132,10 @@ final class HyperKeyController {
         state == .blocked(Self.inputMonitoringBlockedMessage)
     }
 
+    var isBlockedBySecureInput: Bool {
+        state == .blocked(Self.secureInputBlockedMessage)
+    }
+
     /// True when the tap is already live for exactly these settings and the Caps Lock remap (if
     /// this trigger needs one) is already applied. The activation path skips redundant work;
     /// wake and settings changes always reconcile the shared service.
@@ -160,7 +166,11 @@ final class HyperKeyController {
         let secureInputActive = IsSecureEventInputEnabled()
 
         guard !secureInputActive else {
-            stopAndClearMapping(settingState: .blocked(Self.secureInputBlockedMessage))
+            if settings.triggerKey.needsCapsLockRemap {
+                stop(invalidatingPending: false, settingState: .blocked(Self.secureInputBlockedMessage), releaseMapping: false)
+            } else {
+                stopAndClearMapping(settingState: .blocked(Self.secureInputBlockedMessage))
+            }
             return
         }
 
@@ -266,6 +276,10 @@ final class HyperKeyController {
     }
 
     private func startTap(trigger: TriggerKey) -> StartResult {
+        guard !IsSecureEventInputEnabled() else {
+            stop(invalidatingPending: false, settingState: .blocked(Self.secureInputBlockedMessage), releaseMapping: false)
+            return .blocked(Self.secureInputBlockedMessage)
+        }
         if let tap, !CFMachPortIsValid(tap) {
             // Keep the confirmed keyboard mapping while replacing only the invalid event tap.
             stopTap()
@@ -381,8 +395,8 @@ final class HyperKeyController {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             triggerDown = false
             releaseSyntheticModifiers()
-            if let tap {
-                CGEvent.tapEnable(tap: tap, enable: true)
+            if let activeTrigger {
+                finishStart(startTap(trigger: activeTrigger))
             }
             return Unmanaged.passUnretained(event)
         }
