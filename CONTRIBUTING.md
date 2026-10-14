@@ -94,7 +94,7 @@ evidence is present when applicable.
 
 - Every change to `main` goes through a pull request.
 - Passing checks do not authorize a merge.
-- Henrique (`@hcaiano`) is the required reviewer and the only person who merges pull requests.
+- Henrique (`@hcaiano`) is the required reviewer. Only he, or his agents through `land-it` after their review passes, merge pull requests.
 - New commits after approval require a new review.
 - Resolve every review conversation before merge.
 - Opening a pull request does not guarantee review or merge.
