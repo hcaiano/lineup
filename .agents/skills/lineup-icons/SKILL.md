@@ -56,8 +56,8 @@ It produces 72/144/216 px sRGB PNGs for every tool. The 20 pt sidebar and 56 pt 
 these assets. The central motif has composition space; the colored tile has no outer margin.
 Transparent native corner cutouts are part of the shape, not padding.
 
-`--tile-reference` and reference-framing manifests are for archived padded artwork.
-New restrained sources use the default full-frame preparation above.
+Reference-framing manifests remain available to verify archived padded artwork.
+New feature sources use full-frame preparation and native corner alpha only.
 Preserve old references and generation records when versioning the selected family.
 
 ## Application icon and menu-bar logo

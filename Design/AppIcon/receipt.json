@@ -1,6 +1,6 @@
 {
-  "compiler" : {
-    "arguments" : [
+  "compiler": {
+    "arguments": [
       "<AppIcon.icon>",
       "--compile",
       "<output>",
@@ -24,24 +24,24 @@
       "--platform",
       "macosx"
     ],
-    "name" : "actool",
-    "version" : "27.0 (25098)"
+    "name": "actool",
+    "version": "27.0 (25098)"
   },
-  "document" : "Design/AppIcon/Lineup.icon",
-  "minimumSystemVersion" : "13.0",
-  "outputs" : {
-    "Design/AppIcon/masters/lineup-native.png" : "3b05a47e2dddcfa09a1fb75e2a3b5482c177bba07fbff3b1f4b2695b2f034e23",
-    "Design/AppIcon/renders/ClearDark.png" : "2c7a7b6d9467bc40b86ec14d004529507069be451eb142613acf1fdbbb91037f",
-    "Design/AppIcon/renders/ClearLight.png" : "3019201e406ba7df78875d70229ccb6a7eeec25d324cd8892b7e428f17087e07",
-    "Design/AppIcon/renders/Dark.png" : "c3af23c6dbd24ca8d1906c5999b6f2a13ff45eedb342a37cafba771a126fd31c",
-    "Design/AppIcon/renders/Default-26.png" : "0451468a4738ed464a6c2313149266f8c1682e54b31012d8a7e40d0f2a69680a",
-    "Design/AppIcon/renders/TintedDark.png" : "c36ff9c4fd653403788bf29254902f162fbcf752478130752130cd8ca2620af7",
-    "Design/AppIcon/renders/TintedLight.png" : "e4aa0a24f116652166e5b836e89b0846613d55fc59e1d0799d7512d3cc7a9cdb",
-    "Icon/icon-1024.png" : "31fda2c2b090eaab63a7457f5c5f4dd9fc3b4ad061e9be6be7305e8327d21263",
-    "Resources/AppIcon.icns" : "db6d71e0055c1260580523364af0ffe0dfd832ce03a99c9e5a2594044c7e438e"
+  "document": "Design/AppIcon/Lineup.icon",
+  "minimumSystemVersion": "13.0",
+  "outputs": {
+    "Design/AppIcon/masters/lineup-native.png": "3b05a47e2dddcfa09a1fb75e2a3b5482c177bba07fbff3b1f4b2695b2f034e23",
+    "Design/AppIcon/renders/ClearDark.png": "2c7a7b6d9467bc40b86ec14d004529507069be451eb142613acf1fdbbb91037f",
+    "Design/AppIcon/renders/ClearLight.png": "3019201e406ba7df78875d70229ccb6a7eeec25d324cd8892b7e428f17087e07",
+    "Design/AppIcon/renders/Dark.png": "c3af23c6dbd24ca8d1906c5999b6f2a13ff45eedb342a37cafba771a126fd31c",
+    "Design/AppIcon/renders/Default-26.png": "0451468a4738ed464a6c2313149266f8c1682e54b31012d8a7e40d0f2a69680a",
+    "Design/AppIcon/renders/TintedDark.png": "c36ff9c4fd653403788bf29254902f162fbcf752478130752130cd8ca2620af7",
+    "Design/AppIcon/renders/TintedLight.png": "e4aa0a24f116652166e5b836e89b0846613d55fc59e1d0799d7512d3cc7a9cdb",
+    "Icon/icon-1024.png": "31fda2c2b090eaab63a7457f5c5f4dd9fc3b4ad061e9be6be7305e8327d21263",
+    "Resources/AppIcon.icns": "db6d71e0055c1260580523364af0ffe0dfd832ce03a99c9e5a2594044c7e438e"
   },
-  "renderer" : {
-    "arguments" : [
+  "renderer": {
+    "arguments": [
       "<document>",
       "--export-image",
       "--output-file",
@@ -57,8 +57,124 @@
       "--scale",
       "1"
     ],
-    "name" : "ictool",
-    "version" : "27.0 (129)"
+    "name": "ictool",
+    "version": "27.0 (129)"
   },
-  "sourceSHA256" : "5bebcf96b349d63c12e8aba4520c1cd50fa8ea92100e1ef14426218e1978a826"
+  "sourceSHA256": "5bebcf96b349d63c12e8aba4520c1cd50fa8ea92100e1ef14426218e1978a826",
+  "rendererArguments": {
+    "Design/AppIcon/masters/lineup-native.png": [
+      "<document>",
+      "--export-image",
+      "--output-file",
+      "<output>",
+      "--platform",
+      "macOS",
+      "--rendition",
+      "Default",
+      "--width",
+      "1024",
+      "--height",
+      "1024",
+      "--scale",
+      "1"
+    ],
+    "Design/AppIcon/renders/ClearDark.png": [
+      "<document>",
+      "--export-image",
+      "--output-file",
+      "<output>",
+      "--platform",
+      "macOS",
+      "--rendition",
+      "ClearDark",
+      "--width",
+      "1024",
+      "--height",
+      "1024",
+      "--scale",
+      "1"
+    ],
+    "Design/AppIcon/renders/ClearLight.png": [
+      "<document>",
+      "--export-image",
+      "--output-file",
+      "<output>",
+      "--platform",
+      "macOS",
+      "--rendition",
+      "ClearLight",
+      "--width",
+      "1024",
+      "--height",
+      "1024",
+      "--scale",
+      "1"
+    ],
+    "Design/AppIcon/renders/Dark.png": [
+      "<document>",
+      "--export-image",
+      "--output-file",
+      "<output>",
+      "--platform",
+      "macOS",
+      "--rendition",
+      "Dark",
+      "--width",
+      "1024",
+      "--height",
+      "1024",
+      "--scale",
+      "1"
+    ],
+    "Design/AppIcon/renders/Default-26.png": [
+      "<document>",
+      "--export-image",
+      "--output-file",
+      "<output>",
+      "--platform",
+      "macOS",
+      "--rendition",
+      "Default",
+      "--width",
+      "1024",
+      "--height",
+      "1024",
+      "--scale",
+      "1",
+      "--design-generation",
+      "26"
+    ],
+    "Design/AppIcon/renders/TintedDark.png": [
+      "<document>",
+      "--export-image",
+      "--output-file",
+      "<output>",
+      "--platform",
+      "macOS",
+      "--rendition",
+      "TintedDark",
+      "--width",
+      "1024",
+      "--height",
+      "1024",
+      "--scale",
+      "1"
+    ],
+    "Design/AppIcon/renders/TintedLight.png": [
+      "<document>",
+      "--export-image",
+      "--output-file",
+      "<output>",
+      "--platform",
+      "macOS",
+      "--rendition",
+      "TintedLight",
+      "--width",
+      "1024",
+      "--height",
+      "1024",
+      "--scale",
+      "1"
+    ]
+  }
 }

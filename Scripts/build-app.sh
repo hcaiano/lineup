@@ -167,6 +167,13 @@ validate_source_snapshot() {
   fi
 }
 
+# actool writes Assets.car (the layered icon for macOS 26+ and flattened renditions for
+# earlier releases), the AppIcon.icns fallback and the bundle keys that select them.
+ICON_BUILD=".build/app-icon"
+echo "==> compiling Design/AppIcon native app icon"
+swift Scripts/make-icon.swift compile "${ICON_BUILD}"
+
+
 # Build the release executable. Universal (arm64 + x86_64) by default so the app runs on every
 # supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
 # `--arch a --arch b` needs full Xcode (xcbuild); under Command Line Tools we build each slice
@@ -214,11 +221,6 @@ if [ "${BUILD_CHANNEL}" = "nightly" ]; then
   validate_source_snapshot "compilation"
 fi
 
-# actool writes Assets.car (the layered icon for macOS 26+ and flattened renditions for
-# earlier releases), the AppIcon.icns fallback and the bundle keys that select them.
-ICON_BUILD=".build/app-icon"
-echo "==> compiling Design/AppIcon native app icon"
-swift Scripts/make-icon.swift compile "${ICON_BUILD}"
 
 echo "==> assembling ${APP}"
 if [ -e "${APP}" ]; then

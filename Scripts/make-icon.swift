@@ -18,6 +18,7 @@ struct Receipt: Codable {
     let document: String, sourceSHA256: String, minimumSystemVersion: String
     let renderer: Tool, compiler: Tool
     let outputs: [String: String]
+    let rendererArguments: [String: [String]]
 }
 struct Failure: Error, CustomStringConvertible {
     let description: String
@@ -236,6 +237,12 @@ func selectedDocument(_ manifest: Manifest) throws -> (Candidate, URL) {
     try checkDocument(document)
     return (selected, document)
 }
+func recordedRenderArguments() -> [String: [String]] {
+    Dictionary(uniqueKeysWithValues: renderPaths.map { name, path in
+        (path, ["<document>"] + renderArguments(name == "Default-26" ? "Default" : name,
+                                             generation: name == "Default-26" ? "26" : nil, size: 1024))
+    })
+}
 func export(_ document: URL) throws {
     let renderer = try ictool(), compiler = try actool(), minimum = try minimumSystemVersion()
     try render(document, "Default", to: repo.appendingPathComponent(renderPaths["Default"]!))
@@ -266,7 +273,7 @@ func export(_ document: URL) throws {
         renderer: Tool(name: "ictool", version: renderer.version,
             arguments: ["<document>"] + renderArguments("<rendition>", generation: nil, size: 1024)),
         compiler: Tool(name: "actool", version: compiler.version, arguments: compileArguments(minimum)),
-        outputs: outputs)
+        outputs: outputs, rendererArguments: recordedRenderArguments())
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     try (encoder.encode(receipt) + Data("\n".utf8)).write(to: receiptURL, options: .atomic)
@@ -276,6 +283,7 @@ func export(_ document: URL) throws {
 func verify(_ document: URL) throws -> Receipt {
     guard let data = try? Data(contentsOf: receiptURL) else { throw Failure("Missing receipt; run ./Scripts/make-icns.sh") }
     let receipt = try JSONDecoder().decode(Receipt.self, from: data)
+    try require(receipt.rendererArguments == recordedRenderArguments(), "Native rendition arguments differ from the receipt")
     try require(receipt.document == "Design/AppIcon/\(document.lastPathComponent)", "The receipt names another document")
     try require(receipt.sourceSHA256 == (try sourceSHA256(document)),
         "\(document.lastPathComponent) changed since the last export; run ./Scripts/make-icns.sh")

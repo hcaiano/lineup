@@ -22,7 +22,6 @@
   "bytePolicy": "sources/awake.png is DERIVED. It is not image-generator output and its bytes differ from the generated original. sources/awake.approved-original.png is a byte-for-byte archive of the approved original, including its caBX content-credentials chunk.",
   "transform": {
     "script": "rebuild.py",
-    "scriptSHA256": "8326ebcda96fcd7ef7bd05f3deca750c349dc6ed9f4b5b9a866a3c5d0d4f269c",
     "command": "python3 Design/FeatureIcons/masters/awake-centered-v1/rebuild.py source",
     "operation": "Rigid vertical translation of the entire approved unmasked opaque image.",
     "translationPixels": {
@@ -59,7 +58,10 @@
       "pillow": "12.2.0",
       "numpy": "2.4.6",
       "zlib": "1.2.12"
-    }
+    },
+    "scriptSHA256AtDerivation": "8326ebcda96fcd7ef7bd05f3deca750c349dc6ed9f4b5b9a866a3c5d0d4f269c",
+    "currentScriptSHA256": "2742a44f6ff2634c2e744dfdf640d36a1ed030817fc1112c8fbb4860518ff0f1",
+    "derivationScriptRevision": "b15a511"
   },
   "sources": {
     "derived": {

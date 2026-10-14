@@ -14,7 +14,7 @@ func runFeatureIconsTests() throws {
     let referenceSHA256 = SHA256.hash(data: try Data(contentsOf: directory.appendingPathComponent("edge.png")))
         .map { String(format: "%02x", $0) }.joined()
 
-    func manifest(_ name: String, framing: String?, masters: [String], style: String = "restrained-v1") throws -> URL {
+    func manifest(_ name: String, framing: String?, masters: [String], style: String = "fixture") throws -> URL {
         let features = masters.enumerated().map { index, master in
             ["id": "tool\(index)", "name": "Tool \(index)", "asset": "feature-tool\(index)",
              "color": "2F6BFF", "subject": "Fixture", "master": master]
@@ -26,12 +26,12 @@ func runFeatureIconsTests() throws {
         try JSONSerialization.data(withJSONObject: json).write(to: url)
         return url
     }
-    func export(_ manifest: URL, _ catalog: URL) throws -> (status: Int32, error: String) {
+    func export(_ manifest: URL, _ catalog: URL, operation: String = "export") throws -> (status: Int32, error: String) {
         let process = Process()
         let stderr = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["swift", "Scripts/feature-icons.swift", "--manifest", manifest.path,
-                             "--catalog", catalog.path, "export"]
+                             "--catalog", catalog.path, operation]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderr
         try process.run()
@@ -69,7 +69,7 @@ func runFeatureIconsTests() throws {
 
     for (name, framing) in [("missing", nil), ("reference", "reference")] as [(String, String?)] {
         let catalog = directory.appendingPathComponent(name + ".xcassets")
-        let result = try export(manifest(name + ".json", framing: framing, masters: ["edge.png"]), catalog)
+        let result = try export(manifest(name + ".json", framing: framing, masters: ["edge.png"], style: "restrained-v1"), catalog)
         check(result.status != 0 && result.error.contains("restrained-v1 requires edge-to-edge framing"),
               "restrained-v1 rejects \(name) framing: \(result.error)")
         check(!FileManager.default.fileExists(atPath: catalog.path),
@@ -81,6 +81,51 @@ func runFeatureIconsTests() throws {
     check(archived.status != 0 && !archived.error.contains("restrained-v1") &&
           archived.error.contains("missing transparent surround"),
           "Archived styles keep their reference framing checks: \(archived.error)")
+
+    let shippedCatalog = Process()
+    let shippedError = Pipe()
+    shippedCatalog.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    shippedCatalog.arguments = ["swift", "Scripts/feature-icons.swift", "verify"]
+    shippedCatalog.standardOutput = FileHandle.nullDevice
+    shippedCatalog.standardError = shippedError
+    try shippedCatalog.run()
+    let shippedMessage = String(decoding: shippedError.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    shippedCatalog.waitUntilExit()
+    check(shippedCatalog.terminationStatus == 0,
+          "Shipped feature PNGs and preparation provenance match their selected sources: \(shippedMessage)")
+
+    let fixtureManifest = try manifest("pixels.json", framing: "edge-to-edge", masters: ["edge.png"])
+    try writeTile(inset: 0, size: 72, color: [1, 0.2, 0.1],
+                  to: edgeCatalog.appendingPathComponent("feature-tool0.imageset/feature-tool0.png"))
+    let changedPixels = try export(fixtureManifest, edgeCatalog, operation: "verify")
+    check(changedPixels.status != 0 && changedPixels.error.contains("pixels differ from the selected master"),
+          "Catalog verification rejects altered RGB with valid framing: \(changedPixels.error)")
+    _ = try export(fixtureManifest, edgeCatalog)
+
+    var provenanceManifest = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureManifest)) as! [String: Any]
+    var feature = (provenanceManifest["features"] as! [[String: Any]])[0]
+    feature["sourceMaster"] = "edge.png"
+    feature["preparationReceipt"] = "receipt.json"
+    provenanceManifest["features"] = [feature]
+    try JSONSerialization.data(withJSONObject: provenanceManifest).write(to: fixtureManifest)
+    for label in ["source", "master", "native mask"] {
+        let receipt: [String: Any] = [
+            "mode": "native-alpha-mask",
+            "source": ["sha256": label == "source" ? "stale" : referenceSHA256],
+            "output-sha256": label == "master" ? "stale" : referenceSHA256,
+            "native-render": ["path": "edge.png", "sha256": label == "native mask" ? "stale" : referenceSHA256],
+        ]
+        try JSONSerialization.data(withJSONObject: receipt).write(to: directory.appendingPathComponent("receipt.json"))
+        let result = try export(fixtureManifest, edgeCatalog, operation: "verify")
+        check(result.status != 0 && result.error.contains("\(label) differs from its preparation receipt"),
+              "Catalog verification rejects a stale \(label) receipt: \(result.error)")
+    }
+
+    provenanceManifest["paletteReferences"] = [["path": "edge.png", "sha256": "stale"]]
+    try JSONSerialization.data(withJSONObject: provenanceManifest).write(to: fixtureManifest)
+    let changedPalette = try export(fixtureManifest, edgeCatalog, operation: "verify")
+    check(changedPalette.status != 0 && changedPalette.error.contains("Palette reference differs from its recorded hash"),
+          "Catalog verification rejects a changed approved palette reference: \(changedPalette.error)")
 
     let appIcon = Process()
     let appIconError = Pipe()
@@ -218,8 +263,8 @@ private func writeUniform(_ color: [Int], to url: URL) throws {
     guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
 }
 
-private func writeTile(inset: CGFloat, edgeFragments: Bool = false, to url: URL) throws {
-    let size = 256
+private func writeTile(inset: CGFloat, edgeFragments: Bool = false, size: Int = 256,
+                       color: [CGFloat] = [0.18, 0.42, 1], to url: URL) throws {
     guard let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
@@ -228,7 +273,7 @@ private func writeTile(inset: CGFloat, edgeFragments: Bool = false, to url: URL)
     }
     let tile = CGRect(x: 0, y: 0, width: size, height: size).insetBy(dx: inset, dy: inset)
     let radius = tile.width * 0.22
-    context.setFillColor(red: 0.18, green: 0.42, blue: 1, alpha: 1)
+    context.setFillColor(red: color[0], green: color[1], blue: color[2], alpha: 1)
     context.addPath(CGPath(roundedRect: tile, cornerWidth: radius, cornerHeight: radius, transform: nil))
     context.fillPath()
     if edgeFragments {

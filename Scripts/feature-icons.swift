@@ -11,11 +11,14 @@ struct Feature: Decodable {
     let color: String
     let subject: String
     let master: String
+    let sourceMaster: String?
+    let preparationReceipt: String?
 }
 enum Framing: String, Decodable {
     case reference
     case edgeToEdge = "edge-to-edge"
 }
+struct PaletteReference: Decodable { let path: String; let sha256: String }
 struct Manifest: Decodable {
     let size: Int
     let reference: String
@@ -23,6 +26,20 @@ struct Manifest: Decodable {
     let style: String?
     let framing: Framing?
     let features: [Feature]
+    let paletteReferences: [PaletteReference]?
+}
+struct PreparationReceipt: Decodable {
+    struct Source: Decodable { let sha256: String }
+    struct NativeRender: Decodable { let path: String; let sha256: String }
+    let mode: String
+    let source: Source
+    let outputSHA256: String
+    let nativeRender: NativeRender
+    enum CodingKeys: String, CodingKey {
+        case mode, source
+        case outputSHA256 = "output-sha256"
+        case nativeRender = "native-render"
+    }
 }
 struct Failure: Error, CustomStringConvertible {
     let description: String
@@ -165,11 +182,47 @@ func filename(_ feature: Feature, _ scale: Int) -> String {
     feature.asset + (scale == 1 ? "" : "@\(scale)x") + ".png"
 }
 
+func checkProvenance(_ feature: Feature, required: Bool) throws {
+    if !required && feature.sourceMaster == nil && feature.preparationReceipt == nil { return }
+    guard let source = feature.sourceMaster, let record = feature.preparationReceipt else {
+        throw Failure("\(feature.id): sourceMaster and preparationReceipt are required")
+    }
+    for path in [source, record] {
+        try require(!path.hasPrefix("/") && !path.split(separator: "/").contains(".."),
+                    "\(feature.id): provenance paths must be inside Design/FeatureIcons")
+    }
+    let receiptURL = design.appendingPathComponent(record)
+    let receipt = try JSONDecoder().decode(PreparationReceipt.self, from: Data(contentsOf: receiptURL))
+    try require(receipt.mode == "native-alpha-mask", "\(feature.id): preparation must use source RGB and native alpha only")
+    let maskName = URL(fileURLWithPath: receipt.nativeRender.path).lastPathComponent
+    let mask = receiptURL.deletingLastPathComponent().appendingPathComponent(maskName)
+    for (url, expected, label) in [(design.appendingPathComponent(source), receipt.source.sha256, "source"),
+                                  (design.appendingPathComponent(feature.master), receipt.outputSHA256, "master"),
+                                  (mask, receipt.nativeRender.sha256, "native mask")] {
+        let actual = SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        try require(actual == expected, "\(feature.id): \(label) differs from its preparation receipt")
+    }
+}
+
+func checkExportPixels(_ image: CGImage, master: CGImage, _ label: String) throws {
+    let expected = try resized(master, to: image.width)
+    let actualContext = try bitmap(image.width, image.height)
+    let expectedContext = try bitmap(image.width, image.height)
+    let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    actualContext.draw(image, in: rect)
+    expectedContext.draw(expected, in: rect)
+    let actual = actualContext.data!.assumingMemoryBound(to: UInt8.self)
+    let reference = expectedContext.data!.assumingMemoryBound(to: UInt8.self)
+    try require((0..<image.width * image.height * 4).allSatisfy { abs(Int(actual[$0]) - Int(reference[$0])) <= 2 },
+                "\(label): pixels differ from the selected master; re-export the feature catalog")
+}
+
 func export(_ manifest: Manifest) throws {
     let framing = manifest.framing ?? .reference
     let reference = try opaqueFrame(pixels(design.appendingPathComponent(manifest.reference)))
     // Validate every master before updating any derived files.
     let sources = try manifest.features.map { feature -> (Feature, CGImage) in
+        try checkProvenance(feature, required: manifest.style == "restrained-v1")
         let image = try pixels(design.appendingPathComponent(feature.master))
         try require(image.width == image.height && image.width >= manifest.size * 3,
                     "\(feature.id): master must be square and at least \(manifest.size * 3) px")
@@ -205,7 +258,10 @@ func verify(_ manifest: Manifest) throws {
     let reference = try opaqueFrame(referenceImage)
     var count = 0
     for feature in manifest.features {
-        try checkFraming(pixels(design.appendingPathComponent(feature.master)), framing, against: reference, feature.id)
+        try checkProvenance(feature, required: manifest.style == "restrained-v1")
+        let master = try pixels(design.appendingPathComponent(feature.master))
+        try checkAlpha(master, framing, feature.id)
+        try checkFraming(master, framing, against: reference, feature.id)
         let set = catalog.appendingPathComponent(feature.asset + ".imageset")
         let data = try Data(contentsOf: set.appendingPathComponent("Contents.json"))
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -223,6 +279,7 @@ func verify(_ manifest: Manifest) throws {
             try require(image.width == manifest.size * scale && image.height == manifest.size * scale,
                         "\(expected): incorrect pixel dimensions")
             try checkAlpha(image, framing, expected)
+            try checkExportPixels(image, master: master, expected)
             let scaledReference = try opaqueFrame(resized(referenceImage, to: manifest.size * scale))
             try checkFraming(image, framing, against: scaledReference, expected, exported: true)
             count += 1
@@ -286,6 +343,13 @@ do {
     let referenceHash = SHA256.hash(data: referenceData).map { String(format: "%02x", $0) }.joined()
     try require(referenceHash == manifest.referenceSHA256,
                 "Style reference differs from its recorded hash; restore the selected reference or version an intentional style change")
+    for reference in manifest.paletteReferences ?? [] {
+        try require(!reference.path.hasPrefix("/") && !reference.path.split(separator: "/").contains(".."),
+                    "Palette reference must be inside Design/FeatureIcons")
+        let data = try Data(contentsOf: design.appendingPathComponent(reference.path))
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        try require(hash == reference.sha256, "Palette reference differs from its recorded hash: \(reference.path)")
+    }
     var ids = Set<String>(), assets = Set<String>()
     for feature in manifest.features {
         try require(ids.insert(feature.id).inserted && assets.insert(feature.asset).inserted,

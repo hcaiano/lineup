@@ -224,7 +224,6 @@
       "model": "none for deterministic derivative; original imagegen version unknown",
       "transform": {
         "script": "masters/awake-centered-v1/rebuild.py",
-        "scriptSHA256": "8326ebcda96fcd7ef7bd05f3deca750c349dc6ed9f4b5b9a866a3c5d0d4f269c",
         "command": "python3 Design/FeatureIcons/masters/awake-centered-v1/rebuild.py source",
         "operation": "Rigid vertical translation of the entire approved unmasked opaque image.",
         "translationPixels": {
@@ -261,7 +260,10 @@
           "pillow": "12.2.0",
           "numpy": "2.4.6",
           "zlib": "1.2.12"
-        }
+        },
+        "scriptSHA256AtDerivation": "8326ebcda96fcd7ef7bd05f3deca750c349dc6ed9f4b5b9a866a3c5d0d4f269c",
+        "currentScriptSHA256": "2742a44f6ff2634c2e744dfdf640d36a1ed030817fc1112c8fbb4860518ff0f1",
+        "derivationScriptRevision": "b15a511"
       },
       "generationRecord": "masters/awake-centered-v1/generation.json",
       "nativeReceipt": "masters/mask-only-v1/prepared/awake/awake.json",
@@ -979,7 +981,7 @@
     ],
     "appIconWorkflow": "unchanged; native platform materials retained separately",
     "scriptSHA256AtPreparation": "5ce9991d0f86ec7ea053656935315fbd83f167c5287cabf5a3284ca0b71e5d83",
-    "currentScriptSHA256": "e0b40c8ae001f8c210b5245611ffc548e4acb9c4f63610ef630dc8ed927edc04"
+    "currentScriptSHA256": "6af2a1ede07048fa7c322e122ff15417533cec6175220bbe9cb58af7f660df60"
   },
   "verification": {
     "features": 10,
@@ -992,7 +994,7 @@
     "originalSourceArtworkUnchanged": true,
     "nativeAlpha": "CoreGraphics8-bit nativealpha preserved; raw16bitmask retained.",
     "whiteEdges": "Removed from sourceRGB export; actualHyperkey header and completeSettingssidebar inspected.",
-    "testsPassed": 2117,
+    "testsPassed": 2123,
     "pythonTestsPassed": 26,
     "preFixRegressionFailures": 5,
     "swiftBuild": "passed",

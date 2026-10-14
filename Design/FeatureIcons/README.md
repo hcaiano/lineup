@@ -18,11 +18,14 @@ accent. Disabled Settings features use runtime grayscale at full opacity.
 `manifest.json` owns identities, palette, subjects, selected masters and reference SHA-256.
 It declares `style: "restrained-v1"`, `paletteVersion: "cheerful-v1"` and
 `framing: "edge-to-edge"`. The structural style key keeps the shared planar/framing contract;
-the palette version selects the current colors. `paletteReferences` records the approved
-tangerine, sunny-yellow and mint originals with their SHA-256 values. The exporter requires both
+the palette version records the current colors. `paletteReferences` records the approved
+tangerine, sunny-yellow and mint originals with their SHA-256 values. The exporter requires the structural style and edge-to-edge framing
 for this family, verifies all source masters before writing, and rejects padded artwork or
 detached edge pixels that disguise padding. Continuous central bands must reach each canvas
 edge within one pixel. All corners must be transparent after native preparation.
+Verification checks palette-reference hashes, the source/master/native-mask receipt chain and
+exported pixels against the selected master. Channel differences of at most two levels allow
+PNG premultiplication rounding; changed artwork or lighting is rejected.
 
 ## Generate a new feature
 
@@ -47,7 +50,7 @@ applies the same macOS alpha mask and writes a 1024 px sRGB master without outer
 The native renderer adds visible edge lighting even with material effects disabled. Default
 feature preparation therefore retains its raw render as mask evidence, takes only that alpha,
 and composites the original artwork's resampled RGB. The native lighting never enters the
-selected feature master. Archived `--tile-reference` preparation retains its earlier behavior.
+selected feature master. Feature preparation accepts only full-frame opaque sources.
 The imageset exporter only resamples prepared masters to sRGB RGBA PNG.
 Generated model/version is not exposed by the integrated tool; exact prompts, arguments,
 original paths and hashes are preserved in `generation.json` and per-icon records.
@@ -82,5 +85,5 @@ The app logo keeps its existing three-pane symbol and follows the
 Feature imageset framing must not be copied into the application's platform layout.
 The monochrome menu-bar mark stays unchanged.
 
-Archived `reference` manifests and `--tile-reference` preparation remain available for older
-padded artwork. New feature sources use full-frame opaque preparation.
+Archived `reference` manifests remain available to verify older padded artwork.
+New feature sources use full-frame opaque preparation.
