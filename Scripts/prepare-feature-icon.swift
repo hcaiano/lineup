@@ -117,8 +117,10 @@ func composeMasked(source: CGImage, mask: CGImage, to url: URL) throws {
     CGImageDestinationAddImage(destination, output, nil)
     try require(CGImageDestinationFinalize(destination), "Cannot write \(url.path)")
     let written = try pixels(image(Data(contentsOf: url), url.path), size: size)
-    try require((0..<size * size).allSatisfy { written[$0 * 4 + 3] == alpha[$0 * 4 + 3] },
-                "Masked master alpha differs from the native render")
+    let alphaMatches: Bool = stride(from: 3, to: written.count, by: 4).allSatisfy { (index: Int) -> Bool in
+        written[index] == alpha[index]
+    }
+    try require(alphaMatches, "Masked master alpha differs from the native render")
 }
 
 func verifyMaster(_ url: URL) throws {

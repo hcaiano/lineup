@@ -981,7 +981,7 @@
     ],
     "appIconWorkflow": "unchanged; native platform materials retained separately",
     "scriptSHA256AtPreparation": "5ce9991d0f86ec7ea053656935315fbd83f167c5287cabf5a3284ca0b71e5d83",
-    "currentScriptSHA256": "6af2a1ede07048fa7c322e122ff15417533cec6175220bbe9cb58af7f660df60"
+    "currentScriptSHA256": "3f4a34a85ffd153ff89a76110af1dbb12a2fbde9f8d17c87ff8fa406e05100e1"
   },
   "verification": {
     "features": 10,
