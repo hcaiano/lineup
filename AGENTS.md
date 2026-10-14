@@ -22,6 +22,9 @@ For feature or app icons, use [lineup-icons](.agents/skills/lineup-icons/SKILL.m
 4. `web/appcast.xml`, `web/downloads/`, tags, notarization, signing keys and
    deployments are release state: change them only for requested release work.
 
+If a task conflicts with one of these contracts, explain the conflict and get
+maintainer approval before proceeding.
+
 Launch Lineup only when manual app verification is part of the task: a launch
 uses the developer's real config, Accessibility grant, hotkeys and input
 monitoring. `Scripts/setup-signing.sh` changes the login keychain and needs
@@ -44,4 +47,5 @@ Accessibility denied or revoked, hotkey conflicts and missing windows; one and
 several displays; and fresh, current, legacy, malformed and newer config.
 
 Keep UI frameworks and system side effects in `Sources/lineup`, and testable
-logic in the `*Core` modules.
+logic in the `*Core` modules. Keep one owner for shared config, hotkey
+registration, permissions and tool lifecycle.
