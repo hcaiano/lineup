@@ -85,9 +85,11 @@ swift run lineup-tests
 ```
 
 With the macOS 27 SDK, the app target needs full Xcode. When `xcode-select -p` points at Command
-Line Tools, prefix `swift build` and `Scripts/build-app.sh` with
+Line Tools, prefix `swift build` with
 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, or with
-`SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk` when Xcode is not installed;
+`SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk` when Xcode is not installed.
+Packaging with `Scripts/build-app.sh` always requires full Xcode 26 or later for native icon
+compilation. Select it with `DEVELOPER_DIR`; the SDKROOT-only path does not support packaging;
 [BUILDING.md](BUILDING.md#requirements) explains why.
 
 For every code change:

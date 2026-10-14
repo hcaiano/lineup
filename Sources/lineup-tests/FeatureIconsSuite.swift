@@ -14,13 +14,14 @@ func runFeatureIconsTests() throws {
     let referenceSHA256 = SHA256.hash(data: try Data(contentsOf: directory.appendingPathComponent("edge.png")))
         .map { String(format: "%02x", $0) }.joined()
 
-    func manifest(_ name: String, framing: String, masters: [String]) throws -> URL {
+    func manifest(_ name: String, framing: String?, masters: [String], style: String = "restrained-v1") throws -> URL {
         let features = masters.enumerated().map { index, master in
             ["id": "tool\(index)", "name": "Tool \(index)", "asset": "feature-tool\(index)",
              "color": "2F6BFF", "subject": "Fixture", "master": master]
         }
-        let json: [String: Any] = ["size": 72, "reference": "edge.png", "referenceSHA256": referenceSHA256,
-                                   "framing": framing, "features": features]
+        var json: [String: Any] = ["size": 72, "reference": "edge.png", "referenceSHA256": referenceSHA256,
+                                   "style": style, "features": features]
+        json["framing"] = framing
         let url = directory.appendingPathComponent(name)
         try JSONSerialization.data(withJSONObject: json).write(to: url)
         return url
@@ -65,6 +66,21 @@ func runFeatureIconsTests() throws {
           "Detached edge pixels do not disguise a padded tile: \(fragments.error)")
     check(!FileManager.default.fileExists(atPath: fragmentsCatalog.path),
           "Detached fragments block catalog writes")
+
+    for (name, framing) in [("missing", nil), ("reference", "reference")] as [(String, String?)] {
+        let catalog = directory.appendingPathComponent(name + ".xcassets")
+        let result = try export(manifest(name + ".json", framing: framing, masters: ["edge.png"]), catalog)
+        check(result.status != 0 && result.error.contains("restrained-v1 requires edge-to-edge framing"),
+              "restrained-v1 rejects \(name) framing: \(result.error)")
+        check(!FileManager.default.fileExists(atPath: catalog.path),
+              "restrained-v1 with \(name) framing writes no catalog")
+    }
+    let archivedCatalog = directory.appendingPathComponent("archived.xcassets")
+    let archived = try export(manifest("archived.json", framing: nil, masters: ["edge.png"], style: "enamel-v1"),
+                              archivedCatalog)
+    check(archived.status != 0 && !archived.error.contains("restrained-v1") &&
+          archived.error.contains("missing transparent surround"),
+          "Archived styles keep their reference framing checks: \(archived.error)")
 
     let appIcon = Process()
     let appIconError = Pipe()

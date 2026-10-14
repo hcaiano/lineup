@@ -8,7 +8,9 @@ contribution workflow.
 
 - Swift 5.9 or later
 - The macOS 26 SDK or later. Xcode **Command Line Tools 26** are enough for the macOS 26 SDK; full
-  Xcode is optional. The built app still supports macOS 13 or later.
+  Xcode is optional for compilation and tests. Packaging with `Scripts/build-app.sh` requires
+  full Xcode 26 or later for native Icon Composer compilation. The built app still supports
+  macOS 13 or later.
 - With the macOS 27 SDK, the app target needs full **Xcode 27**. That SDK makes SwiftUI's `@State`
   a macro whose compiler plugin ships only inside `Xcode.app`, so Command Line Tools 27 stop with
   `plugin for module 'SwiftUIMacros' not found`. Select Xcode once with

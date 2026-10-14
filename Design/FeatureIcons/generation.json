@@ -992,7 +992,7 @@
     "originalSourceArtworkUnchanged": true,
     "nativeAlpha": "CoreGraphics8-bit nativealpha preserved; raw16bitmask retained.",
     "whiteEdges": "Removed from sourceRGB export; actualHyperkey header and completeSettingssidebar inspected.",
-    "testsPassed": 2118,
+    "testsPassed": 2117,
     "pythonTestsPassed": 26,
     "preFixRegressionFailures": 5,
     "swiftBuild": "passed",
