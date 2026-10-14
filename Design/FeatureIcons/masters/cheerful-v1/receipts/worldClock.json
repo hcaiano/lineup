@@ -1,0 +1,34 @@
+{
+  "id": "worldClock",
+  "operation": "built-in color-only ImageGen edit",
+  "tool": "image_gen.imagegen",
+  "model": "UNKNOWN",
+  "version": "UNKNOWN",
+  "qualityParameterExposed": false,
+  "qualityIntent": "High-quality production artwork requested in prompt. No selectable quality parameter is exposed.",
+  "recordedAt": "2026-10-14T16:53:24.613Z",
+  "arguments": {
+    "prompt": "Use case: precise-object-edit.\nAsset type: production Lineup feature icon, cheerful-v1 family.\nInput image 1 is the EXISTING OPAQUE SOURCE and the only edit target. Its artwork is locked geometry, not inspiration for a redraw.\nChange ONLY the colored hue and value. Preserve the exact existing off-white foreground color and every symbol contour, stroke weight, hole, position, spacing, apparent size, proportion and scale. Do not redraw, reinterpret, rotate, shrink, enlarge, add or remove any shape.\nKeep the simple flat planar geometry, crisp edges and a very gentle nonradial directional top-left to bottom-right background color transition. Match the clean happy brightness of the approved tangerine #FF9235, sunny yellow #F8C332 and spring mint #43C77A family, while keeping the assigned single hue.\nProduce one high-quality standalone fully opaque square PNG, at least 1024 x 1024 pixels, keeping the input canvas geometry. The background fills all four edges and corners continuously. No outer padding, baked outer corner mask, tile silhouette or transparency. Native preparation owns the mask.\nNo 3D, relief, bevel, shadows, gloss, neon, bubble, radial highlight, grain, texture, miniature detail, secondary accent colors, new glyphs or text. Keep off-white intact. Do not reimagine the concept.\n\nColor-only change for worldClock:\nReplace the background with clear cheerful TURQUOISE around #19ACBA, a gentle diagonal transition from about #29B8C5 to #149EAE. Recolor only the existing dark teal right half of the dial and the dark hand to a related deeper teal near #126D7B, preserving the same day/night split, both hands, every boundary and the existing off-white left half and hand exactly. One teal hue family plus off-white. No ticks, numbers, extra hands or glyphs. Do not alter the time or dial scale.",
+    "referenced_image_paths": [
+      "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/masters/restrained-v1/sources/worldClock.png"
+    ],
+    "transparent_background": false
+  },
+  "originalOutputPath": "/Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-bc3f7645-f295-427b-b72c-4f9ba42c523b.png",
+  "originalOutputHint": "Generated images are saved to /Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc as /Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-bc3f7645-f295-427b-b72c-4f9ba42c523b.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+  "sourceMaster": "sources/worldClock.png",
+  "callCount": 1,
+  "originalOutputSHA256": "d588f089ba177dcd80c3eea30eb27630c0c9c42cff48d6c633dbab982a2cda08",
+  "sourceSHA256": "d588f089ba177dcd80c3eea30eb27630c0c9c42cff48d6c633dbab982a2cda08",
+  "sourceDimensions": [
+    1254,
+    1254
+  ],
+  "originalBytesPreserved": true,
+  "editTargetPath": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/masters/restrained-v1/sources/worldClock.png",
+  "editTargetSHA256": "50c73eaba9773fb55cbb301036c4c1bc365c060648be1a86db7c60bcbc1db61b",
+  "editTargetDimensions": [
+    1254,
+    1254
+  ]
+}

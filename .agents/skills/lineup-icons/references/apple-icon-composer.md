@@ -1,6 +1,6 @@
 # Apple app icon contract
 
-Checked against Apple's live documentation on 2026-10-01. Recheck it before changing platform
+Checked against Apple's live documentation on 2026-10-14. Recheck it before changing platform
 exports or claiming compliance with a newer Xcode/macOS design generation.
 
 Primary sources:
@@ -37,8 +37,10 @@ The following are this repository's choices, not Apple-mandated dimensions for f
 
 - The approved motif, optical scale, placement and material settings form one saved template.
   New features replace only the motif and assigned hue.
-- Settings feature imagesets use 72/144/216 px exports and the shared 20/72 pt renderer. Compare
-  actual tile bounds with the versioned reference. Never fix a large tile with a UI-only scale.
+- Settings feature imagesets use 72/144/216 px exports and the shared 20/56 pt renderer. The
+  restrained family declares edge-to-edge framing and has no outer tile padding. Its opaque
+  source fills the canvas; native preparation supplies the shared corner mask. Keep this
+  decorative feature contract separate from the application platform workflow.
 - The menu-bar mark must be recognizable as a single-color 18 x 16 pt template on light and dark
   backgrounds. Use clear silhouette and generous gaps; preserve the app logo's symbolic geometry.
 - Test the menu-bar silhouette before decorating a proposed logo. Show it alongside the app icon.
@@ -46,9 +48,9 @@ The following are this repository's choices, not Apple-mandated dimensions for f
 - Keep the complete prompt, source layers, composition settings, native document and derived
   exports. Preserve previous approved versions.
 
-## Existing raster studies
+## Earlier raster studies
 
-The current enamel PNGs and ICNS are raster studies and compatibility artifacts. Their baked
+The archived enamel PNGs and ICNS were raster studies and compatibility artifacts. Their baked
 rounded tiles and highlights are not unmasked Icon Composer source layers. Keep them identified
 as such while reviewing the proposed family. Use isolated foreground layers for the native source.
 The 78% tile measurement describes the existing raster reference, not an Apple safe-area rule.

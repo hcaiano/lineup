@@ -1,74 +1,140 @@
 {
   "size": 72,
   "generator": "built-in image_gen; model managed by the service",
-  "style": "enamel-v1",
-  "reference": "references/enamel-v1.png",
-  "referenceSHA256": "4b70a4012b67ce1e2a906d446969b0d5cdc030fb29ca4c8b09cf2d3d45ca961f",
-  "status": "Selected for the app by Henrique on 2026-10-01. Disabled Settings features use runtime grayscale; source artwork remains full color.",
+  "style": "restrained-v1",
+  "reference": "references/cheerful-v1.png",
+  "referenceSHA256": "7f0cc98d75d1741914fa0945649fac48a205902736f9c51fbd8eb09336366edd",
+  "status": "Selected cheerful artwork prepared with source RGB and native corner alpha only. No native-renderer lighting or white edge bands. Original source artwork and approved glyph choices preserved.",
   "features": [
     {
       "id": "zones",
       "name": "Zones",
       "asset": "feature-zones",
-      "color": "2F6BFF",
-      "subject": "Exactly three ivory white rounded window panes: one tall pane on the left, two equal stacked panes on the right. Clean even gutters.",
-      "master": "masters/zones.png"
+      "color": "386BD5",
+      "subject": "Exactly three off-white planar rounded window panes: one tall pane on the left, two equal stacked panes on the right. Clear even gutters.",
+      "master": "masters/mask-only-v1/prepared/zones/zones.png",
+      "sourceMaster": "masters/cheerful-v1/sources/zones.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/zones/zones.json"
     },
     {
       "id": "cycler",
       "name": "Cycler",
       "asset": "feature-cycler",
-      "color": "F2580E",
-      "subject": "Exactly two chunky ivory white curved arrows chasing each other in a circular loop, with clear arrowheads and generous negative space in the center. The loop signifies cycling apps and windows. Keep both arrows bold and balanced. No letters.",
-      "master": "masters/cycler.png"
+      "color": "FF9235",
+      "subject": "Cycler. Exactly two bold off-white curved arrows that chase each other around an open circular center. Each arrow is a thick arc covering a little less than half of the circle and ends in one clear, solid, triangular arrowhead with slightly softened tips. Both arrows travel clockwise. Leave a clear, even gap between each arrowhead and the tail of the other arrow. The center stays empty background. No third arrow, dots, or inner mark.",
+      "master": "masters/mask-only-v1/prepared/cycler/cycler.png",
+      "sourceMaster": "masters/cheerful-v1/sources/cycler.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/cycler/cycler.json"
     },
     {
       "id": "hyperkey",
       "name": "Hyperkey",
       "asset": "feature-hyperkey",
-      "color": "805AEF",
-      "subject": "One large ivory white rounded keyboard keycap, gently raised above the violet tile. On the keycap a thick deep-violet Command symbol, the familiar four-loop Apple command knot, debossed with crisp edges. A single key unifies modifiers. The knot must stay open and legible at tiny sizes. No keyboard, labels or extra keys.",
-      "master": "masters/hyperkey.png"
+      "color": "7060BB",
+      "subject": "One bold open off-white Command mark with the familiar four-loop knot. Crisp planar geometry and large clear loop openings, legible at 20 px.",
+      "master": "masters/mask-only-v1/prepared/hyperkey/hyperkey.png",
+      "sourceMaster": "masters/cheerful-v1/sources/hyperkey.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/hyperkey/hyperkey.json"
+    },
+    {
+      "id": "keyboardRemap",
+      "name": "Keyboard Remap",
+      "asset": "feature-keyboardRemap",
+      "color": "EF6696",
+      "subject": "Keyboard Remap. One FLAT off-white rounded-square key mark, about 62% of the canvas on each side, with a corner radius of about 18% of its side. Inside it, exactly two thick horizontal arrows cut out in the rose background hue. The upper arrow sits in the upper half, shifted toward the right, and points right. The lower arrow sits in the lower half, shifted toward the left, and points left. Each arrow has a thick straight shaft with a rounded tail and one clear, solid, triangular arrowhead. Keep a clear vertical gap between the arrows and a clear margin to the key edge. Arrow strokes match the boldness of the reference Command mark. The key is a flat 2D plate: no raised keycap, side walls, shadow, bevel, legend, letters, or symbols other than the two arrows.",
+      "sourceMaster": "masters/cheerful-v1/sources/keyboardRemap.png",
+      "master": "masters/mask-only-v1/prepared/keyboardRemap/keyboardRemap.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/keyboardRemap/keyboardRemap.json"
     },
     {
       "id": "worldClock",
       "name": "World Clock",
       "asset": "feature-worldClock",
-      "color": "0D8F9B",
-      "subject": "One ivory white circular clock face, with a gently raised rim, two thick deep-teal hands indicating ten past ten, a central hub, and exactly four bold short hour ticks. No numbers. Bold, simple clock geometry, readable at 20 pixels. Do not include globe meridians, a map, extra dials, or letters.",
-      "master": "masters/world-clock-v2.png"
+      "color": "19ACBA",
+      "subject": "One simple split day/night clock dial, off-white on the left and related dark petrol on the right. Two thick hands at ten past ten, dark on the light half and off-white on the dark half. No ticks or numbers.",
+      "master": "masters/mask-only-v1/prepared/worldClock/worldClock.png",
+      "sourceMaster": "masters/cheerful-v1/sources/worldClock.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/worldClock/worldClock.json"
     },
     {
       "id": "awake",
       "name": "Keep Awake",
       "asset": "feature-awake",
-      "color": "C17F08",
-      "subject": "One large ivory white sun with a solid gently domed circular center and exactly eight short thick rounded rays, evenly spaced, generous clear gaps. A warm awake daytime metaphor. No facial features, switches, clocks or letters.",
-      "master": "masters/awake.png"
+      "color": "F8C332",
+      "subject": "Keep Awake. One flat off-white sun. A solid filled circle sits in the center, about 30% of the canvas in diameter. Around it are exactly eight short thick rays with fully rounded ends, evenly spaced every 45 degrees: four on the vertical and horizontal axes and four on the diagonals. Each ray is a straight capsule about 10% of the canvas long and about 6-7% of the canvas wide. Leave a clear gap of about 5% of the canvas between the circle and every ray. The whole sun spans about 62-64% of the canvas. No face, glow, halo, moon, or extra rays.",
+      "master": "masters/mask-only-v1/prepared/awake/awake.png",
+      "sourceMaster": "masters/awake-centered-v1/sources/awake.png",
+      "sourceOperation": "derived exact vertical placement; generated original preserved",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/awake/awake.json"
     },
     {
       "id": "textCapture",
       "name": "Text Capture",
       "asset": "feature-textCapture",
-      "color": "16856B",
-      "subject": "Four bold ivory white rounded right-angle viewfinder corner brackets surround three short thick ivory horizontal text strokes; the middle stroke is shorter. Clear scan frame and abstract text lines, readable at 20 pixels. No actual letters, document sheet, magnifier or camera.",
-      "master": "masters/text-capture.png"
+      "color": "22B89C",
+      "subject": "Text Capture. Four thick off-white viewfinder corner brackets mark the corners of a square selection region spanning about 64% of the canvas. Each bracket is an L shape with equal arms about 22% of the region side, a rounded outer corner, and rounded ends. Leave clear open gaps between neighboring brackets along every side. Centered inside the region, exactly three short thick horizontal off-white text strokes with fully rounded ends are stacked with even vertical gaps and share one left edge. The top and bottom strokes are equal, about 36% of the canvas long. The middle stroke is clearly shorter, about 24% of the canvas long. The text strokes match the bracket weight. No letters, cursor, magnifier, or selection fill.",
+      "master": "masters/mask-only-v1/prepared/textCapture/textCapture.png",
+      "sourceMaster": "masters/cheerful-v1/sources/textCapture.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/textCapture/textCapture.json"
     },
     {
       "id": "menuBar",
       "name": "Menu Bar",
       "asset": "feature-menuBar",
-      "color": "4D617A",
-      "subject": "One wide ivory white softly raised horizontal menu-bar strip, centered slightly above midpoint, with exactly three evenly spaced small deep-slate rounded squares inset in it. Beneath the strip, one bold ivory downward chevron centered, indicating show or hide. Keep two simple distinct shapes and high contrast. No desktop screen, tiny text or extra panels.",
-      "master": "masters/menu-bar.png"
+      "color": "6B83E9",
+      "subject": "Menu Bar. One substantial off-white horizontal bar with softly rounded corners, centered as a single group. Inside it, a bold left-pointing collapse chevron is cut out on the left, with two equal rounded-square app-item cutouts to its right. All cutouts show the periwinkle background hue and share a centered baseline. Keep open even gaps, consistent visual weight and a clean silhouette at16/20px. No detached dropdown arrow, text, tiny details, or extra symbols.",
+      "master": "masters/mask-only-v1/prepared/menuBar/menuBar.png",
+      "sourceMaster": "studies/icon-craft-v1/sources/menuBar.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/menuBar/menuBar.json"
     },
     {
       "id": "scroll",
       "name": "Scroll",
       "asset": "feature-scroll",
-      "color": "6B8F23",
-      "subject": "Two separate bold ivory vertical arrows side by side, the left pointing up and the right pointing down, with thick stems, broad triangular heads and a clear enamel gap between them. Make the paired directions read as independent at 20 pixels. No mouse outline, trackpad outline, letters or extra marks.",
-      "master": "masters/scroll.png"
+      "color": "43C77A",
+      "subject": "Scroll. Two bold off-white vertical arrows stand side by side with a clear gap of about 14% of the canvas between them. The left arrow points up. The right arrow points down. Each arrow has a thick straight vertical shaft, about 8% of the canvas wide, with a rounded tail and one solid triangular arrowhead with slightly softened tips, about 2.5 times the shaft width. Both arrows are the same length, about 62% of the canvas tall, and top-and-bottom aligned. The pair spans about 50-55% of the canvas width. No mouse, wheel, trackpad, scroll bar, or extra arrows.",
+      "master": "masters/mask-only-v1/prepared/scroll/scroll.png",
+      "sourceMaster": "masters/cheerful-v1/sources/scroll.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/scroll/scroll.json"
+    },
+    {
+      "id": "displayControl",
+      "name": "Display Control",
+      "asset": "feature-displayControl",
+      "color": "389CEB",
+      "subject": "Display Control. A simple off-white monitor outline: one landscape rounded rectangle with a thick even border, about 64% of the canvas wide and 44% of the canvas tall, with the background hue showing through the screen opening. Below it is a short centered foot: a short thick vertical neck and a short horizontal base bar with rounded ends, both off-white and attached to the bottom of the monitor. Center the monitor and foot together as one group. Inside the screen opening, centered, is one large simple brightness glyph: a circle about 20% of the canvas in diameter with a thick off-white outline, its left half filled solid off-white and its right half showing the background hue. Leave clear gaps between the circle and the monitor border. No sun rays, sliders, buttons, cables, reflections, shiny screen, secondary colors, or other screen content.",
+      "sourceMaster": "masters/cheerful-v1/sources/displayControl.png",
+      "master": "masters/mask-only-v1/prepared/displayControl/displayControl.png",
+      "preparation": "native-alpha-mask",
+      "preparationReceipt": "masters/mask-only-v1/prepared/displayControl/displayControl.json"
     }
-  ]
+  ],
+  "framing": "edge-to-edge",
+  "paletteReferences": [
+    {
+      "feature": "cycler",
+      "path": "references/cheerful-v1.png",
+      "sha256": "7f0cc98d75d1741914fa0945649fac48a205902736f9c51fbd8eb09336366edd"
+    },
+    {
+      "feature": "awake",
+      "path": "references/cheerful-v1-sunny.png",
+      "sha256": "a39da5b5b50c33c6d93f53470891593e28a7dcf2d43360597e55bcf6677aef03"
+    },
+    {
+      "feature": "scroll",
+      "path": "references/cheerful-v1-mint.png",
+      "sha256": "95a3315739de062bf57d17cda6ede7be28880c4d4424018602ab49d52c9a93fd"
+    }
+  ],
+  "paletteVersion": "cheerful-v1"
 }

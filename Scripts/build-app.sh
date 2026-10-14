@@ -167,6 +167,13 @@ validate_source_snapshot() {
   fi
 }
 
+# actool writes Assets.car (the layered icon for macOS 26+ and flattened renditions for
+# earlier releases), the AppIcon.icns fallback and the bundle keys that select them.
+ICON_BUILD=".build/app-icon"
+echo "==> compiling Design/AppIcon native app icon"
+swift Scripts/make-icon.swift compile "${ICON_BUILD}"
+
+
 # Build the release executable. Universal (arm64 + x86_64) by default so the app runs on every
 # supported Mac; UNIVERSAL=0 builds host-arch only (faster local iteration). The one-shot
 # `--arch a --arch b` needs full Xcode (xcbuild); under Command Line Tools we build each slice
@@ -214,11 +221,6 @@ if [ "${BUILD_CHANNEL}" = "nightly" ]; then
   validate_source_snapshot "compilation"
 fi
 
-# Ensure the icon exists.
-if [ ! -f "Resources/AppIcon.icns" ]; then
-  echo "==> building app icon"
-  ./Scripts/make-icns.sh
-fi
 
 echo "==> assembling ${APP}"
 if [ -e "${APP}" ]; then
@@ -254,7 +256,16 @@ if grep -q 'REPLACE_WITH_SUPublicEDKey' "${APP}/Contents/Info.plist"; then
   echo "       Run ./Scripts/sparkle-keygen.sh and paste the public key into Resources/Info.plist." >&2
   exit 1
 fi
-cp "Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
+cp "${ICON_BUILD}/Assets.car" "${APP}/Contents/Resources/Assets.car"
+cp "${ICON_BUILD}/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
+# Merge adds actool's CFBundleIconName and skips keys the source plist already defines.
+/usr/libexec/PlistBuddy -c "Merge ${ICON_BUILD}/AppIcon-Info.plist" "${APP}/Contents/Info.plist" >/dev/null
+for key in CFBundleIconFile CFBundleIconName; do
+  if [ "$(/usr/libexec/PlistBuddy -c "Print :${key}" "${APP}/Contents/Info.plist")" != "AppIcon" ]; then
+    echo "error: ${key} must name the compiled AppIcon." >&2
+    exit 1
+  fi
+done
 cp "LICENSE" "${APP}/Contents/Resources/Lineup-LICENSE.txt"
 if [ ! -f "${SPARKLE_LICENSE}" ]; then
   echo "error: Sparkle licence notices not found at '${SPARKLE_LICENSE}'." >&2

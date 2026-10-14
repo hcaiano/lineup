@@ -1,0 +1,86 @@
+{
+  "arguments" : [
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/worldClock\/worldClock.icon",
+    "--export-image",
+    "--output-file",
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/worldClock\/worldClock.native-mask.png",
+    "--platform",
+    "macOS",
+    "--rendition",
+    "Default",
+    "--width",
+    "1024",
+    "--height",
+    "1024",
+    "--scale",
+    "1"
+  ],
+  "composition" : {
+    "alpha" : "native render alpha, unchanged",
+    "color" : "source resampled to 1024 px in sRGB with high-quality interpolation",
+    "output-color-space" : "sRGB",
+    "pixel-format" : "premultiplied RGBA"
+  },
+  "diagnostics" : "{\n\n}",
+  "document" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/worldClock\/worldClock.icon",
+  "mode" : "native-alpha-mask",
+  "native-render" : {
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/worldClock\/worldClock.native-mask.png",
+    "sha256" : "9ddecc95880fcac86166d444f20f58490c98cc3e2bb2793723663ed5270aed52",
+    "use" : "alpha only"
+  },
+  "output" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/worldClock\/worldClock.png",
+  "output-sha256" : "3965dea5d4871c2408b25462f970ab356efe42896ecaa09e2f7fb20289d8e52d",
+  "settings" : {
+    "fill" : {
+      "solid" : "extended-srgb:0.00000,0.00000,0.00000,1.00000"
+    },
+    "groups" : [
+      {
+        "blend-mode" : "normal",
+        "hidden" : false,
+        "layers" : [
+          {
+            "fill" : "automatic",
+            "glass" : false,
+            "hidden" : false,
+            "image-name" : "source.svg",
+            "name" : "worldClock",
+            "opacity" : 1
+          }
+        ],
+        "lighting" : "individual",
+        "shadow" : {
+          "kind" : "neutral",
+          "opacity" : 0
+        },
+        "specular" : false,
+        "translucency" : {
+          "enabled" : false,
+          "value" : 0.5
+        }
+      }
+    ],
+    "supported-platforms" : {
+      "squares" : [
+        "macOS"
+      ]
+    }
+  },
+  "source" : {
+    "height" : 1254,
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/cheerful-v1\/sources\/worldClock.png",
+    "sha256" : "d588f089ba177dcd80c3eea30eb27630c0c9c42cff48d6c633dbab982a2cda08",
+    "width" : 1254
+  },
+  "source-layout" : {
+    "height" : 1024,
+    "kind" : "full-frame SVG image",
+    "width" : 1024
+  },
+  "tool" : {
+    "developer-directory" : "\/Applications\/Xcode.app\/Contents\/Developer",
+    "path" : "\/Applications\/Xcode.app\/Contents\/Applications\/Icon Composer.app\/Contents\/Executables\/ictool",
+    "version" : "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+  }
+}

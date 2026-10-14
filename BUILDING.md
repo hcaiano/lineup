@@ -8,7 +8,9 @@ contribution workflow.
 
 - Swift 5.9 or later
 - The macOS 26 SDK or later. Xcode **Command Line Tools 26** are enough for the macOS 26 SDK; full
-  Xcode is optional. The built app still supports macOS 13 or later.
+  Xcode is optional for compilation and tests. Packaging with `Scripts/build-app.sh` requires
+  full Xcode 26 or later for native Icon Composer compilation. The built app still supports
+  macOS 13 or later.
 - With the macOS 27 SDK, the app target needs full **Xcode 27**. That SDK makes SwiftUI's `@State`
   a macro whose compiler plugin ships only inside `Xcode.app`, so Command Line Tools 27 stop with
   `plugin for module 'SwiftUIMacros' not found`. Select Xcode once with
@@ -153,9 +155,13 @@ ship an ad-hoc signature by accident.
 ## Package the installer
 
 For feature artwork and the application icon, use the repository's
-[lineup-icons skill](.agents/skills/lineup-icons/SKILL.md). `./Scripts/make-icns.sh` exports the
-selected master from `Design/AppIcon/manifest.json` to a 1024 px PNG, a macOS Xcode appiconset
-and `Resources/AppIcon.icns`. It does not redraw a missing master. See the
+[lineup-icons skill](.agents/skills/lineup-icons/SKILL.md). The application uses the genuine
+`Design/AppIcon/Lineup.icon` document. `./Scripts/make-icns.sh` renders its native appearances and
+compiles macOS compatibility outputs, recording source/output hashes in `Design/AppIcon/receipt.json`.
+Packaging requires full Xcode 26 or later, even when SwiftPM build/tests use Command Line Tools.
+`build-app.sh` compiles the document on every build, bundles `Assets.car` and `AppIcon.icns`, and
+sets the compiled icon name in the bundle metadata. The app icon follows Apple's macOS framing;
+feature imagesets remain edge-to-edge with no outer padding. See the
 [app icon standard](Design/AppIcon/README.md) for sizes, visual checks and provenance.
 
 ```sh

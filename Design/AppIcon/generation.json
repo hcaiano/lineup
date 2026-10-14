@@ -1,19 +1,47 @@
 {
-  "date": "2026-10-01",
-  "source": "Current app icon reuses the selected Zones feature master.",
+  "date": "2026-10-14",
+  "source": "Native Icon Composer document Design/AppIcon/Lineup.icon, redrawn by hand from the approved raycast-v2-muted Zones artwork.",
   "selected": "zones",
-  "status": "Selected by Henrique on 2026-10-01; exact Zones PNG/ICNS exports integrated locally. New logo work deferred.",
+  "status": "Henrique approved the restrained raycast-v2-muted style and asked for an app icon on Apple's native macOS workflow. The three-pane symbol is unchanged; no image generation was used.",
   "currentSelection": {
-    "date": "2026-10-01",
-    "decision": "Reuse Zones unchanged",
-    "master": "../FeatureIcons/masters/zones.png",
-    "sourceRecord": "../FeatureIcons/generation.json",
-    "generation": "No new generation; deterministic export from the existing master",
-    "menuBar": "Existing three-pane monochrome template",
+    "date": "2026-10-14",
+    "decision": "Keep the three-pane symbol; move the app icon to a native Icon Composer document",
+    "document": "Lineup.icon",
+    "reference": "../FeatureIcons/references/restrained-v1.png",
+    "referenceSHA256": "84d49aac23081b1f1313b08ff7eb7e3677e90e3195155650ec9a853acea0092f",
+    "schemaSources": [
+      "Installed Xcode macOS Icon Composer template (Icon Composer Icon.xctemplate/icon.json)",
+      "Apple Landmarks sample app icon (Landmarks App Icon.icon/icon.json)"
+    ],
+    "geometry": "Measured on the 1254 px reference: three panes centered on the canvas, group 716 x 673 px, pane corner radius 46 px, gaps 42-47 px. Scaled by 1024/1254 and squared up to equal columns, equal rows and one 36 px gap: left pane 220,237 274 x 550; right panes 530,237 and 530,530, each 274 x 257; radius 38. Pane color #F2F5FA sampled from the reference.",
+    "background": "Vertical linear-gradient from #3F7EED to #2F69DF, the reference's average top and bottom rows. The diagonal tilt of the generated raster is not reproduced.",
+    "material": "Layer glass false. Group shadow kind none, specular false, translucency disabled. With glass off, ictool renders identical pixels for shadow none and neutral and for specular on and off; the system shape edge highlight remains.",
+    "generation": "No image generation. ictool renders previews; actool compiles the bundle resources. Tool versions and arguments are in receipt.json.",
+    "menuBar": "Existing three-pane monochrome template in Sources/lineup/App/Brand.swift, unchanged",
     "exports": [
+      "masters/lineup-native.png",
+      "renders/",
       "Icon/icon-1024.png",
-      "Icon/AppIcon.xcassets/AppIcon.appiconset",
-      "Resources/AppIcon.icns"
+      "Resources/AppIcon.icns",
+      "Assets.car (compiled at bundle time by Scripts/build-app.sh)"
     ]
-  }
+  },
+  "history": [
+    {
+      "date": "2026-10-14",
+      "decision": "Refined enamel Zones raster with a subtler background gradient",
+      "master": "../FeatureIcons/masters/enamel-refined/sources/zones.png",
+      "prompt": "prompt-template-enamel-refined.txt",
+      "exports": "Flattened PNG/ICNS; superseded by Lineup.icon"
+    },
+    {
+      "date": "2026-10-01",
+      "decision": "Reuse Zones unchanged",
+      "master": "../FeatureIcons/masters/zones.png",
+      "sourceRecord": "../FeatureIcons/generation-enamel-v1.json",
+      "generation": "No new generation; deterministic export from the existing master",
+      "prompt": "prompt-template-enamel-v1.txt",
+      "exports": "Icon/icon-1024.png, Icon/AppIcon.xcassets/AppIcon.appiconset and Resources/AppIcon.icns; superseded by Lineup.icon"
+    }
+  ]
 }

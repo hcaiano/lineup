@@ -1,0 +1,86 @@
+{
+  "arguments" : [
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/awake\/awake.icon",
+    "--export-image",
+    "--output-file",
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/awake\/awake.native-mask.png",
+    "--platform",
+    "macOS",
+    "--rendition",
+    "Default",
+    "--width",
+    "1024",
+    "--height",
+    "1024",
+    "--scale",
+    "1"
+  ],
+  "composition" : {
+    "alpha" : "native render alpha, unchanged",
+    "color" : "source resampled to 1024 px in sRGB with high-quality interpolation",
+    "output-color-space" : "sRGB",
+    "pixel-format" : "premultiplied RGBA"
+  },
+  "diagnostics" : "{\n\n}",
+  "document" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/awake\/awake.icon",
+  "mode" : "native-alpha-mask",
+  "native-render" : {
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/awake\/awake.native-mask.png",
+    "sha256" : "eb44e83f2d0e43516491d208b8d58d06b9eb8c1fcc2878b5cd4df834cb7546f0",
+    "use" : "alpha only"
+  },
+  "output" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/awake\/awake.png",
+  "output-sha256" : "b50f73331f1e72a2e84560bfebbe50dcc82fc71031d87fca35e498b88bc58af5",
+  "settings" : {
+    "fill" : {
+      "solid" : "extended-srgb:0.00000,0.00000,0.00000,1.00000"
+    },
+    "groups" : [
+      {
+        "blend-mode" : "normal",
+        "hidden" : false,
+        "layers" : [
+          {
+            "fill" : "automatic",
+            "glass" : false,
+            "hidden" : false,
+            "image-name" : "source.svg",
+            "name" : "awake",
+            "opacity" : 1
+          }
+        ],
+        "lighting" : "individual",
+        "shadow" : {
+          "kind" : "neutral",
+          "opacity" : 0
+        },
+        "specular" : false,
+        "translucency" : {
+          "enabled" : false,
+          "value" : 0.5
+        }
+      }
+    ],
+    "supported-platforms" : {
+      "squares" : [
+        "macOS"
+      ]
+    }
+  },
+  "source" : {
+    "height" : 1254,
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/awake-centered-v1\/sources\/awake.png",
+    "sha256" : "eecf78962e5e8ec5b09ed716bbcb65f0dc88c87b6040b2b03256774947f0a31c",
+    "width" : 1254
+  },
+  "source-layout" : {
+    "height" : 1024,
+    "kind" : "full-frame SVG image",
+    "width" : 1024
+  },
+  "tool" : {
+    "developer-directory" : "\/Applications\/Xcode.app\/Contents\/Developer",
+    "path" : "\/Applications\/Xcode.app\/Contents\/Applications\/Icon Composer.app\/Contents\/Executables\/ictool",
+    "version" : "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+  }
+}

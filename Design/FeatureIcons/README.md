@@ -1,94 +1,89 @@
 # Lineup feature icons
 
-The first family uses enamel: a colored tile, an ivory motif, shallow relief and one soft
-highlight from the upper left. Henrique selected this material and one color per feature on
-2026-10-01. Individual feature designs remain available for iteration.
+Henrique selected simple planar symbols and the cheerful palette on 2026-10-14, after comparing
+the supplied Raycast Settings reference. The family uses one clean, luminous hue per tool,
+off-white bold symbols and modest gradients. Tangerine, sunny yellow and spring mint replace
+the rejected earthy palette. The original enamel and earlier redesigns remain archived.
 
-The [Icon Museum wall](https://icon.museum/wall) informed the central composition, controlled
-volume and clear silhouettes. These are original feature designs, with the selected Zones master
-as the family's material reference. The supplied iOS Icon Generator workflow informed the PNG
-imageset export; imagegen supplies the artwork instead of Iconify or SF Symbols.
+## Size and framing contract
 
-## Visual standard
+Feature images have **zero outer padding**. Backgrounds reach every edge of the square canvas;
+only the shared macOS corner mask cuts out transparency. Central motif spacing belongs to
+composition and does not change the tile's visible size.
 
-- A square master with actual alpha. Match the versioned reference's colored rounded tile,
-  which occupies about 78% of the canvas, with equal transparent margins. The corner radius
-  is about 22% of the tile side.
-- A straight-on view, without perspective. A central motif occupies about 58% of the tile width.
-- An opaque tile and ivory motif, with shallow bevels and short contact shadows. The external
-  surround stays transparent. Avoid detached marks, external shadows and baked checkerboards.
-- One hue per feature, a lighter top and deeper bottom, and the same lighting in every icon.
-  Feature colors belong to artwork; selection and controls retain `Brand.blue`.
-- Bold, simple geometry that reads in the existing 20 pt sidebar and 72 pt pane header. The
-  same artwork serves both. Settings names and accessibility labels carry the wording.
+Every imageset has logical size 72 pt and exactly 72/144/216 px PNGs. All tools share the same
+20 pt sidebar and 56 pt pane-header renderer. Selection and controls keep the existing brand
+accent. Disabled Settings features use runtime grayscale at full opacity.
 
-Enabled features retain the source colors. Disabled features are fully grayscale in both Settings
-positions at full opacity. `ToolIcon.isEnabled` applies the treatment at render time; the PNG
-masters and imageset exports stay unchanged. Other surfaces, including onboarding, retain color.
+`manifest.json` owns identities, palette, subjects, selected masters and reference SHA-256.
+It declares `style: "restrained-v1"`, `paletteVersion: "cheerful-v1"` and
+`framing: "edge-to-edge"`. The structural style key keeps the shared planar/framing contract;
+the palette version records the current colors. `paletteReferences` records the approved
+tangerine, sunny-yellow and mint originals with their SHA-256 values. The exporter requires the structural style and edge-to-edge framing
+for this family, verifies all source masters before writing, and rejects padded artwork or
+detached edge pixels that disguise padding. Continuous central bands must reach each canvas
+edge within one pixel. All corners must be transparent after native preparation.
+Verification checks palette-reference hashes, the source/master/native-mask receipt chain and
+exported pixels against the selected master. Channel differences of at most two levels allow
+PNG premultiplication rounding; changed artwork or lighting is rejected.
 
-`manifest.json` owns feature identity, subject, color, master path and logical export size.
-`prompt-template.txt` owns the common generation instructions. `generation.json` preserves the
-actual prompts and references used for this first family. `references/enamel-v1.png` is a versioned
-copy of the selected Zones artwork, independent of editable feature masters. The manifest stores
-its SHA-256, which the script checks before prompting or exporting. `studies/` contains the other
-two requested material studies.
+## Generate a new feature
 
-Use the repo skill with: `Use $lineup-icons to create an icon for <feature>, which <purpose>.`
-The agent reads the feature metadata and the existing family, generates against the saved
-reference, exports and verifies the imageset, then presents the visual comparison.
-
-## Generate and export
-
-From the repository root:
+Use `$lineup-icons` with the tool's purpose. The [repo skill](../../.agents/skills/lineup-icons/SKILL.md)
+routes generation and export. [system-prompt.txt](system-prompt.txt) is the durable visual
+instruction; `prompt-template.txt` expands per-feature metadata.
 
 ```sh
-swift Scripts/feature-icons.swift prompt hyperkey
-# Generate with imagegen, using references/enamel-v1.png and real transparency.
-# Inspect the output and copy the selected PNG to the master path recorded in manifest.json.
+swift Scripts/feature-icons.swift prompt <ToolID>
+# Generate against the manifest's reference using built-in imagegen.
+# Preserve a fully opaque square source, with transparent_background: false.
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  swift Scripts/prepare-feature-icon.swift <source-png> <new-output-directory> <ToolID>
+# Record sourceMaster and prepared master in the manifest.
 swift Scripts/feature-icons.swift export
+swift Scripts/feature-icons.swift verify
 swift Scripts/feature-icons.swift preview
 ```
 
-The exporter uses macOS AppKit, Core Graphics and CryptoKit. It adds no package dependencies or network access.
-Masters stay unchanged. Derived output is sRGB RGBA PNG with original-color rendering:
+Preparation preserves the source PNG inside an SVG layer and native `.icon` document,
+applies the same macOS alpha mask and writes a 1024 px sRGB master without outer padding.
+The native renderer adds visible edge lighting even with material effects disabled. Default
+feature preparation therefore retains its raw render as mask evidence, takes only that alpha,
+and composites the original artwork's resampled RGB. The native lighting never enters the
+selected feature master. Feature preparation accepts only full-frame opaque sources.
+The imageset exporter only resamples prepared masters to sRGB RGBA PNG.
+Generated model/version is not exposed by the integrated tool; exact prompts, arguments,
+original paths and hashes are preserved in `generation.json` and per-icon records.
 
-```text
-Sources/lineup/Resources/ToolIcons/FeatureIcons.xcassets/
-  Contents.json
-  feature-<ToolID>.imageset/
-    Contents.json
-    feature-<ToolID>.png       # 72 px, 1x
-    feature-<ToolID>@2x.png    # 144 px, 2x
-    feature-<ToolID>@3x.png    # 216 px, 3x
-```
+## Review and integrate
 
-The script enforces the 72 pt family size, which matches the existing pane header and replaces the supplied skill's generic 68 pt
-default. [Apple's imageset format](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/ImageSetType.html)
-defines the universal scale slots and original rendering metadata. This catalog can be imported
-into Xcode. Lineup's current SwiftPM build copies it and loads its PNG representations directly.
+The base ten-tool family is in `masters/cheerful-v1/`. The approved Menu Bar glyph refinement
+is selected from `studies/icon-craft-v1/`; World Clock and Display Control retain their earlier
+simple glyphs. Keep Awake uses the exact placement derivative in `masters/awake-centered-v1/`:
+the approved composition moves down 16 source pixels, with existing top-edge pixels extended
+to fill the square. Its glyph pixels and colors are preserved, and the generated original
+is archived intact. The source and native disc bounds are vertically centered; export rounding
+can move the whole-glyph threshold box by half a pixel. Five approved originals were
+preserved; five remaining tools received palette-only imagegen edits. Root `generation.json`
+records the selected hashes and integration checks. Per-icon receipts retain exact prompts
+and upstream provenance. Historical studies and rejected candidates remain local archives.
+Selected sources, native alpha renders, preparation receipts and final masters are versioned;
+the preparer regenerates intermediate feature `.icon` documents in a new output directory.
 
-These are feature image assets. The application reuses the Zones icon; its macOS PNG/ICNS exports
-have their own [app icon standard](../AppIcon/README.md). A future layered icon follows
-[Apple's separate app-icon guidance](https://developer.apple.com/design/human-interface-guidelines/app-icons).
+Inspect actual 16/20/56 px exports on light and dark surfaces and in grayscale. Check open
+Command loops, separate arrows, clock hands, viewfinder gaps and distinct menu-bar shapes.
+`preview.png` and `index.html` show exported artwork; these do not execute app behavior.
 
-## Review a family
+Run the required test suite, build and host app packaging when integrating resources.
+Compare bundled PNGs with selected exports. A package/resource check does not establish
+acceptance in the running Settings window; follow AGENTS.md for manual app verification.
 
-Open `preview.png` for the complete light/dark comparison. Open `index.html` for larger artwork,
-the three material studies, and a sidebar/header preview using the exported PNGs. The gallery is
-a design aid; it does not simulate tool behavior or permissions.
-The PNG comparison reads the actual exports and adds rows automatically when new features enter
-the manifest.
+## Application icon
 
-Check each @2x export. Compare framing, corner shape, motif size and light direction across all
-features. At 20 pt, check that arrows stay distinct, the Command knot stays open, the clock hands
-remain clear, the scan brackets retain gaps, and the menu strip is distinct from its chevron.
+The app logo keeps its existing three-pane symbol and follows the
+[separate native macOS app-icon workflow](../AppIcon/README.md).
+Feature imageset framing must not be copied into the application's platform layout.
+The monochrome menu-bar mark stays unchanged.
 
-Run `swift Scripts/feature-icons.swift verify` after asset edits. Its checks protect the actual
-files and metadata. The exporter also measures the tile bounds at alpha >= 240 and checks their
-width, height and center against the versioned reference. Masters have a tolerance of 1% of the
-canvas; small exports compare against the reference resampled to the same size, allowing one
-additional pixel for rounding. This catches a correctly sized PNG
-whose visible tile is larger or off-center. Refine such artwork through imagegen instead of adding
-a per-feature scale adjustment in the UI. Passing these checks does not establish visual acceptance. Build, run the existing
-suite and assemble a host app when integrating resources. Inspect the final Settings state before
-shipping a visual change.
+Archived `reference` manifests remain available to verify older padded artwork.
+New feature sources use full-frame opaque preparation.

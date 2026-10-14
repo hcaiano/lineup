@@ -1,0 +1,86 @@
+{
+  "arguments" : [
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/keyboardRemap\/keyboardRemap.icon",
+    "--export-image",
+    "--output-file",
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/keyboardRemap\/keyboardRemap.native-mask.png",
+    "--platform",
+    "macOS",
+    "--rendition",
+    "Default",
+    "--width",
+    "1024",
+    "--height",
+    "1024",
+    "--scale",
+    "1"
+  ],
+  "composition" : {
+    "alpha" : "native render alpha, unchanged",
+    "color" : "source resampled to 1024 px in sRGB with high-quality interpolation",
+    "output-color-space" : "sRGB",
+    "pixel-format" : "premultiplied RGBA"
+  },
+  "diagnostics" : "{\n\n}",
+  "document" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/keyboardRemap\/keyboardRemap.icon",
+  "mode" : "native-alpha-mask",
+  "native-render" : {
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/keyboardRemap\/keyboardRemap.native-mask.png",
+    "sha256" : "d2b1c2b279c255f2b636171091f16f706b9665433571ece8e39fd1ea325d90f6",
+    "use" : "alpha only"
+  },
+  "output" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/keyboardRemap\/keyboardRemap.png",
+  "output-sha256" : "a6d4a520cfd0dbecb5e984d2bb7c5fd3d922dda9f5f35b33135432f943d3b0b8",
+  "settings" : {
+    "fill" : {
+      "solid" : "extended-srgb:0.00000,0.00000,0.00000,1.00000"
+    },
+    "groups" : [
+      {
+        "blend-mode" : "normal",
+        "hidden" : false,
+        "layers" : [
+          {
+            "fill" : "automatic",
+            "glass" : false,
+            "hidden" : false,
+            "image-name" : "source.svg",
+            "name" : "keyboardRemap",
+            "opacity" : 1
+          }
+        ],
+        "lighting" : "individual",
+        "shadow" : {
+          "kind" : "neutral",
+          "opacity" : 0
+        },
+        "specular" : false,
+        "translucency" : {
+          "enabled" : false,
+          "value" : 0.5
+        }
+      }
+    ],
+    "supported-platforms" : {
+      "squares" : [
+        "macOS"
+      ]
+    }
+  },
+  "source" : {
+    "height" : 1254,
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/cheerful-v1\/sources\/keyboardRemap.png",
+    "sha256" : "7403ad7a5ac7b24dae4ded95a67c88bd4516e1ed1a89ff913f2661a891588263",
+    "width" : 1254
+  },
+  "source-layout" : {
+    "height" : 1024,
+    "kind" : "full-frame SVG image",
+    "width" : 1024
+  },
+  "tool" : {
+    "developer-directory" : "\/Applications\/Xcode.app\/Contents\/Developer",
+    "path" : "\/Applications\/Xcode.app\/Contents\/Applications\/Icon Composer.app\/Contents\/Executables\/ictool",
+    "version" : "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+  }
+}

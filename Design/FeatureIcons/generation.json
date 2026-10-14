@@ -1,126 +1,1014 @@
 {
-  "date": "2026-10-01",
-  "style": "enamel-v1",
-  "model": "Managed by built-in service; no model selector exposed",
+  "date": "2026-10-14",
+  "style": "restrained-v1",
+  "paletteVersion": "cheerful-v1",
+  "framing": "edge-to-edge",
+  "model": "UNKNOWN",
+  "backend": "UNKNOWN",
+  "version": "UNKNOWN",
+  "status": "Approved cheerful feature artwork exported without native RGB lighting and verified in the running Settings window.",
+  "reference": "references/cheerful-v1.png",
+  "referenceSHA256": "7f0cc98d75d1741914fa0945649fac48a205902736f9c51fbd8eb09336366edd",
+  "paletteReferences": [
+    {
+      "feature": "cycler",
+      "path": "references/cheerful-v1.png",
+      "sha256": "7f0cc98d75d1741914fa0945649fac48a205902736f9c51fbd8eb09336366edd"
+    },
+    {
+      "feature": "awake",
+      "path": "references/cheerful-v1-sunny.png",
+      "sha256": "a39da5b5b50c33c6d93f53470891593e28a7dcf2d43360597e55bcf6677aef03"
+    },
+    {
+      "feature": "scroll",
+      "path": "references/cheerful-v1-mint.png",
+      "sha256": "95a3315739de062bf57d17cda6ede7be28880c4d4424018602ab49d52c9a93fd"
+    }
+  ],
   "selected": [
     {
       "id": "zones",
-      "master": "masters/zones.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": null,
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width: exactly three window-zone panes, one tall rounded rectangle on the left and two equal stacked rounded rectangles on the right, clean even gutters. This motif must read at 20 pixels. Primary tile blue #2F6BFF, cooler light blue at the top and deep royal blue at bottom; ivory white motif. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy cobalt enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides."
+      "name": "Zones",
+      "operation": "byte-for-byte reuse",
+      "principalHueIntent": "386BD5",
+      "sourceMaster": "masters/cheerful-v1/sources/zones.png",
+      "sourceSHA256": "84d49aac23081b1f1313b08ff7eb7e3677e90e3195155650ec9a853acea0092f",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/zones/zones.png",
+      "masterSHA256": "00633a261bc150dc1a6dd9ac65c9b3462eacf62f50e439a2a01565635c3a9694",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/zones.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/receipts/zones.json#upstreamProvenance",
+      "originalPath": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/masters/restrained-v1/sources/zones.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/zones/zones.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/zones/zones.png",
+        "sha256": "6a8d48757de36d26aad76a13217640ab9d0c17a378f4a5c66974520b13040fd5"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/zones/zones.native-mask.png",
+      "nativeRenderSHA256": "6a8d48757de36d26aad76a13217640ab9d0c17a378f4a5c66974520b13040fd5",
+      "outputColorSpace": "sRGB"
     },
     {
       "id": "cycler",
-      "master": "masters/cycler.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "masters/zones.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy cobalt enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its precise tile silhouette, front-on framing, ivory enamel relief, soft edge bevel, padding, lighting direction, and quiet premium finish. Replace the blue hue and the three-pane motif completely. Tile color: #F2580E, slightly lighter at the top and deeper at the bottom, remaining in this hue family. Subject: Exactly two chunky ivory white curved arrows chasing each other in a circular loop, with clear arrowheads and generous negative space in the center. The loop signifies cycling apps and windows. Keep both arrows bold and balanced. No letters. Keep the motif ivory white with the shallow sculpted enamel depth of the reference. Do not retain the Zones window motif. Genuinely transparent background, no shadow or stray pixels outside the tile."
+      "name": "Cycler",
+      "operation": "byte-for-byte reuse",
+      "principalHueIntent": "FF9235",
+      "sourceMaster": "masters/cheerful-v1/sources/cycler.png",
+      "sourceSHA256": "7f0cc98d75d1741914fa0945649fac48a205902736f9c51fbd8eb09336366edd",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/cycler/cycler.png",
+      "masterSHA256": "76d21c6ebb7d7609c3391230ca05b0ffb6ef441923d420bcbb832c07903e4ced",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/cycler.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/receipts/cycler.json#upstreamProvenance",
+      "originalPath": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/studies/cheerful-palette-v1/sources/cycler.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/cycler/cycler.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/cycler/cycler.png",
+        "sha256": "83cad72830e7d92b62c2443903d72d5981eefab3d036c18f216481f7eb7acc25"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/cycler/cycler.native-mask.png",
+      "nativeRenderSHA256": "83cad72830e7d92b62c2443903d72d5981eefab3d036c18f216481f7eb7acc25",
+      "outputColorSpace": "sRGB"
     },
     {
       "id": "hyperkey",
-      "master": "masters/hyperkey.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "masters/zones.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy cobalt enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its precise tile silhouette, front-on framing, ivory enamel relief, soft edge bevel, padding, lighting direction, and quiet premium finish. Replace the blue hue and the three-pane motif completely. Tile color: #805AEF, slightly lighter at the top and deeper at the bottom, remaining in this hue family. Subject: One large ivory white rounded keyboard keycap, gently raised above the violet tile. On the keycap a thick deep-violet Command symbol, the familiar four-loop Apple command knot, debossed with crisp edges. A single key unifies modifiers. The knot must stay open and legible at tiny sizes. No keyboard, labels or extra keys. Keep the motif ivory white with the shallow sculpted enamel depth of the reference. Do not retain the Zones window motif. Genuinely transparent background, no shadow or stray pixels outside the tile."
+      "name": "Hyperkey",
+      "operation": "byte-for-byte reuse",
+      "principalHueIntent": "7060BB",
+      "sourceMaster": "masters/cheerful-v1/sources/hyperkey.png",
+      "sourceSHA256": "fde9e76c5052098324259bcce56dcd14475ffeecd90db86211770ba41c9419ef",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/hyperkey/hyperkey.png",
+      "masterSHA256": "e5b60eff803bcb8c839f374edc6acb2e2b6f756408cbf6349c7fd49d34a2043d",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/hyperkey.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/receipts/hyperkey.json#upstreamProvenance",
+      "originalPath": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/masters/restrained-v1/sources/hyperkey.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/hyperkey/hyperkey.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/hyperkey/hyperkey.png",
+        "sha256": "73285647905011bb693b5854abee61b5c30e0d379f67c365adde0c718af075e2"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/hyperkey/hyperkey.native-mask.png",
+      "nativeRenderSHA256": "73285647905011bb693b5854abee61b5c30e0d379f67c365adde0c718af075e2",
+      "outputColorSpace": "sRGB"
+    },
+    {
+      "id": "keyboardRemap",
+      "name": "Keyboard Remap",
+      "operation": "built-in color-only ImageGen edit",
+      "principalHueIntent": "EF6696",
+      "sourceMaster": "masters/cheerful-v1/sources/keyboardRemap.png",
+      "sourceSHA256": "7403ad7a5ac7b24dae4ded95a67c88bd4516e1ed1a89ff913f2661a891588263",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/keyboardRemap/keyboardRemap.png",
+      "masterSHA256": "a6d4a520cfd0dbecb5e984d2bb7c5fd3d922dda9f5f35b33135432f943d3b0b8",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/keyboardRemap.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/prompts/keyboardRemap.arguments.json",
+      "originalPath": "/Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-e8d6fa77-2b42-4eea-82e2-58e59d922825.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/keyboardRemap/keyboardRemap.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/keyboardRemap/keyboardRemap.png",
+        "sha256": "d2b1c2b279c255f2b636171091f16f706b9665433571ece8e39fd1ea325d90f6"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/keyboardRemap/keyboardRemap.native-mask.png",
+      "nativeRenderSHA256": "d2b1c2b279c255f2b636171091f16f706b9665433571ece8e39fd1ea325d90f6",
+      "outputColorSpace": "sRGB"
     },
     {
       "id": "worldClock",
-      "master": "masters/world-clock-v2.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "references/enamel-v1.png",
-      "prompt": "Use case: precise-object-edit. Input image 1 is the approved Lineup feature-icon template. EDIT THIS IMAGE, preserving the EXACT tile outline, position, size, square proportions, edge bevel, padding and alpha silhouette. Do not zoom, crop, add padding, change canvas proportions, or reshape the tile. Replace ONLY the blue enamel hue with teal #0D8F9B and replace ONLY its three ivory panes with a centered ivory circular clock dial. The new clock dial has four thick short teal ticks at the cardinal hours, a teal center hub, and two thick teal hands at ten past ten. Diameter of the clock face about 62% of the unchanged tile width. Shallow enamel relief, quiet soft upper-left highlight, matching the current family. Preserve the input image's exact rounded square outline and margins pixel-for-pixel, with the teal tile at the same overall scale and location as the blue tile. It must fit beside the existing template at 20pt and 72pt with the SAME OUTER SIZE. Square high-resolution PNG with genuine transparency. No letters, numbers, globe lines, extra objects, cast shadow outside the tile, background or checkerboard. No changes beyond hue and the central feature motif.",
-      "generated_file": "/Users/hcaiano/.codex/generated_images/01a0f4bb-5d11-7410-ab47-f64a451cc56f/exec-bca83a26-fa4c-4a14-bac2-ac5f5d1ab23f.png",
-      "date": "2026-10-01",
-      "reason": "Match the reference tile footprint without changing the 72pt renderer."
+      "name": "World Clock",
+      "operation": "built-in color-only ImageGen edit",
+      "principalHueIntent": "19ACBA",
+      "sourceMaster": "masters/cheerful-v1/sources/worldClock.png",
+      "sourceSHA256": "d588f089ba177dcd80c3eea30eb27630c0c9c42cff48d6c633dbab982a2cda08",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/worldClock/worldClock.png",
+      "masterSHA256": "3965dea5d4871c2408b25462f970ab356efe42896ecaa09e2f7fb20289d8e52d",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/worldClock.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/prompts/worldClock.arguments.json",
+      "originalPath": "/Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-bc3f7645-f295-427b-b72c-4f9ba42c523b.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/worldClock/worldClock.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/worldClock/worldClock.png",
+        "sha256": "9ddecc95880fcac86166d444f20f58490c98cc3e2bb2793723663ed5270aed52"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/worldClock/worldClock.native-mask.png",
+      "nativeRenderSHA256": "9ddecc95880fcac86166d444f20f58490c98cc3e2bb2793723663ed5270aed52",
+      "outputColorSpace": "sRGB"
     },
     {
       "id": "awake",
-      "master": "masters/awake.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "masters/zones.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy colored enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its precise tile silhouette, front-on framing, ivory enamel relief, soft edge bevel, padding, lighting direction, and quiet premium finish. Replace the blue hue and the three-pane motif completely. Tile color: #C17F08, slightly lighter at the top and deeper at the bottom, remaining in this hue family. Subject: One large ivory white sun with a solid gently domed circular center and exactly eight short thick rounded rays, evenly spaced, generous clear gaps. A warm awake daytime metaphor. No facial features, switches, clocks or letters. Keep the motif ivory white with the shallow sculpted enamel depth of the reference. Do not retain the Zones window motif. Genuinely transparent background, no shadow or stray pixels outside the tile."
+      "name": "Keep Awake",
+      "operation": "User-authorized deterministic source positioning",
+      "principalHueIntent": "F8C332",
+      "sourceMaster": "masters/awake-centered-v1/sources/awake.png",
+      "sourceSHA256": "eecf78962e5e8ec5b09ed716bbcb65f0dc88c87b6040b2b03256774947f0a31c",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/awake/awake.png",
+      "masterSHA256": "b50f73331f1e72a2e84560bfebbe50dcc82fc71031d87fca35e498b88bc58af5",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "originalGeneratedArchive": "masters/awake-centered-v1/sources/awake.approved-original.png",
+      "originalGeneratedSHA256": "a39da5b5b50c33c6d93f53470891593e28a7dcf2d43360597e55bcf6677aef03",
+      "model": "none for deterministic derivative; original imagegen version unknown",
+      "transform": {
+        "script": "masters/awake-centered-v1/rebuild.py",
+        "command": "python3 Design/FeatureIcons/masters/awake-centered-v1/rebuild.py source",
+        "operation": "Rigid vertical translation of the entire approved unmasked opaque image.",
+        "translationPixels": {
+          "x": 0,
+          "y": 16,
+          "axis": "image rows, y increases downward"
+        },
+        "algorithm": [
+          "output[16:, :, :] = input[:-16, :, :]",
+          "output[:16, :, :] = input[0, :, :] for each row (nearest-edge extension)",
+          "input rows 1238-1253 leave the canvas; they are background only"
+        ],
+        "compositionNote": "The whole composition moves, including the gentle background gradient. Background pixels are not stationary. The top 16 rows repeat the existing top border row. No exterior padding or new scene area was added.",
+        "notApplied": [
+          "image generation",
+          "glyph segmentation or redraw",
+          "scaling or resampling",
+          "interpolation",
+          "morphology",
+          "color or ICC conversion",
+          "antialias changes",
+          "background reconstruction or inpainting",
+          "exterior padding",
+          "cropping of foreground"
+        ],
+        "guards": [
+          "input sha256 must equal the approved original",
+          "existing outputs are reused only on an exact byte (archive) or decoded-pixel (derived) match; otherwise the script refuses to overwrite",
+          "new files are created atomically"
+        ],
+        "record": "masters/awake-centered-v1/verification/source-transform.json",
+        "environment": {
+          "python": "3.11.17",
+          "pillow": "12.2.0",
+          "numpy": "2.4.6",
+          "zlib": "1.2.12"
+        },
+        "scriptSHA256AtDerivation": "8326ebcda96fcd7ef7bd05f3deca750c349dc6ed9f4b5b9a866a3c5d0d4f269c",
+        "currentScriptSHA256": "2742a44f6ff2634c2e744dfdf640d36a1ed030817fc1112c8fbb4860518ff0f1",
+        "derivationScriptRevision": "b15a511"
+      },
+      "generationRecord": "masters/awake-centered-v1/generation.json",
+      "nativeReceipt": "masters/mask-only-v1/prepared/awake/awake.json",
+      "sourceCentering": {
+        "method": "min(R,G,B) >= 215; 8-connected components; bounds are [x0, y0, x1, y1) in pixel edges; offsets are measured from the canvas center (627, 627), positive right and down.",
+        "before": {
+          "sunBounds": [
+            198,
+            181,
+            1055,
+            1041
+          ],
+          "sunBoundsCenterOffset": [
+            -0.5,
+            -16.0
+          ],
+          "discBounds": [
+            418,
+            404,
+            835,
+            818
+          ],
+          "discBoundsCenterOffset": [
+            -0.5,
+            -16.0
+          ],
+          "sunAreaCentroidOffset": [
+            -0.21018820751442036,
+            -16.368173034892152
+          ]
+        },
+        "after": {
+          "sunBounds": [
+            198,
+            197,
+            1055,
+            1057
+          ],
+          "sunBoundsCenterOffset": [
+            -0.5,
+            0.0
+          ],
+          "discBounds": [
+            418,
+            420,
+            835,
+            834
+          ],
+          "discBoundsCenterOffset": [
+            -0.5,
+            0.0
+          ],
+          "sunAreaCentroidOffset": [
+            -0.21018820751442036,
+            -0.3681730348921519
+          ]
+        }
+      },
+      "previousSelection": {
+        "id": "awake",
+        "name": "Keep Awake",
+        "operation": "byte-for-byte reuse",
+        "principalHueIntent": "F8C332",
+        "sourceMaster": "masters/cheerful-v1/sources/awake.png",
+        "sourceSHA256": "a39da5b5b50c33c6d93f53470891593e28a7dcf2d43360597e55bcf6677aef03",
+        "sourceDimensions": [
+          1254,
+          1254
+        ],
+        "master": "masters/cheerful-v1/prepared/awake/awake.png",
+        "masterSHA256": "41f62cedaed06270a18089d848f4860050a76a7b191bc142c56b3e2996b4bc35",
+        "masterDimensions": [
+          1024,
+          1024
+        ],
+        "receipt": "masters/cheerful-v1/receipts/awake.json",
+        "exactPromptAndArguments": "masters/cheerful-v1/receipts/awake.json#upstreamProvenance",
+        "originalPath": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/studies/cheerful-palette-v1/sources/awake.png",
+        "nativeReceipt": "masters/cheerful-v1/prepared/awake/awake.json",
+        "nativeTool": {
+          "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+          "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+          "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+        },
+        "exports": [
+          {
+            "scale": 1,
+            "dimensions": [
+              72,
+              72
+            ],
+            "opaqueBounds": [
+              0,
+              0,
+              72,
+              72
+            ],
+            "sha256": "bf4d259badee37d99a916bc631c3f8fa7385359c2730e32b435e2c5ed238393c"
+          },
+          {
+            "scale": 2,
+            "dimensions": [
+              144,
+              144
+            ],
+            "opaqueBounds": [
+              0,
+              0,
+              144,
+              144
+            ],
+            "sha256": "9c9bcc06766a6d6809328951bbeac8963b1832b4fe819a903f78903474a6a200"
+          },
+          {
+            "scale": 3,
+            "dimensions": [
+              216,
+              216
+            ],
+            "opaqueBounds": [
+              0,
+              0,
+              216,
+              216
+            ],
+            "sha256": "f2abd2c266947bd93db25108fbed67ca0fdf039596e9554d022460617256f07a"
+          }
+        ]
+      },
+      "previousPreparation": {
+        "master": "masters/awake-centered-v1/prepared/awake/awake.png",
+        "sha256": "eb44e83f2d0e43516491d208b8d58d06b9eb8c1fcc2878b5cd4df834cb7546f0"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/awake/awake.native-mask.png",
+      "nativeRenderSHA256": "eb44e83f2d0e43516491d208b8d58d06b9eb8c1fcc2878b5cd4df834cb7546f0",
+      "outputColorSpace": "sRGB",
+      "previousNativeCentering": {
+        "method": "Read-only. Off-white pixels with min(R,G,B) >= 215 and alpha 255, 8-connected. Components within 2 % of the canvas edge are native edge highlights and are excluded. Bounds are [x0, y0, x1, y1) in pixel edges; offsets are from the canvas center, positive right and down. The mask centroid averages the kept component pixels. The coverage centroid weights min(R,G,B) from the brightest background level in the sun-free 10-13 % ring up to 235, inside the central 80 % window. Native masters are read as stored (Display P3 iCCP from ictool); exports are sRGB. No color conversion is applied for measurement.",
+        "record": "verification/native-centering.json",
+        "excludedEdgeFragments": "Native top-edge highlight only: 523 + 1 px at 1024, and one 1-row strip in each export.",
+        "before": {
+          "1024": {
+            "sunBounds": [
+              162,
+              148,
+              861,
+              850
+            ],
+            "sunBoundsCenterOffset": [
+              -0.5,
+              -13.0
+            ],
+            "discBounds": [
+              342,
+              330,
+              682,
+              668
+            ],
+            "discBoundsCenterOffset": [
+              0.0,
+              -13.0
+            ],
+            "maskCentroidOffset": [
+              -0.178,
+              -13.357
+            ],
+            "coverageCentroidOffset": [
+              -0.209,
+              -13.412
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.408,
+              -13.065
+            ]
+          },
+          "72": {
+            "sunBounds": [
+              12,
+              11,
+              60,
+              59
+            ],
+            "sunBoundsCenterOffset": [
+              0.0,
+              -1.0
+            ],
+            "discBounds": [
+              25,
+              24,
+              47,
+              46
+            ],
+            "discBoundsCenterOffset": [
+              0.0,
+              -1.0
+            ],
+            "maskCentroidOffset": [
+              -0.025,
+              -0.979
+            ],
+            "coverageCentroidOffset": [
+              -0.053,
+              -0.974
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.029,
+              -0.919
+            ]
+          },
+          "144": {
+            "sunBounds": [
+              23,
+              21,
+              121,
+              119
+            ],
+            "sunBoundsCenterOffset": [
+              0.0,
+              -2.0
+            ],
+            "discBounds": [
+              49,
+              47,
+              95,
+              93
+            ],
+            "discBoundsCenterOffset": [
+              0.0,
+              -2.0
+            ],
+            "maskCentroidOffset": [
+              -0.036,
+              -1.958
+            ],
+            "coverageCentroidOffset": [
+              -0.056,
+              -1.899
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.057,
+              -1.837
+            ]
+          },
+          "216": {
+            "sunBounds": [
+              35,
+              32,
+              181,
+              179
+            ],
+            "sunBoundsCenterOffset": [
+              0.0,
+              -2.5
+            ],
+            "discBounds": [
+              72,
+              70,
+              143,
+              140
+            ],
+            "discBoundsCenterOffset": [
+              -0.5,
+              -3.0
+            ],
+            "maskCentroidOffset": [
+              -0.027,
+              -2.625
+            ],
+            "coverageCentroidOffset": [
+              -0.085,
+              -2.837
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.086,
+              -2.756
+            ]
+          }
+        },
+        "after": {
+          "1024": {
+            "sunBounds": [
+              162,
+              161,
+              861,
+              863
+            ],
+            "sunBoundsCenterOffset": [
+              -0.5,
+              0.0
+            ],
+            "discBounds": [
+              342,
+              343,
+              682,
+              681
+            ],
+            "discBoundsCenterOffset": [
+              0.0,
+              0.0
+            ],
+            "maskCentroidOffset": [
+              -0.156,
+              -0.301
+            ],
+            "coverageCentroidOffset": [
+              -0.21,
+              -0.346
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.408,
+              0.0
+            ]
+          },
+          "72": {
+            "sunBounds": [
+              12,
+              12,
+              60,
+              60
+            ],
+            "sunBoundsCenterOffset": [
+              0.0,
+              0.0
+            ],
+            "discBounds": [
+              25,
+              25,
+              47,
+              47
+            ],
+            "discBoundsCenterOffset": [
+              0.0,
+              0.0
+            ],
+            "maskCentroidOffset": [
+              -0.056,
+              -0.023
+            ],
+            "coverageCentroidOffset": [
+              -0.054,
+              -0.059
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.029,
+              0.0
+            ]
+          },
+          "144": {
+            "sunBounds": [
+              23,
+              23,
+              120,
+              121
+            ],
+            "sunBoundsCenterOffset": [
+              -0.5,
+              0.0
+            ],
+            "discBounds": [
+              49,
+              49,
+              95,
+              95
+            ],
+            "discBoundsCenterOffset": [
+              0.0,
+              0.0
+            ],
+            "maskCentroidOffset": [
+              -0.055,
+              0.039
+            ],
+            "coverageCentroidOffset": [
+              -0.059,
+              -0.076
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.057,
+              0.0
+            ]
+          },
+          "216": {
+            "sunBounds": [
+              35,
+              34,
+              181,
+              181
+            ],
+            "sunBoundsCenterOffset": [
+              0.0,
+              -0.5
+            ],
+            "discBounds": [
+              72,
+              73,
+              143,
+              143
+            ],
+            "discBoundsCenterOffset": [
+              -0.5,
+              0.0
+            ],
+            "maskCentroidOffset": [
+              -0.005,
+              -0.263
+            ],
+            "coverageCentroidOffset": [
+              -0.085,
+              -0.124
+            ],
+            "idealOffsetScaledFromSource": [
+              -0.086,
+              0.0
+            ]
+          }
+        }
+      }
     },
     {
       "id": "textCapture",
-      "master": "masters/text-capture.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "masters/zones.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy colored enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its precise tile silhouette, front-on framing, ivory enamel relief, soft edge bevel, padding, lighting direction, and quiet premium finish. Replace the blue hue and the three-pane motif completely. Tile color: #16856B, slightly lighter at the top and deeper at the bottom, remaining in this hue family. Subject: Four bold ivory white rounded right-angle viewfinder corner brackets surround three short thick ivory horizontal text strokes; the middle stroke is shorter. Clear scan frame and abstract text lines, readable at 20 pixels. No actual letters, document sheet, magnifier or camera. Keep the motif ivory white with the shallow sculpted enamel depth of the reference. Do not retain the Zones window motif. Genuinely transparent background, no shadow or stray pixels outside the tile."
+      "name": "Text Capture",
+      "operation": "built-in color-only ImageGen edit",
+      "principalHueIntent": "22B89C",
+      "sourceMaster": "masters/cheerful-v1/sources/textCapture.png",
+      "sourceSHA256": "af70e28ac83358f5c82e8d98bacde2436e9bea6b09a4ea5cd4e6e0f5411c4af1",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/textCapture/textCapture.png",
+      "masterSHA256": "d3769c935c452da386f6b2e667de02407c7678a36614b99715482a552abc80f3",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/textCapture.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/prompts/textCapture.arguments.json",
+      "originalPath": "/Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-40452b88-26b7-4369-9cd1-fbd3b8165003.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/textCapture/textCapture.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/textCapture/textCapture.png",
+        "sha256": "8da99f10fb2584b87fe5310ca576602b1a8981ac4272dfaf5df23519022f0395"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/textCapture/textCapture.native-mask.png",
+      "nativeRenderSHA256": "8da99f10fb2584b87fe5310ca576602b1a8981ac4272dfaf5df23519022f0395",
+      "outputColorSpace": "sRGB"
     },
     {
       "id": "menuBar",
-      "master": "masters/menu-bar.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "masters/zones.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy colored enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its precise tile silhouette, front-on framing, ivory enamel relief, soft edge bevel, padding, lighting direction, and quiet premium finish. Replace the blue hue and the three-pane motif completely. Tile color: #4D617A, slightly lighter at the top and deeper at the bottom, remaining in this hue family. Subject: One wide ivory white softly raised horizontal menu-bar strip, centered slightly above midpoint, with exactly three evenly spaced small deep-slate rounded squares inset in it. Beneath the strip, one bold ivory downward chevron centered, indicating show or hide. Keep two simple distinct shapes and high contrast. No desktop screen, tiny text or extra panels. Keep the motif ivory white with the shallow sculpted enamel depth of the reference. Do not retain the Zones window motif. Genuinely transparent background, no shadow or stray pixels outside the tile."
-    },
-    {
-      "id": "scroll",
-      "master": "masters/scroll.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "references/enamel-v1.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile matching the versioned reference's visible bounds: about 78% of the canvas, equal 11% transparent margins, corner radius about 22% of the tile side. The reference's exact tile footprint and center take priority over approximate percentages. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy colored enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its precise tile silhouette, front-on framing, ivory enamel relief, soft edge bevel, padding, lighting direction, and quiet premium finish. Replace the blue hue and the three-pane motif completely. Tile color: #6B8F23, slightly lighter at the top and deeper at the bottom, remaining in this hue family. Subject: Two separate bold ivory vertical arrows side by side, the left pointing up and the right pointing down, with thick stems, broad triangular heads and a clear enamel gap between them. Make the paired directions read as independent at 20 pixels. No mouse outline, trackpad outline, letters or extra marks. Keep the motif ivory white with the shallow sculpted enamel depth of the reference. Do not retain the Zones window motif unless generating Zones. Genuinely transparent background, no shadow or stray pixels outside the tile.",
-      "generated_file": "/Users/hcaiano/.codex-profiles/lais/generated_images/01a0fd1d-a074-7a80-ac56-dc6a6054eda0/exec-cc3f873e-5be5-48ba-b86f-8ec2ce93bf04.png",
-      "date": "2026-10-02",
-      "reason": "The separate up and down arrows remain distinct at 20 pt and indicate independent scroll directions."
-    }
-  ],
-  "studies": [
-    {
-      "file": "studies/zones-sculpted.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width: exactly three window-zone panes, one tall rounded rectangle on the left and two equal stacked rounded rectangles on the right, clean even gutters. This motif must read at 20 pixels. Primary tile blue #2F6BFF, cooler light blue at the top and deep royal blue at bottom; ivory white motif. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: sculpted satin. A soft satin lacquer blue tile with a pillowy bevel. Ivory white panes are gently extruded ceramic shapes with softened sculpted edges and very short soft contact shadows. Calm premium tactile depth, no plastic toy look, no metallic outline, no thick protruding sides.",
-      "transparent_background": true
-    },
-    {
-      "file": "studies/zones-glass.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width: exactly three window-zone panes, one tall rounded rectangle on the left and two equal stacked rounded rectangles on the right, clean even gutters. This motif must read at 20 pixels. Primary tile blue #2F6BFF, cooler light blue at the top and deep royal blue at bottom; ivory white motif. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: frosted glass. Translucent vivid cobalt-blue glass tile with restrained polished perimeter, and luminous milky frosted glass window panes inside. Subtle refraction and controlled translucency, preserve high contrast and simple solid shapes at 20 pixels. No rainbow, sparkle or distracting reflections.",
-      "transparent_background": true
-    }
-  ],
-  "notes": [
-    "The first World Clock request included globe grooves and stalled; it was cancelled. A second, simpler clock was generated and selected for this family."
-  ],
-  "history": [
-    {
-      "id": "scroll",
-      "master": "masters/scroll-double-ended-v1.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "references/enamel-v1.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile matching the versioned reference's visible bounds: about 78% of the canvas, equal 11% transparent margins, corner radius about 22% of the tile side. The reference's exact tile footprint and center take priority over approximate percentages. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy colored enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its precise tile silhouette, front-on framing, ivory enamel relief, soft edge bevel, padding, lighting direction, and quiet premium finish. Replace the blue hue and the three-pane motif completely. Tile color: #6B8F23, slightly lighter at the top and deeper at the bottom, remaining in this hue family. Subject: One bold ivory vertical double-ended arrow: a broad up arrowhead at the top, a broad down arrowhead at the bottom, and one thick shared stem. Center it with generous olive enamel visible on both sides. The two opposite directions must remain distinct at 20 pixels. No mouse outline, trackpad outline, letters or extra marks. Keep the motif ivory white with the shallow sculpted enamel depth of the reference. Do not retain the Zones window motif unless generating Zones. Genuinely transparent background, no shadow or stray pixels outside the tile.",
-      "generated_file": "/Users/hcaiano/.codex-profiles/lais/generated_images/01a0fd1d-a074-7a80-ac56-dc6a6054eda0/exec-4fa3c7a8-f85d-4e37-9711-c0ea1e26ebe3.png",
-      "date": "2026-10-02",
-      "status": "Compared with paired arrows; the single double-ended arrow is simpler but does not express independent device directions as clearly."
-    },
-    {
-      "id": "worldClock",
-      "master": "masters/world-clock.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "reference": "masters/zones.png",
-      "prompt": "Use case: stylized-concept. Asset type: production-quality feature icon for Lineup, a native macOS settings suite, displayed at 20pt in a sidebar and 72pt in a pane header. Create ONE square 1024x1024 PNG with genuine transparent alpha outside the icon. Straight-on orthographic view. A precisely centered rounded-square tile occupying 82% of the canvas, equal 9% transparent margins, corner radius about 22% of the tile side. Central motif occupies 58% of the tile width and must read at 20 pixels. Soft upper-left lighting. Inspiration: the craft and legibility of high-quality Apple-platform icons curated by Icon Museum, with one bold central concept, controlled depth and careful edge highlights. Original design, not a copy. No letters, numbers, labels, screenshots, device frames, perspective rotation, floor, cast shadow outside the tile, scenery, watermark, checkerboard pattern or opaque background. Keep silhouette simple and image genuinely transparent. Style/medium: quiet modern enamel. Nearly flat glossy colored enamel tile, one broad soft highlight, white symbol with very shallow raised bevel and a crisp small inner shadow. Restrained polish. Thin edge highlight only, no metallic frame, no thick extruded sides. Input image 1 is a STYLE REFERENCE ONLY: match its tile silhouette, framing, padding, ivory enamel relief and lighting. Replace its blue color and window motif. Tile color #0D8F9B, lighter top and deeper teal bottom. Subject: One ivory white circular clock face, with a gently raised rim, two thick deep-teal hands indicating ten past ten, a central hub, and exactly four bold short hour ticks. No numbers. Bold, simple clock geometry, readable at 20 pixels. Do not include globe meridians, a map, extra dials, or letters. Genuinely transparent background.",
-      "status": "Superseded: opaque tile was 80.6% wide, larger than the approximately 78% family."
-    },
-    {
-      "id": "worldClock",
-      "master": "studies/world-clock-framing-undersized.png",
-      "tool": "image_gen.imagegen",
-      "transparent_background": true,
-      "references": [
-        "references/enamel-v1.png",
-        "masters/world-clock.png"
+      "name": "Menu Bar",
+      "operation": "Approved horizontal-collapse iconography refinement",
+      "principalHueIntent": "6B83E9",
+      "sourceMaster": "studies/icon-craft-v1/sources/menuBar.png",
+      "sourceSHA256": "7bb22d818c93b172ed222317367cc4d217b32bb6b1b82fe07bb0e8f2a1efd0e2",
+      "sourceDimensions": [
+        1254,
+        1254
       ],
-      "prompt": "Use case: precise-object-edit. Asset type: existing Lineup enamel feature icon, displayed at 20pt and 72pt. Input image 1 is the immutable enamel FAMILY FRAMING reference. Input image 2 is the World Clock artwork to refine. Primary request: correct only the visual scale and framing of World Clock to match the other icons. The current teal tile is larger and a little wider than the family. Match image 1's EXACT colored tile footprint, square proportions, rounded corner silhouette, center and transparent margins. In the complete square PNG canvas the opaque rounded tile must span about 78% of both width and height, with approximately 11% empty transparent margin at EACH edge. Do not enlarge the icon to fill the image. Preserve image 2's teal #0D8F9B hue family, enamel finish, upper-left lighting, ivory circular clock face, raised rim, four hour ticks, teal hub and two teal hands showing ten past ten. Scale the entire World Clock tile and its contents together, retaining the existing clock-to-tile proportions and motif. No new objects, no style change, no perspective, no blue window panes, no text or numbers. One square high-resolution PNG with genuine transparent alpha. Match the FAMILY reference's outer bounds rather than input image 2's larger bounds. Completely transparent outside the tile; no external cast shadow, glow or floating fragments. Keep the clock sharp and legible at 20 pixels.",
-      "status": "Rejected: edit reduced opaque tile to 76.4% x 74.5% instead of matching the reference."
+      "master": "masters/mask-only-v1/prepared/menuBar/menuBar.png",
+      "masterSHA256": "828cc2c751c892ec28c2572df9320505ea53803e8dbb8d69d1326206198e594c",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "studies/icon-craft-v1/receipts/menuBar.json",
+      "exactPromptAndArguments": "studies/icon-craft-v1/prompts/menuBar.arguments.json",
+      "nativeReceipt": "masters/mask-only-v1/prepared/menuBar/menuBar.json",
+      "previousSelection": {
+        "id": "menuBar",
+        "name": "Menu Bar",
+        "operation": "built-in color-only ImageGen edit",
+        "principalHueIntent": "6B83E9",
+        "sourceMaster": "masters/cheerful-v1/sources/menuBar.png",
+        "sourceSHA256": "ab35f2cc3476248b9483d4bf21c8e76f6f9e9587b479a0dd2384012f7ff7cda6",
+        "sourceDimensions": [
+          1254,
+          1254
+        ],
+        "master": "masters/cheerful-v1/prepared/menuBar/menuBar.png",
+        "masterSHA256": "19798793763650227f0729dd916443429d818fc42c7536a202d5586b52f2e9fa",
+        "masterDimensions": [
+          1024,
+          1024
+        ],
+        "receipt": "masters/cheerful-v1/receipts/menuBar.json",
+        "exactPromptAndArguments": "masters/cheerful-v1/prompts/menuBar.arguments.json",
+        "originalPath": "/Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-e250ebf0-83db-48e5-982b-1ed761e829b1.png",
+        "nativeReceipt": "masters/cheerful-v1/prepared/menuBar/menuBar.json",
+        "nativeTool": {
+          "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+          "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+          "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+        },
+        "exports": [
+          {
+            "scale": 1,
+            "dimensions": [
+              72,
+              72
+            ],
+            "opaqueBounds": [
+              0,
+              0,
+              72,
+              72
+            ],
+            "sha256": "f96a708998f6201067e537101dee8809b7f679283f13eca381de222f959df715"
+          },
+          {
+            "scale": 2,
+            "dimensions": [
+              144,
+              144
+            ],
+            "opaqueBounds": [
+              0,
+              0,
+              144,
+              144
+            ],
+            "sha256": "16fde90ee99bd26345e3af0ba60f9402a6fe3a0d26a7bc34fd1295d3ea0b82a1"
+          },
+          {
+            "scale": 3,
+            "dimensions": [
+              216,
+              216
+            ],
+            "opaqueBounds": [
+              0,
+              0,
+              216,
+              216
+            ],
+            "sha256": "6ac6bcb0dee4b9bdcff38ba523c9beb9174f0ff8c84142a14169a055d4c69ea7"
+          }
+        ]
+      },
+      "previousPreparation": {
+        "master": "studies/icon-craft-v1/prepared/menuBar/menuBar.png",
+        "sha256": "6050dd61515aafae6b70d76a26851e579ada584dd620720c3b5fd1d050bc6299"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/menuBar/menuBar.native-mask.png",
+      "nativeRenderSHA256": "6050dd61515aafae6b70d76a26851e579ada584dd620720c3b5fd1d050bc6299",
+      "outputColorSpace": "sRGB"
+    },
+    {
+      "id": "scroll",
+      "name": "Scroll",
+      "operation": "byte-for-byte reuse",
+      "principalHueIntent": "43C77A",
+      "sourceMaster": "masters/cheerful-v1/sources/scroll.png",
+      "sourceSHA256": "95a3315739de062bf57d17cda6ede7be28880c4d4424018602ab49d52c9a93fd",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/scroll/scroll.png",
+      "masterSHA256": "5a583f721b0531af9acc29d99edcd0bcc74bf103e0d3d00f6b1b4ff331fd492e",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/scroll.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/receipts/scroll.json#upstreamProvenance",
+      "originalPath": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/studies/cheerful-palette-v1/sources/scroll.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/scroll/scroll.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/scroll/scroll.png",
+        "sha256": "473b456af029a7679bfe149bccbbb2e53eb3df90aa94b2ef348219d6ee9c4da7"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/scroll/scroll.native-mask.png",
+      "nativeRenderSHA256": "473b456af029a7679bfe149bccbbb2e53eb3df90aa94b2ef348219d6ee9c4da7",
+      "outputColorSpace": "sRGB"
+    },
+    {
+      "id": "displayControl",
+      "name": "Display Control",
+      "operation": "built-in color-only ImageGen edit",
+      "principalHueIntent": "389CEB",
+      "sourceMaster": "masters/cheerful-v1/sources/displayControl.png",
+      "sourceSHA256": "0278045d4e4f71c705875c19865d8d33a693dd0af6de58736008872393d08830",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "master": "masters/mask-only-v1/prepared/displayControl/displayControl.png",
+      "masterSHA256": "2b3e898bc1eb5b090cb806e7b2a3d237bb24ce089442835b4e14679213de033b",
+      "masterDimensions": [
+        1024,
+        1024
+      ],
+      "receipt": "masters/cheerful-v1/receipts/displayControl.json",
+      "exactPromptAndArguments": "masters/cheerful-v1/prompts/displayControl.arguments.json",
+      "originalPath": "/Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-c8efdb92-087a-4ae4-a97c-ab7734d954ec.png",
+      "nativeReceipt": "masters/mask-only-v1/prepared/displayControl/displayControl.json",
+      "nativeTool": {
+        "developer-directory": "/Applications/Xcode.app/Contents/Developer",
+        "path": "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool",
+        "version": "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+      },
+      "previousPreparation": {
+        "master": "masters/cheerful-v1/prepared/displayControl/displayControl.png",
+        "sha256": "200bf8e97838e566ac2a46ed64f7d23ce40d4cf40416117fedbbb62daa3dd8ad"
+      },
+      "preparationMode": "native-alpha-mask",
+      "nativeRender": "masters/mask-only-v1/prepared/displayControl/displayControl.native-mask.png",
+      "nativeRenderSHA256": "200bf8e97838e566ac2a46ed64f7d23ce40d4cf40416117fedbbb62daa3dd8ad",
+      "outputColorSpace": "sRGB"
     }
-  ]
+  ],
+  "knownLimits": [
+    "New ImageGen edits are visually faithful but are not pixel-exact recolorings. Foreground threshold bounds differ by at most 1 px, with median off-white channel changes of 1 to 7 RGB levels. Exact details are in source-checks.json.",
+    "Approved Keep Awake yellow has lower off-white contrast at 16 px, especially in grayscale. The disk and eight rays remain recognizable in the inspected screenshots.",
+    "CSS grayscale previews represent the disabled treatment but do not prove pixel equivalence to native SwiftUI saturation(0).",
+    "Native Settings evidence covers the observed enabled and disabled icon states. Tool behavior, Dock and Finder appearance were not exercised by this artwork change."
+  ],
+  "refinementDecision": {
+    "menuBar": "approved",
+    "worldClock": "new proposal rejected; original cheerful selected",
+    "displayControl": "new proposal rejected; original simple outline selected",
+    "awake": "Exact source vertical centering integrated; approved glyph and colors preserved by deterministic translation."
+  },
+  "preparation": {
+    "mode": "native-alpha-mask",
+    "script": "Scripts/prepare-feature-icon.swift",
+    "nativeRGB": "discarded; raw renders retained as alpha provenance",
+    "sourceRGB": "resampled in sRGB and premultiplied by unchanged native8-bit alpha",
+    "sourcesPreserved": true,
+    "alphaChecks": [
+      {
+        "id": "zones",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "cycler",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "hyperkey",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "keyboardRemap",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "worldClock",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "awake",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "textCapture",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "menuBar",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "scroll",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      },
+      {
+        "id": "displayControl",
+        "rawBitDepth": 16,
+        "finalBitDepth": 8,
+        "pillowAlphaDownconversionMaxDelta": 1,
+        "nativeAlphaEquality": "Exact at CoreGraphics8-bit decoding boundary; preparer verifies everypixel."
+      }
+    ],
+    "appIconWorkflow": "unchanged; native platform materials retained separately",
+    "scriptSHA256AtPreparation": "5ce9991d0f86ec7ea053656935315fbd83f167c5287cabf5a3284ca0b71e5d83",
+    "currentScriptSHA256": "3f4a34a85ffd153ff89a76110af1dbb12a2fbde9f8d17c87ff8fa406e05100e1"
+  },
+  "verification": {
+    "features": 10,
+    "pngs": 30,
+    "sizes": [
+      72,
+      144,
+      216
+    ],
+    "originalSourceArtworkUnchanged": true,
+    "nativeAlpha": "CoreGraphics8-bit nativealpha preserved; raw16bitmask retained.",
+    "whiteEdges": "Removed from sourceRGB export; actualHyperkey header and completeSettingssidebar inspected.",
+    "testsPassed": 2123,
+    "pythonTestsPassed": 26,
+    "preFixRegressionFailures": 5,
+    "swiftBuild": "passed",
+    "signedHostPackage": "passed",
+    "bundledAssetsByteEqual": true,
+    "appLaunched": true,
+    "runningBundle": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/.build/mask-only-icons-review/Lineup.app",
+    "runningPID": 96521,
+    "nativeScreenshot": ".build/native-icons-review/hyperkey-mask-only.png",
+    "nativeEvidence": "RealSettings screenshot: Hyperkey56ptheader and all10 sidebaricons20pt. Enabledanddisabledstates observed accordingtoliveconfig.",
+    "uiActions": "Settingsnavigationonly; featuretoggles unchanged.",
+    "configUnchangedAcrossRendererFixRelaunch": true,
+    "legacySourcesUnchanged": true,
+    "otherNativeToolBehavior": "not exercised; artwork/exportchangeonly"
+  },
+  "productionArtifacts": "Selected source PNGs, source-generation receipts, native alpha renders, preparation receipts and final masters are committed. Intermediate feature .icon documents are regenerated from sources by prepare-feature-icon.swift."
 }

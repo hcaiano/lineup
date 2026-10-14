@@ -1,0 +1,86 @@
+{
+  "arguments" : [
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/textCapture\/textCapture.icon",
+    "--export-image",
+    "--output-file",
+    "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/textCapture\/textCapture.native-mask.png",
+    "--platform",
+    "macOS",
+    "--rendition",
+    "Default",
+    "--width",
+    "1024",
+    "--height",
+    "1024",
+    "--scale",
+    "1"
+  ],
+  "composition" : {
+    "alpha" : "native render alpha, unchanged",
+    "color" : "source resampled to 1024 px in sRGB with high-quality interpolation",
+    "output-color-space" : "sRGB",
+    "pixel-format" : "premultiplied RGBA"
+  },
+  "diagnostics" : "{\n\n}",
+  "document" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/textCapture\/textCapture.icon",
+  "mode" : "native-alpha-mask",
+  "native-render" : {
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/textCapture\/textCapture.native-mask.png",
+    "sha256" : "8da99f10fb2584b87fe5310ca576602b1a8981ac4272dfaf5df23519022f0395",
+    "use" : "alpha only"
+  },
+  "output" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/mask-only-v1\/prepared\/textCapture\/textCapture.png",
+  "output-sha256" : "d3769c935c452da386f6b2e667de02407c7678a36614b99715482a552abc80f3",
+  "settings" : {
+    "fill" : {
+      "solid" : "extended-srgb:0.00000,0.00000,0.00000,1.00000"
+    },
+    "groups" : [
+      {
+        "blend-mode" : "normal",
+        "hidden" : false,
+        "layers" : [
+          {
+            "fill" : "automatic",
+            "glass" : false,
+            "hidden" : false,
+            "image-name" : "source.svg",
+            "name" : "textCapture",
+            "opacity" : 1
+          }
+        ],
+        "lighting" : "individual",
+        "shadow" : {
+          "kind" : "neutral",
+          "opacity" : 0
+        },
+        "specular" : false,
+        "translucency" : {
+          "enabled" : false,
+          "value" : 0.5
+        }
+      }
+    ],
+    "supported-platforms" : {
+      "squares" : [
+        "macOS"
+      ]
+    }
+  },
+  "source" : {
+    "height" : 1254,
+    "path" : "\/Users\/hcaiano\/.t3\/worktrees\/lineup\/t3-fa15c6c1\/Design\/FeatureIcons\/masters\/cheerful-v1\/sources\/textCapture.png",
+    "sha256" : "af70e28ac83358f5c82e8d98bacde2436e9bea6b09a4ea5cd4e6e0f5411c4af1",
+    "width" : 1254
+  },
+  "source-layout" : {
+    "height" : 1024,
+    "kind" : "full-frame SVG image",
+    "width" : 1024
+  },
+  "tool" : {
+    "developer-directory" : "\/Applications\/Xcode.app\/Contents\/Developer",
+    "path" : "\/Applications\/Xcode.app\/Contents\/Applications\/Icon Composer.app\/Contents\/Executables\/ictool",
+    "version" : "{\n  \"bundle-version\" : \"129\",\n  \"short-bundle-version\" : \"27.0\"\n}"
+  }
+}
