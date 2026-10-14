@@ -189,10 +189,14 @@ private func runNativePreparationTests(in directory: URL) throws {
         check(false, "Native preparation writes a decodable 1024 px master")
         return
     }
-    let mask = rgba(raw)
-    check(mask?.width == size && mask?.height == size && (0..<size * size).allSatisfy {
-        final.pixels[$0 * 4 + 3] == mask?.pixels[$0 * 4 + 3]
-    }, "Prepared master keeps the raw native render's alpha unchanged")
+    guard let mask = rgba(raw), mask.width == size, mask.height == size else {
+        check(false, "Native preparation writes a decodable 1024 px alpha mask")
+        return
+    }
+    let alphaMatches = stride(from: 3, to: final.pixels.count, by: 4).allSatisfy { index in
+        final.pixels[index] == mask.pixels[index]
+    }
+    check(alphaMatches, "Prepared master keeps the raw native render's alpha unchanged")
     check([0, size - 1, (size - 1) * size, size * size - 1].allSatisfy { final.pixels[$0 * 4 + 3] == 0 },
           "Prepared master keeps transparent native corners")
 
