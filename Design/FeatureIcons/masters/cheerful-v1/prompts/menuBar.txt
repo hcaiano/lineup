@@ -1,0 +1,10 @@
+Use case: precise-object-edit.
+Asset type: production Lineup feature icon, cheerful-v1 family.
+Input image 1 is the EXISTING OPAQUE SOURCE and the only edit target. Its artwork is locked geometry, not inspiration for a redraw.
+Change ONLY the colored hue and value. Preserve the exact existing off-white foreground color and every symbol contour, stroke weight, hole, position, spacing, apparent size, proportion and scale. Do not redraw, reinterpret, rotate, shrink, enlarge, add or remove any shape.
+Keep the simple flat planar geometry, crisp edges and a very gentle nonradial directional top-left to bottom-right background color transition. Match the clean happy brightness of the approved tangerine #FF9235, sunny yellow #F8C332 and spring mint #43C77A family, while keeping the assigned single hue.
+Produce one high-quality standalone fully opaque square PNG, at least 1024 x 1024 pixels, keeping the input canvas geometry. The background fills all four edges and corners continuously. No outer padding, baked outer corner mask, tile silhouette or transparency. Native preparation owns the mask.
+No 3D, relief, bevel, shadows, gloss, neon, bubble, radial highlight, grain, texture, miniature detail, secondary accent colors, new glyphs or text. Keep off-white intact. Do not reimagine the concept.
+
+Color-only change for menuBar:
+Replace only the grey slate background and the three existing square cutouts with clean cheerful PERIWINKLE around #6B83E9, a very gentle diagonal transition from about #7B92F2 to #6077DC. Preserve the exact off-white horizontal bar, all three holes and the single downward chevron unchanged. Keep periwinkle clearly bright and blue, not grey, dusty, navy or neon.

@@ -18,7 +18,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before preparing or reviewing a pull req
 required evidence, review gates, and merge policy.
 
 For feature or app icon generation and refinements, use
-[lineup-icons](.agents/skills/lineup-icons/SKILL.md), which owns the enamel reference and platform exports.
+[lineup-icons](.agents/skills/lineup-icons/SKILL.md), which owns the approved feature reference and separate platform exports.
 
 ## Protect user state and identity
 

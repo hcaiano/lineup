@@ -27,6 +27,8 @@ runSuite("MenuBarSuite", runMenuBarTests)
 runSuite("ScrollSuite", runScrollTests)
 runSuite("DisplayControlSuite", runDisplayControlTests)
 runSuite("MenuPanelSuite", runMenuPanelTests)
+runSuite("FeatureIconsSuite", runFeatureIconsTests)
+runSuite("FeatureIconContractSuite", runFeatureIconContractTests)
 if CommandLine.arguments.contains("--input-recovery") {
     runSuite("InputRecoverySuite", runInputRecoveryTests)
 }

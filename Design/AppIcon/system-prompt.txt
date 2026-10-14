@@ -1,0 +1,7 @@
+Preserve Lineup's current three-pane brand mark: one tall pane on the left and two equal panes stacked on the right. Henrique confirmed this geometry on 2026-10-14. Keep the matching monochrome menu-bar template. Alternative letter marks and new logos are out of scope.
+
+Match the restrained planar feature family approved on 2026-10-14. Keep the three-pane geometry, proportions and clear gutters. Use calm blue, off-white panes and a gentle color gradient. Keep the graphic crisp and planar, with material effects disabled for this selected finish. Preserve the symbol instead of introducing a new logo.
+
+Use Apple's installed 1024-pixel macOS Icon Composer template for final native application artwork. Keep foreground layers separate from background and native material settings. Preserve the saved .icon source, exact settings, tool version, appearance previews, and compiled bundle output. Compile the saved native document with actool. Bundle its Assets.car and compiler-generated ICNS fallback, with the matching icon name in bundle metadata. Retain renderer previews separately from compiled application output. The compiler supplies the macOS platform framing and older-system representations.
+
+The feature family's zero-padding contract does not replace the application's native platform mask and spacing. The menu-bar mark stays monochrome without a decorative tile. Record all source and generation changes, preserve older artwork, and describe the actual evidence without calling an unintegrated study finished.

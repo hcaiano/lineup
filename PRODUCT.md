@@ -260,13 +260,14 @@ Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 `Sources/lineup/App/Brand.swift`) carries selection and controls in Settings and the layout editor.
 The menu-bar popover and its controls inherit the system accent and appearance. Other styling
 defers to macOS conventions (system fonts, vibrancy, standard controls). Feature artwork uses one color per tool
-within the shared [enamel icon family](Design/FeatureIcons/README.md). The app should feel like
+within the shared [cheerful icon family](Design/FeatureIcons/README.md), with clean luminous hues, gentle color
+gradients, bold planar symbols and uniform feature exports without outer padding. The app should feel like
 Apple shipped it.
 
-Lineup currently reuses the selected Zones artwork as its application icon and the existing
-pane-grid silhouette in the menu bar. New logo work is deferred. The source and export contract
-live in the [app icon standard](Design/AppIcon/README.md). A future layered replacement follows
-Apple's native Icon Composer workflow.
+Lineup keeps the selected three-pane symbol for its application icon and the existing
+pane-grid silhouette in the menu bar. The app icon has its own native macOS Icon Composer
+source and platform framing, separate from feature imagesets. The source and export contract
+live in the [app icon standard](Design/AppIcon/README.md).
 
 In Settings, enabled features retain their artwork's color. Disabled features are fully grayscale
 in both the sidebar and pane header, using the same `ToolIcon` renderer. The treatment follows

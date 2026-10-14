@@ -1,17 +1,24 @@
 {
-  "style": "enamel-v1",
-  "color": "2F6BFF",
-  "reference": "../FeatureIcons/references/enamel-v1.png",
-  "referenceSHA256": "4b70a4012b67ce1e2a906d446969b0d5cdc030fb29ca4c8b09cf2d3d45ca961f",
+  "style": "restrained-v1",
+  "color": "386BD5",
   "selected": "zones",
   "selectedLogo": "zones",
-  "status": "Henrique selected the existing Zones icon for Lineup on 2026-10-01. Reuse the exact feature master for current PNG/ICNS exports and the pane-grid menu-bar template. New logo work is deferred.",
+  "status": "Existing three-pane logo retained. The native Icon Composer document redraws the approved restrained Zones artwork as a flat SVG foreground on a separate blue gradient, compiled by actool into the app bundle.",
   "candidates": [
     {
       "id": "zones",
       "name": "Lineup / Zones",
-      "master": "../FeatureIcons/masters/zones.png",
-      "subject": "Reuse the existing Zones artwork unchanged: exactly three ivory rounded window panes, one tall pane on the left and two equal stacked panes on the right, on the approved blue enamel tile. Do not generate a new logo."
+      "nativeDocument": "Lineup.icon",
+      "master": "masters/lineup-native.png",
+      "reference": "../FeatureIcons/references/restrained-v1.png",
+      "referenceSHA256": "84d49aac23081b1f1313b08ff7eb7e3677e90e3195155650ec9a853acea0092f",
+      "subject": "Existing three-pane Zones symbol from the approved raycast-v2-muted artwork: one tall off-white pane on the left and two equal stacked panes on the right, flat on a restrained blue gradient. No new logo."
+    },
+    {
+      "id": "zones-enamel-refined",
+      "name": "Lineup / Zones (enamel raster study)",
+      "master": "../FeatureIcons/masters/enamel-refined/sources/zones.png",
+      "subject": "Previous raster record: the refined enamel Zones source with transparent surround, exported directly to PNG/ICNS. Superseded by the native document."
     }
   ]
 }

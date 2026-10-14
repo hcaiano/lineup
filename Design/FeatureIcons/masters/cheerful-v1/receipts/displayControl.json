@@ -1,0 +1,34 @@
+{
+  "id": "displayControl",
+  "operation": "built-in color-only ImageGen edit",
+  "tool": "image_gen.imagegen",
+  "model": "UNKNOWN",
+  "version": "UNKNOWN",
+  "qualityParameterExposed": false,
+  "qualityIntent": "High-quality production artwork requested in prompt. No selectable quality parameter is exposed.",
+  "recordedAt": "2026-10-14T16:53:24.631Z",
+  "arguments": {
+    "prompt": "Use case: precise-object-edit.\nAsset type: production Lineup feature icon, cheerful-v1 family.\nInput image 1 is the EXISTING OPAQUE SOURCE and the only edit target. Its artwork is locked geometry, not inspiration for a redraw.\nChange ONLY the colored hue and value. Preserve the exact existing off-white foreground color and every symbol contour, stroke weight, hole, position, spacing, apparent size, proportion and scale. Do not redraw, reinterpret, rotate, shrink, enlarge, add or remove any shape.\nKeep the simple flat planar geometry, crisp edges and a very gentle nonradial directional top-left to bottom-right background color transition. Match the clean happy brightness of the approved tangerine #FF9235, sunny yellow #F8C332 and spring mint #43C77A family, while keeping the assigned single hue.\nProduce one high-quality standalone fully opaque square PNG, at least 1024 x 1024 pixels, keeping the input canvas geometry. The background fills all four edges and corners continuously. No outer padding, baked outer corner mask, tile silhouette or transparency. Native preparation owns the mask.\nNo 3D, relief, bevel, shadows, gloss, neon, bubble, radial highlight, grain, texture, miniature detail, secondary accent colors, new glyphs or text. Keep off-white intact. Do not reimagine the concept.\n\nColor-only change for displayControl:\nReplace only the muted blue background, screen opening and right half of the existing brightness glyph with bright clear SKY BLUE around #389CEB, a very gentle diagonal transition from about #48AAF2 to #2C8BDB. Preserve the exact off-white monitor outline, attached neck and foot, and circular half-filled brightness glyph unchanged in geometry and off-white color. No new sun, rays, screen content or details. Never grey, dusty or muddy.",
+    "referenced_image_paths": [
+      "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/masters/restrained-v1/sources/displayControl.png"
+    ],
+    "transparent_background": false
+  },
+  "originalOutputPath": "/Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-c8efdb92-087a-4ae4-a97c-ab7734d954ec.png",
+  "originalOutputHint": "Generated images are saved to /Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc as /Users/hcaiano/.t3/codex-auth-lais/generated_images/01a13b50-d709-74c0-a452-f789abae52cc/exec-c8efdb92-087a-4ae4-a97c-ab7734d954ec.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+  "sourceMaster": "sources/displayControl.png",
+  "callCount": 1,
+  "originalOutputSHA256": "0278045d4e4f71c705875c19865d8d33a693dd0af6de58736008872393d08830",
+  "sourceSHA256": "0278045d4e4f71c705875c19865d8d33a693dd0af6de58736008872393d08830",
+  "sourceDimensions": [
+    1254,
+    1254
+  ],
+  "originalBytesPreserved": true,
+  "editTargetPath": "/Users/hcaiano/.t3/worktrees/lineup/t3-fa15c6c1/Design/FeatureIcons/masters/restrained-v1/sources/displayControl.png",
+  "editTargetSHA256": "3de1ccd31895d1219dbc00b0bce168095926fc1d94f8f8cde9707c31bf5e0129",
+  "editTargetDimensions": [
+    1254,
+    1254
+  ]
+}
