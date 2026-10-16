@@ -66,6 +66,10 @@ Explicitly reopening an already-running Lineup from Raycast, Spotlight, Finder o
 Settings, whether the main menu-bar icon is visible or hidden. If the Settings window already
 exists, Lineup brings that same window to the front.
 
+While Settings or another Lineup window is in front, the menu bar shows Lineup's own menus: the
+Lineup menu with About, Settings and Quit, and the Edit menu. Every Lineup text field, in the panel
+and in Settings, supports the standard select all, cut, copy, paste, undo and redo shortcuts.
+
 ## Display control
 
 Display Control is an independent tool, off by default. Its controls in the Lineup popover and

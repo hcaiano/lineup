@@ -64,6 +64,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         }
 
         ActivationCoordinator.shared.applyBaseline() // agent: no Dock icon (also LSUIElement)
+        NSApp.mainMenu = MainMenu.make { [weak self] in self?.openSettings() }
         TerminationCoordinator.shared.installSignalHandlers()
 
         // Which audience this launch belongs to is decided from the state on disk BEFORE the
