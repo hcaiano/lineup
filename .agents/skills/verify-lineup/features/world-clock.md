@@ -64,9 +64,6 @@ Preconditions:
 
 - `World Clock` matches the Settings row, the panel tab and the panel heading.
   Use `--scope menubar` with `role=` for the panel.
-- Command-A, Command-V and the other edit shortcuts do nothing in the panel's
-  text fields (found on 2026-10-16: Lineup has no Edit menu). Type the text,
-  and clear a field with `$V ax key delete` presses.
 - Search waits for typing to settle. Use `$V ax wait role=AXButton desc~="Lisbon, Lisbon" --scope menubar`
   before you click a result.
 - The first Escape leaves search or edit mode, and a second Escape closes the panel.
