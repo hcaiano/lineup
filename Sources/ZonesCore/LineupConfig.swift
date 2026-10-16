@@ -129,6 +129,7 @@ public struct LineupConfig: Codable, Equatable {
     /// builds.
     public var dragSnapKeyCode: Int?
     /// Last explicit destination per application bundle ID. Absent in older configs.
+    public var fillAssistEnabled: Bool?
     public var appPlacements: [String: AppZonePlacement]?
 
     public init(schemaVersion: Int = LineupConfig.currentSchema,
@@ -138,7 +139,8 @@ public struct LineupConfig: Codable, Equatable {
                 dragSnapEnabled: Bool? = nil,
                 dragSnapModifiers: Int? = nil,
                 dragSnapKeyCode: Int? = nil,
-                appPlacements: [String: AppZonePlacement]? = nil) {
+                appPlacements: [String: AppZonePlacement]? = nil,
+                fillAssistEnabled: Bool? = nil) {
         self.schemaVersion = schemaVersion
         self.screens = screens
         self.defaultLayout = defaultLayout
@@ -147,6 +149,7 @@ public struct LineupConfig: Codable, Equatable {
         self.dragSnapModifiers = dragSnapModifiers
         self.dragSnapKeyCode = dragSnapKeyCode
         self.appPlacements = appPlacements
+        self.fillAssistEnabled = fillAssistEnabled
     }
 
     /// The layout for a screen, falling back to `defaultLayout` (halves) when unconfigured.

@@ -918,3 +918,294 @@ reboot, with virtual-screen mirroring or streaming as an alternative. The guide 
 describes rendering a larger framebuffer and scaling it to the physical screen. This does not
 change the panel's physical pixel density. Adding either mode selection or custom HiDPI requires
 its own scope, hardware checks and recovery design.
+
+## Zones coordinated moves and thumbnail assist
+
+`SnapMemory` owns one bounded `SnapRecords<AXUIElement>` ledger. Its first-snap Restore frame,
+last applied frame, optional leaf-relative `AppZonePlacement`, and temporary maximize receipt
+have separate meanings. Root-relative destinations and best-effort centered windows do not
+become coordinated occupants. Maximize and return use the best-effort single-window mover,
+record a fresh native frame observation instead of placement intent, and never call launch-placement
+learning. Unreadable observations leave the return receipt intact. A return consumes its receipt
+only when the landed frame matches the destination. A known partial return updates only the receipt applied frame and
+ledger match frame, preserving the return destination and first-snap Restore history.
+
+`ZoneScene` builds pure divider and share frame effects. Divider changes reuse `LayoutEdit` and
+`DividerSnap`, preserving pixel seams and nested anchoring. After a divider commit, an unmoved
+record keeps its slot affinity only when its applied frame still matches that slot. Shares use
+two complementary `unitRect` halves within one existing leaf. They do not edit the saved tree or
+renumber zones. `ZoneScene.shareIncumbent` is the one share admission rule for preview and
+release: exactly one current occupant whose applied frame is its whole leaf.
+At admission, the controller suppresses all share targets while a remembered eligible window is
+unresolved. Release rechecks only the selected leaf's occupants.
+
+`WindowMover` is the only AX boundary. Ordinary snaps retain best-effort placement. Its exact
+commit validates every participant, checks setters and frame readback within one point, and
+moves the incoming window last. `ExactCommit` compensates all attempted writes in reverse order,
+including attempts whose initial read still shows the original frame. Restoration requires an
+acknowledged opposing write and matching readback, since a failed forward write can have delayed
+effects.
+It reports the cause as a refusing window, a change while moving, or a failed save. Incomplete
+compensation becomes a `SnapMemory` receipt for Retry Restore, which drops an effect only when
+`WindowMover.isGone` proves its process exited or its element is invalid. History publishes only
+after success. `ZonesTool` prepares and validates one divider candidate, saves once after
+effects, then installs it. `ZoneNotice` maps outcomes to the passive `ZoneNoticePanel` copy.
+Neighbor moves do not teach app launch positions. macOS AX cannot make a multi-app operation
+atomic.
+
+`DragSnapController` owns cancellable divider, share and window-suggestion sessions. It reads
+global monitors, the pointer, key state, Accessibility trust, a monotonic clock, `CGEventSource`
+input ages and pressed buttons through `DragSnapInput`, and schedules its one timer there;
+production uses `.system`.
+The pure `DividerGrip` reducer is the one grip phase owner: the reused grip panel is offset from
+the revealing pointer, click-through until entered, and takes the keyboard only when pinned.
+Users see the grip as the handle on the line between two zones. Its panel also paints that line
+segment (`DividerGrip.segment`) in a click-through window that shares the phase's alpha and moves
+with the handle. A third click-through window names a locked guide beside the handle, outside its
+28 by 48 point hit rect, and is clamped to the display. The panel owns all three windows: they
+move together and hide together. `prepare(_:)` maps a phase to drawing, alpha, mouse handling and
+cursor rects without ordering a window, and does nothing when the phase and contrast are unchanged.
+`apply(_:)` then orders the family on every call: the handle in front, the line just below it and a
+guide badge above it, because divider previews are ordered below the line afterwards. Once entered,
+the handle's view registers the native column or row resize cursor as its cursor rect. AppKit does
+not deliver cursor updates regardless of activation (`NSTrackingActiveAlways` is not supported for
+`NSTrackingCursorUpdate`), so whether the inactive, non-key handle shows that cursor is an open
+physical gate. `hide()` restores the arrow only when the visible handle is under the pointer and
+`NSCursor.current`, which is this app's cursor rather than the one on screen, is the resize cursor.
+Divider previews use `HighlightWindow.Style.divider`, drawn 3 points inside their exact effect
+frames and ordered below the painted line. Zones' rail and chooser share the stateless
+`ZonesSurface` material, which follows the system appearance; `HUDGlass` stays the dark surface for
+Cycler and Hyperkey. `ZonesSurface` returns the root view for the window and a content view for the
+controls. On macOS 26 and later the content view is the `NSGlassEffectView` `contentView`, the only
+child the SDK guarantees to place inside the glass; before 26 it sits inside the popover
+`NSVisualEffectView`.
+Discovery reads only the saved tree and screen geometry. A `.mouseMoved` sample on a line starts or
+keeps the controller's one pending `DividerDwell`. At a T-junction the line nearest the pointer
+counts, and the nested line wins a tie. The dwell restarts when the pointer moves more
+than 8 points or onto another line, and ends on a mouse-down, a bind mismatch, leaving every line
+or `cancelSessions`. When its 0.3-second timer fires, the controller rereads trust, interaction,
+layout permission, bind, buttons, display key and the current line before it reveals. A key-up,
+modifier change, scroll or mouse-down newer than the dwell drops it, and so does any of those
+ages that is unreadable or negative. Key-down is not checked,
+because a held custom-bind key or Hyperkey's remapped Caps Lock repeats key-down without a key-up.
+No keyboard or scroll monitor exists for this. A shown handle stays put while `DividerGrip.keeps`
+holds and hides when it fails; it never moves along the line. A stale timer callback checks that
+its dwell is still current, so it cannot reveal a later dwell early. Drag arming reads AX only for the PIDs of
+placement-bound records, and skips that read when there are none. Divider and share participants
+must be on screen on this desktop. The controller freezes current, excluded and unresolved
+record identities. An affected unresolved record refuses the divider before any effect or save.
+Release rechecks all frozen identities, including excluded records, rather than just the effects.
+A successful empty census can permit a layout-only edit. Unmatched compositor surfaces and
+unavailable observations cannot establish an empty desktop. The input watch and its Escape key monitor exist only while
+temporary UI or a drag is active; neither suppresses input. The chooser matches current CG
+on-screen IDs uniquely to regular AX windows and ScreenCaptureKit windows by process and geometry.
+A compositor inset of up to eight points is allowed only with a unique match in both directions.
+Unresolved visible intersections block vacancy. It excludes the window just dropped and captures
+at most one thumbnail for each of 32 candidates, never larger than the source. Selection checks
+the concrete ID, AX element, current visibility, and vacancy again. `ZoneFillLayout` owns the
+chooser geometry.
+
+Window suggestions start only from a committed modifier-drag or share release, with the option on
+and Screen Recording already granted. `offerFill` creates one private `FillSession` containing the
+immutable `FillOffer` and generation, panel, task, capture, candidates, timer and outside monitors.
+Cancellation detaches it before releasing its resources. `DragSnapController` remains the lifecycle
+and gesture owner. It reads the census, requires a vacant zone and another visible window,
+installs the session's outside-click monitors (left, right and
+other presses in other apps or in another Lineup window), then awaits `SCShareableContent` and
+matches as above. A press during the read therefore cancels the session before anything appears.
+Zero admitted windows or a failed read ends the session without showing anything. `presentFill` calls
+`ZoneFillPanel.show`, which is `prepare` plus `orderFront`; neither makes the panel key nor sets a
+first responder. Cards and Close accept the first mouse, so one click in the background panel
+selects. A click inside makes the nonactivating panel key without activating Lineup, and
+`becomeKey` focuses the ringed card. The session counts as active from the census on, so the input
+watch dismisses it on any `fillIsCurrent` failure: interaction, option or permission, recovery,
+layout or display. The one timer fires every eight seconds and asks
+`DragSnapController.fillInUse`, which keeps the chooser only while previews load, while it is key,
+or while the pointer is on it and `secondsSince(.mouseMoved)` or `secondsSince(.scrollWheel)` is no
+greater than `secondsSince(.keyDown)`. Typing first and then moving to the chooser keeps it; a
+pointer parked on it while someone types elsewhere does not, and an unreadable age fails closed. The
+chooser fits inside the vacant zone on the side of the drop, with whole card columns, when the zone
+holds one column and one row; otherwise it centers on the zone within the display and moves 12
+points past the dropped window's zone only to a position that still overlaps the vacant zone. The
+panel resolves that frame before choosing its hairline scale from the screen under it.
+
+`SingleFrameCapture` extracts the existing macOS 13 `SCStream` implementation for both Zones and
+Text Capture. Each instance captures once. Its callers supply the filter, dimensions, and optional
+source rectangle. On completion, cancellation, failure, or timeout it waits for any in-flight
+start and requests stop. One deadline covers start, frame and stop. Success requires both API
+acknowledgments. A failed stop retries once within the same helper and caller deadline.
+Stop errors preserve the capture error and cannot produce image success or
+`stopped`. A deadline reports pending cleanup and can release the caller; the same helper retains
+the stream and stops it after a late start settles. Late callbacks cannot complete the caller
+again. A late stop error remains available on the helper. Text Capture retains
+its region, exclusion, OCR, permission, token, topology, and clipboard policies. Zones checks
+generation, display geometry, permission, vacancy and exact candidate identity and frame immediately
+before constructing each capture filter and after capture awaits. Pixels and titles
+have no disk cache.
+
+Run `swift run lineup-tests` and `swift build` for core behavior and compilation. For maintained
+opt-in production-owner probes in a graphical session, run:
+
+```sh
+swift run lineup-tests --zones-native --permission-free
+LINEUP_ZONES_CAPTURE_DIR=/tmp/lineup-zones-evidence swift run lineup-tests --zones-native
+LINEUP_ZONES_CAPTURE_DIR=/tmp/lineup-zones-offscreen swift run lineup-tests --zones-native --offscreen
+```
+
+The first command renders the shipping highlight, share rail, grip phases, window suggestions and
+notice in both appearances without launching Lineup or loading its config. It shows a probe-owned
+chooser without key focus, a first responder or a frontmost change, sends a constructed click to
+one card through `NSWindow.sendEvent`, clicks into the chooser to give it focus, then
+sends constructed key events to check Return, Space, Escape and arrow selection; the Close cases
+need Full Keyboard Access and report a gate without it. Across repeated
+drag samples that change the locked guide and the divider preview frame, it reads the window
+server's front-to-back order and checks that the guide badge stays above the handle, its line and
+the preview. A real `DragSnapController` then runs rest-to-reveal discovery with injected trust, clock, input ages,
+buttons and timers: crossing, settling, restarts, jitter, interruptions, clicks, stale layout,
+lost trust or interaction, a desktop change, a custom key bind, a nested line, stop, late callbacks,
+and one reveal on the production timer against the real clock. These paths never read
+Accessibility, capture or move a window. Injected timing proves the logic, not physical timing.
+While someone is using the desktop, `swift run lineup-tests --zones-native --passive` runs the same
+cases without the pinned handle's focus, the window suggestions, whose click and keyboard cases take
+focus, and the notice. It still shows click-through probe panels briefly. Its receipt completes
+`passiveViews`, gates `views`, and checks that no probe window became key. It cannot satisfy a
+permission-free or granted invocation. The second command uses
+existing grants only. It creates document-free fixture windows in child processes and checks that
+each AX hit-test lands on a fixture before acting. A probe-owned `DragSnapInput` delivers
+constructed events to a real `DragSnapController`, and constructed mouse and key events go to its
+grip panel through `NSWindow.sendEvent`. Nothing is posted to the system and the pointer never
+moves. The run covers share admission with a hidden stale record, Escape during a share, a changed
+incumbent, divider drag, bind release, pin, nudge, Return, Escape, focus loss, outside press, a
+minimum-size refusal with its notice, arrow/Return/K activation strokes and release ordering,
+maximize and partial return of a non-resizable window, a resizable window whose minimum grows
+while maximized and later permits a retry, and definitive window death for Retry Restore.
+Unknown-census and ambiguous-identity cases exercise the immediate refusal policy independently
+of ordinary setup readiness. Setup waits for observed fixture CG/AX correspondence within a deadline,
+without a fixed settling delay. Fixture windows retain their default shadows and disable animations
+and automatic tabbing. A bounded observation records whitelisted CG and AX bounds after initial
+snaps, sharing, the actual config owner's divider commit, and fill. Same-app overlapping windows
+must remain unmatched in both directions. Share checks retain a current whole-leaf incumbent
+beside an unresolved remembered record, suppress the rail, cancel explicitly, and preserve the
+ordinary single-window snap fallback before the positive sharing counterpart.
+
+The general gesture cases use the exact mover with a temporary Node-file persist closure. A
+separate case starts the real `ZonesTool` with real `ToolServices`, `ToolConfigScope` and a temporary
+`LineupAppConfigStore`. Its config has zero shortcuts, no app destinations and assist off. Its input
+and window-enumeration dependencies are fixture-only. The normal grip action reaches the private
+divider owner, proves an actual atomic config save, and checks compensation after an actual
+temporary filesystem save failure. The tool stops normally and releases its fixture resources.
+No global monitor or hotkey is registered.
+
+Suggestion cases use the real controller drop, automatic chooser and constructed-click selection
+with an enumeration dependency that returns only whitelisted fixture PIDs and window IDs. They check
+presentation without key focus or a frontmost change, the eight-second close with the pointer
+elsewhere, persistence under a resting pointer until a key press elsewhere, persistence when the
+pointer moves onto the chooser after a key press, source exclusion, stale selection, newly occupied
+vacancy and a one-click fill. Only those fixture IDs can
+become capture candidates. A two-candidate case holds the first helper's injected start operation,
+minimizes the second candidate, then requires cancellation without starting its stream.
+Capture checks independently record native start/stop API acknowledgments.
+Controlled start/stop operations inside the same helper cover a missing frame, stalled start,
+stalled stop, a transient stop failure with an acknowledged retry, permanent stop failures,
+late cleanup and cancellation. These cases need a valid fixture
+SCK filter, so the permission-free run reports that gate. They do not prove real framework failures.
+
+Every invocation must exit successfully and emit a terminal completed or gated receipt carrying
+its unique token, permission mode, completed groups, cleanup confirmation and named gates. Every
+receipt, in every mode, gates `firstMouseDelivery`: the click cases call `NSWindow.sendEvent`,
+which bypasses the window server's routing to an inactive app's non-key, nonactivating panel. A
+physical pointer is still required after they pass, so no receipt reaches the completed endpoint.
+The receipt is written after fixture and controller cleanup. Missing, malformed, stale or
+incomplete receipts fail the runner even after exit 0. The probe runs an AppKit event loop until
+its intended endpoint. Fixture output does not hold the parent pipe open. Optional captures include
+production views, actual-owner grip and fill images, a fixture thumbnail and frame receipts.
+
+These probes do not establish physical global gestures, shortcut delivery, third-party app
+acceptance, other desktop behavior, multiple actual displays, or macOS 13 runtime capture. Their
+view captures establish layout, and fixture AX receipts establish only the exercised native effects.
+Before product acceptance, record real bind/grip/share/chooser interactions and those separate
+runtime cases as required by CONTRIBUTING.md. Do not use the installed Lineup or live user config
+for automated probes.
+
+### Zones overlay polish evidence
+
+`ZoneFillLayout` bounds the chooser to 532 by 440 points with a 20-point content column and whole
+card columns. Cards show one ring
+that follows pointer motion or keyboard selection. Hover retains Close focus and never scrolls.
+Keyboard selection scrolls the entire ring into view. A circular image-only Close retains its title
+and explicit Return and Space cancellation. The grip draws its current reducer phase and guide lock.
+Share tiles retain their 40 by 32 targeting rectangles on the adaptive Zones surface above the
+preview. The incumbent preview is quieter than the incoming destination.
+
+The maintained `--zones-native` views group exercises light and dark pending, loaded,
+unavailable, unfocused hover, constructed click, explicit entry, focused hover, pressed,
+Close-focused, unfocused, narrow, short and 32-card chooser states. Native key-window readiness is observed before
+focus captures. No fixed delay stands in for a focus acknowledgment. The chooser appears without a
+cosmetic fade.
+
+With `LINEUP_ZONES_CAPTURE_DIR` set, permission-free captures include `share-idle-*`,
+`share-side-*`, `share-stacked-*`, `neighbor-*`, `grip-revealed-*`, `grip-line-*`, `grip-armed-*`,
+`grip-guide-*`, `grip-guide-badge-*`, `grip-pinned-*` and `chooser-*` state
+images. These content-view bitmaps omit behind-window compositing and native focus-ring rendering.
+`handle-revealed-*`, `handle-armed-*`, `handle-pinned-horizontal-*` and `handle-nested-revealed-*`
+draw the handle and its line from those same view bitmaps, at their window alpha, over a probe
+backdrop. They show placement and alpha, not the compositor.
+
+The granted run adds `composite-handle-revealed-*`, `composite-grip-pinned-*`, `composite-share-idle-*`,
+`composite-share-side-*`, `composite-share-stacked-*`,
+`composite-chooser-*` and `composite-chooser-close-focused-*`. Each capture uses the existing
+`SingleFrameCapture` with a display filter including only window IDs belonging to the probe
+process: its overlay, a document-free backdrop and, for the handle captures, the handle's line. It captures the overlay with a
+24-point margin, hides the backdrop afterward, and writes a matching `*-receipt.json` with
+window IDs, owner PID, crop, scale and native start and stop acknowledgments. The chooser corner
+check compares pixels against that capture's flat backdrop, allowing its soft compositor shadow.
+It does not assume a fixed material color. Share captures also compare the actual sRGB caption
+pixels with the local material background, in whichever polarity the appearance gives, and retain
+that contrast in the receipt.
+No user window joins the filter. Permission-free mode
+never calls ScreenCaptureKit, and the granted mode uses existing grants without a request.
+
+`--offscreen` is safe on a desktop someone is using. The probe draws the production handle, line,
+guide badge, divider previews, share rail and window-suggestion chooser without ever running the
+AppKit event loop.
+Before it creates a view it reads the activation policy, requests `.prohibited`, and requires that
+the request was accepted or the policy already was `.prohibited`, that `activationPolicy()` reads
+back `.prohibited` and that `NSApplication.isRunning` is false; otherwise it stops and writes a
+failed receipt. An unbundled process starts `.prohibited`, and the setter returns false when the
+policy does not change. After every scene it asserts that no probe window is visible
+or in the window server's on-screen list and that the probe has no key window. It never reads
+Accessibility, captures the screen, posts input or sets a cursor. Without a run loop, `isActive`
+and the frontmost app are cached values (`NSRunningApplication.h`), so they are not evidence; the
+receipt gates activation as prevented by the observed policy, not observed live. It renders light,
+dark, both mixed document polarities and the handle's Increase Contrast input. AppKit resolves
+named high-contrast appearances to their base appearance, so system color changes under the real
+setting are not shown. Each image composes the production content views, at their frames and
+window alpha, over a probe-drawn document backdrop. The probe asserts that the rail's tiles and
+caption and the chooser's heading, Close, cards and scroll view sit inside the native material host.
+Their raster is AppKit's offscreen drawing of that host over a probe-drawn `windowBackgroundColor`
+stand-in, not compositor glass or popover material. The chooser comes from the production `prepare`
+and is never ordered. The probe asserts no key window and no first responder after preparation,
+first-mouse acceptance on every card and Close, the exact index from a card's action and
+cancellation from Close through `sendAction`, the production key handling through `sendEvent` as
+used after explicit entry, and the geometry against `ZoneFillLayout`. Pending, loaded, hover,
+pressed, Close-pressed, 32-card, narrow-zone, too-small-zone, left one-column and left-edge
+too-small chooser images show the unfocused automatic state; real first-mouse delivery and a key
+chooser's accent ring stay gated. Before any view, the probe also calls the production
+`fillInUse` deadline decision with injected input ages for key then hover, resting pointer then key,
+no pointer, loading and key holds, a released and a still-repeating drag key, scrolling and an
+unreadable age. That proves the decision, not real-time timer delivery. The pinned
+image applies `NSFocusRingPlacement` to the production `drawFocusRingMask`; a key window's ring is
+not shown. Cursor images are the production
+`resizeCursor` drawn by the probe. With `LINEUP_ZONES_CAPTURE_DIR`, a PNG that cannot be encoded
+or written fails the run, and the receipt lists only images that were written. The receipt mode
+`offscreen` records `activationPolicyBefore`, `activationPolicyAccepted`, `activationPolicy` and
+`applicationRunning`. It is accepted only when the request was accepted or the policy before it was
+`prohibited`, the policy after it is `prohibited`, and the application never ran. It completes only `offscreenViews`, gates
+`views`, `controlledCapture`, `axOwners`, `nativeCapture`, material, key focus, cursor delivery,
+first-mouse delivery, activation, system Increase Contrast and Reduce Transparency, and lists every written image with
+its provenance. It cannot satisfy any other mode.
+
+These checks do not prove physical gestures, real System Settings preferences, VoiceOver,
+third-party windows, physical multi-display behavior, Spaces, macOS 13, Intel or native performance.
+Failable symbol lookup retains native fallbacks; current-host availability is not macOS 13 evidence.
+The historical CG/AX shadow-outset mismatch remains an explicit compatibility gate.

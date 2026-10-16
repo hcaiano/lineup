@@ -23,6 +23,14 @@ final class ZonesTool: Tool {
     let defaultEnabled = true
 
     private(set) var isRunning = false
+    private let dragInput: DragSnapInput
+    private let visibleWindows: @MainActor (Set<pid_t>?) -> [WindowMover.VisibleWindow]?
+
+    init(dragInput: DragSnapInput = .system,
+         visibleWindows: @escaping @MainActor (Set<pid_t>?) -> [WindowMover.VisibleWindow]? = { WindowMover.visibleWindows(pids: $0) }) {
+        self.dragInput = dragInput
+        self.visibleWindows = visibleWindows
+    }
 
     /// Kept after `stop()`: the pane is rendered even while the tool is disabled, and it still has
     /// to read and save the section. Only the RESOURCES are released on stop, never the handle.
@@ -118,7 +126,16 @@ final class ZonesTool: Tool {
         triggerProvider: { [weak self] in self?.dragSnapTrigger ?? .default },
         onPlacement: { [weak self] window, screen, rect in
             self?.rememberPlacement(window, on: screen, rect: rect)
-        })
+        },
+        commitDivider: { [weak self] screen, old, new, effects in
+            self?.commitDivider(screen: screen, old: old, new: new, effects: effects) ?? .rejected
+        },
+        canInteract: { [weak self] in self?.isRunning == true && self?.services?.hotkeys.isSuspended == false },
+        canEditLayout: { [weak self] in self?.canWrite == true },
+        assistAllowed: { [weak self] in self?.config.fillAssistEnabled == true
+            && self?.services?.permissions.isScreenRecordingGranted == true },
+        refreshStatus: { [weak self] in self?.services?.refreshMenu(); self?.settingsModel?.refresh() },
+        input: dragInput, visibleWindows: visibleWindows)
 
     private lazy var launchPlacement = AppLaunchPlacementController(
         placement: { [weak self] bundleID in self?.config.appPlacements?[bundleID] },
@@ -269,6 +286,7 @@ final class ZonesTool: Tool {
             NotificationCenter.default.removeObserver(screenObserver)
             self.screenObserver = nil
         }
+        _ = WindowMover.retryRestore()
         SnapMemory.shared.reset()                  // drop retained AXUIElements
         cycleState = nil
         isRunning = false
@@ -280,6 +298,13 @@ final class ZonesTool: Tool {
         var pid: pid_t = 0
         guard isRunning, AXUIElementGetPid(window, &pid) == .success else { return }
         launchPlacement.cancel(pid)
+        let infoForBinding = ScreenIdentity.info(for: screen)
+        if let entry = SnapMemory.shared.records.entry(window), WindowMover.canFitExactly(window),
+           SnapRecords<AXUIElement>.matches(entry.snappedTo, rect, originTolerance: 1, sizeTolerance: 1) {
+            SnapMemory.shared.records.bind(window, placement: AppZonePlacement(
+                screenKey: infoForBinding.key, layout: config.layout(forKey: infoForBinding.key), target: rect,
+                frame: screen.frame, visibleFrame: screen.visibleFrame, pixelsWide: infoForBinding.pixelsWide))
+        }
         // Automatic learning must not create a section before a deferred legacy import.
         guard canWrite, !usingDefaults, let services,
               let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return }
@@ -298,6 +323,36 @@ final class ZonesTool: Tool {
         } catch {
             services.log.error("app placement save failed (kept previous destination): \(error, privacy: .public)")
         }
+    }
+
+    private func commitDivider(screen: NSScreen, old: Node, new: Node,
+                               effects: [FrameEffect<AXUIElement>]) -> ExactCommit.Outcome<AXUIElement> {
+        guard isRunning, canWrite, let services, old.sameTopology(as: new) else { return .rejected }
+        let info = ScreenIdentity.info(for: screen)
+        let display = AppZonePlacement.Display(key: info.key, frame: screen.frame,
+                                               visibleFrame: screen.visibleFrame, pixelsWide: info.pixelsWide)
+        var candidate = preparedConfigForUserWrite.setting(layout: new, for: info, now: nil)
+        candidate.appPlacements = candidate.appPlacements?.mapValues { placement in
+            placement.screenKey == info.key && placement.layout == old
+                ? placement.rebased(to: new) ?? placement : placement
+        }
+        do { try candidate.validate() } catch { return .rejected }
+        let outcome = WindowMover.commit(effects, validate: { [self] in
+            isRunning && canWrite && config.layout(forKey: info.key) == old
+                && NSScreen.screens.contains { current in
+                    ScreenIdentity.info(for: current).key == display.key
+                        && current.frame == display.frame && current.visibleFrame == display.visibleFrame
+                }
+        }, persist: { try services.config.save(candidate) })
+        if outcome.isCommitted {
+            SnapMemory.shared.records.rebasePlacements(on: display, old: old, new: new)
+            config = candidate
+            usingDefaults = false
+            cycleState = nil
+        }
+        services.refreshMenu()
+        settingsModel?.refresh()
+        return outcome
     }
 
     private func restorePlacement(_ window: AXUIElement, placement: AppZonePlacement) {
@@ -411,6 +466,8 @@ final class ZonesTool: Tool {
     }
 
     private func screensChanged() {
+        dragSnap.cancelSessions()
+        SnapMemory.shared.records.invalidateMaximize()
         // A section that appeared since we started (a deferred legacy import completing on
         // reconnect) is adopted without a relaunch. A section we already hold is left alone.
         if usingDefaults { reloadConfig() }
@@ -483,6 +540,10 @@ final class ZonesTool: Tool {
         do {
             try proposal.validate()
             try services.config.save(proposal)
+            let changedKeys = Set(config.screens.keys).union(proposal.screens.keys).filter {
+                config.layout(forKey: $0) != proposal.layout(forKey: $0)
+            }
+            SnapMemory.shared.records.invalidatePlacements(on: Set(changedKeys))
             config = proposal
             usingDefaults = false
             services.refreshMenu()
@@ -498,6 +559,7 @@ final class ZonesTool: Tool {
 
     /// Persist a new shortcut set and re-register the global hotkeys.
     private func applyShortcuts(_ newShortcuts: Shortcuts) {
+        dragSnap.cancelSessions()
         guard canWrite, let services else { return }
         var updated = preparedConfigForUserWrite
         updated.shortcuts = newShortcuts
@@ -531,7 +593,36 @@ final class ZonesTool: Tool {
         }
     }
 
+    private func setFillAssistEnabled(_ enabled: Bool) {
+        guard canWrite, let services else { return }
+        dragSnap.cancelSessions()
+        if enabled {
+            let alert = NSAlert()
+            alert.messageText = "Suggest windows for empty zones"
+            alert.informativeText = "After you drag a window into a zone, Lineup can show your other visible windows at an "
+                + "empty zone. Click one to move it there. When there are windows to suggest, Lineup takes one small picture of "
+                + "each right after the drag to show previews, which needs Screen Recording. Pictures stay in memory only while "
+                + "suggestions are shown."
+            alert.addButton(withTitle: "Enable")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn,
+                  services.permissions.isScreenRecordingGranted || services.permissions.requestScreenRecording(),
+                  services.permissions.isScreenRecordingGranted else { settingsModel?.refresh(); return }
+        }
+        var candidate = preparedConfigForUserWrite
+        candidate.fillAssistEnabled = enabled
+        do {
+            try candidate.validate()
+            try services.config.save(candidate)
+            config = candidate
+            usingDefaults = false
+        } catch { services.log.error("fill assist setting save failed: \(error, privacy: .public)") }
+        services.refreshMenu()
+        settingsModel?.refresh()
+    }
+
     private func applyDragSnapTrigger(_ trigger: DragSnapTrigger) {
+        dragSnap.cancelSessions()
         guard canWrite, let services else { return }
         var updated = preparedConfigForUserWrite
         updated.dragSnapKeyCode = trigger.keyCode
@@ -735,6 +826,7 @@ final class ZonesTool: Tool {
     // MARK: - Layout editor
 
     private func openEditor() {
+        dragSnap.cancelSessions()
         guard editorOverlay == nil else { return }
         // The editor is an explicit-save flow over the CANDIDATE prepared config: exact
         // connected keys and display orders match what Save will commit, while live routing
@@ -784,6 +876,22 @@ final class ZonesTool: Tool {
 
     var warnings: [ToolWarning] {
         var out: [ToolWarning] = []
+        if config.fillAssistEnabled == true && services?.permissions.isScreenRecordingGranted == false {
+            out.append(ToolWarning(id: "zones.capture", text: "Window suggestions need Screen Recording",
+                detailLines: ["Ordinary snapping still works. Allow access, then reopen Lineup if macOS asks."],
+                actionTitle: "Open Screen Recording Settings", action: { [weak self] in
+                    self?.services?.permissions.openScreenRecordingSettings()
+                }))
+        }
+        if !SnapMemory.shared.recovery.isEmpty {
+            out.append(ToolWarning(id: "zones.restore", text: "Window restoration incomplete",
+                detailLines: ["The layout was kept. Retry restoring the affected windows before another coordinated move."],
+                actionTitle: "Retry Restore", action: { [weak self] in
+                    _ = WindowMover.retryRestore()
+                    self?.services?.refreshMenu()
+                    self?.settingsModel?.refresh()
+                }))
+        }
         if !failedHotkeys.isEmpty {
             let count = failedHotkeys.count
             var details = failedHotkeys.prefix(4).map {
@@ -860,6 +968,10 @@ final class ZonesTool: Tool {
             openLayoutEditor: { [weak self] in self?.openEditor() },
             isRunning: { [weak self] in self?.isRunning ?? false },
             zoneShortcutGroups: { [weak self] in self?.zoneShortcutGroupsForSettings ?? [] },
-            boundCombos: { [weak self] in self?.services?.boundCombos() ?? [] }))
+            boundCombos: { [weak self] in self?.services?.boundCombos() ?? [] },
+            fillAssistEnabled: { [weak self] in self?.config.fillAssistEnabled == true },
+            setFillAssistEnabled: { [weak self] in self?.setFillAssistEnabled($0) },
+            screenRecordingGranted: { [weak self] in self?.services?.permissions.isScreenRecordingGranted == true },
+            recoverScreenRecording: { [weak self] in self?.services?.permissions.openScreenRecordingSettings() }))
     }
 }

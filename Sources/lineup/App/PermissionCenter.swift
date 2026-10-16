@@ -12,7 +12,6 @@ import CoreGraphics
 /// existing Lineup users and must stay opt-in: it is requested lazily the first time Hyperkey is
 /// enabled, and otherwise only surfaced in General › Permissions and the Hyperkey pane.
 @MainActor
-// Screen Recording is requested by Text Capture only when a capture starts.
 final class PermissionCenter {
     static let shared = PermissionCenter()
 
@@ -121,7 +120,6 @@ final class PermissionCenter {
         }
     }
 
-    /// Only a user-invoked capture requests access; enabling the tool never prompts.
     func requestScreenRecording() -> Bool {
         CGRequestScreenCaptureAccess()
     }

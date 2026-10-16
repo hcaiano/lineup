@@ -39,7 +39,7 @@ enum OnboardingCopy {
         + "permission Lineup asks for now, and Lineup never collects your data."
     static let inputMonitoringNote =
         "Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only "
-        + "when you first capture text."
+        + "when you first capture text or turn on window suggestions."
 }
 
 /// The three tools as a row of app-icon tiles. This is the one view that makes Lineup 2.0 read

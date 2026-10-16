@@ -15,65 +15,26 @@ import ZonesCore
 @MainActor
 final class SnapMemory {
     static let shared = SnapMemory()
-    private struct Entry {
-        let window: AXUIElement
-        var preFrame: CGRect   // where the USER last had it
-        var snappedTo: CGRect  // where WE last put it
-    }
-    private var entries: [Entry] = []
-    private let cap = 16
+    var recovery: [FrameEffect<AXUIElement>] = []
+    var records = SnapRecords<AXUIElement>(equal: { CFEqual($0, $1) })
 
-    var isEmpty: Bool { entries.isEmpty }
+    var isEmpty: Bool { records.entries.isEmpty }
 
-    /// Record a snap we performed; `from` is the window's frame just before it.
     func recordSnap(of window: AXUIElement, from: CGRect, to: CGRect) {
-        if let i = entries.firstIndex(where: { CFEqual($0.window, window) }) {
-            var e = entries.remove(at: i)
-            // Still where we put it -> a cycle/zone hop; the original preFrame survives.
-            // Moved externally since -> the user re-placed it; THAT becomes the preFrame.
-            if !SnapMemory.approx(e.snappedTo, from) { e.preFrame = from }
-            e.snappedTo = to
-            entries.append(e)
-        } else {
-            entries.append(Entry(window: window, preFrame: from, snappedTo: to))
-            if entries.count > cap { entries.removeFirst() }
-        }
+        records.recordSnap(window, from: from, to: to)
     }
 
-    /// The pre-snap frame — only while `window` is still where we snapped it.
     func preFrame(of window: AXUIElement, currentFrame: CGRect) -> CGRect? {
-        guard let e = entries.first(where: { CFEqual($0.window, window) }),
-              SnapMemory.approx(e.snappedTo, currentFrame) else { return nil }
-        return e.preFrame
+        records.preFrame(window, current: currentFrame)
     }
 
-    /// Drag-away restore needs looser matching (the window has already moved a little by
-    /// the first drag event): origin within `originTol`, size within 4pt. A size mismatch
-    /// means the user is RESIZING the snapped window, which is never an unsnap.
     func preFrame(of window: AXUIElement, draggedFrame: CGRect, originTol: CGFloat) -> CGRect? {
-        guard let e = entries.first(where: { CFEqual($0.window, window) }),
-              abs(e.snappedTo.width - draggedFrame.width) <= 4,
-              abs(e.snappedTo.height - draggedFrame.height) <= 4,
-              abs(e.snappedTo.minX - draggedFrame.minX) <= originTol,
-              abs(e.snappedTo.minY - draggedFrame.minY) <= originTol else { return nil }
-        return e.preFrame
+        records.preFrame(window, current: draggedFrame, originTolerance: originTol)
     }
 
-    func forget(_ window: AXUIElement) {
-        entries.removeAll { CFEqual($0.window, window) }
-    }
+    func forget(_ window: AXUIElement) { records.forget(window) }
+    func reset() { records.removeAll(); recovery.removeAll() }
 
-    /// Drop every remembered window. Called from `ZonesTool.stop()`: a disabled tool must not
-    /// keep other apps' `AXUIElement`s alive, and a later re-enable must not resurrect restore
-    /// data for windows the user has moved since.
-    func reset() {
-        entries.removeAll()
-    }
-
-    private static func approx(_ a: CGRect, _ b: CGRect, tol: CGFloat = 4) -> Bool {
-        abs(a.minX - b.minX) <= tol && abs(a.minY - b.minY) <= tol &&
-        abs(a.width - b.width) <= tol && abs(a.height - b.height) <= tol
-    }
 }
 
 /// Moves/resizes the frontmost window of the frontmost app via the Accessibility API.
@@ -105,13 +66,184 @@ enum WindowMover {
             frame: screen.frame, visibleFrame: screen.visibleFrame,
             pixelsWide: info.pixelsWide) else { return false }
 
+        if id == "full" {
+            return maximizeOrReturn(window, current: currentCocoa, target: target, screenKey: info.key)
+        }
+
         // Record where the window was steered (fixed-size windows get centered, not the
         // zone rect) so the unsnap match works against where it really ends up.
         let landed = setFrame(target, of: window)
         guard let landed else { return false }
-        onPlacement(window, screen, target)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
+        onPlacement(window, screen, target)
         return true
+    }
+
+    @discardableResult
+    static func maximizeOrReturn(_ window: AXUIElement, current: CGRect, target: CGRect,
+                                 screenKey: String) -> Bool {
+        let action = SnapMemory.shared.records.maximizeAction(window, current: current,
+                                                              full: target, screenKey: screenKey)
+        let destination: CGRect
+        switch action {
+        case .none: return false
+        case .maximize(let rect), .returnTo(let rect): destination = rect
+        }
+        guard !SnapMemory.shared.recovery.contains(where: { CFEqual($0.window, window) }),
+              setFrame(destination, of: window) != nil,
+              let landed = frame(of: window) else { return false }
+        SnapMemory.shared.records.recordMaximize(window, action: action, from: current,
+                                                  landed: landed, screenKey: screenKey)
+        if case .returnTo = action,
+           !SnapRecords<AXUIElement>.matches(landed, destination, originTolerance: 1, sizeTolerance: 1) {
+            return false
+        }
+        return true
+    }
+
+    struct VisibleWindow {
+        let id: CGWindowID
+        let pid: pid_t
+        let frame: CGRect
+        let window: AXUIElement?
+        let appName: String
+        let title: String
+    }
+
+    static func visibleWindows(pids: Set<pid_t>? = nil) -> [VisibleWindow]? {
+        guard AXIsProcessTrusted(),
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        let cg = list.filter {
+            guard let pid = $0[kCGWindowOwnerPID as String] as? Int32 else { return false }
+            return ($0[kCGWindowLayer as String] as? Int) == 0 && pid != getpid()
+                && pids.map { $0.contains(pid) } != false
+                && ($0[kCGWindowAlpha as String] as? Double ?? 1) > 0
+        }
+        var axByPID: [pid_t: [(AXUIElement, CGRect, String)]] = [:]
+        for pid in Set(cg.compactMap { $0[kCGWindowOwnerPID as String] as? Int32 }) {
+            guard NSRunningApplication(processIdentifier: pid)?.activationPolicy == .regular else { continue }
+            let app = tame(AXUIElementCreateApplication(pid))
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+                  let windows = value as? [AXUIElement] else { axByPID[pid] = []; continue }
+            axByPID[pid] = windows.compactMap { window in
+                guard isEligible(window), let rect = frame(of: window) else { return nil }
+                var title: CFTypeRef?
+                _ = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
+                return (window, rect, title as? String ?? "Untitled window")
+            }
+        }
+        return cg.compactMap { info in
+            guard let pid = info[kCGWindowOwnerPID as String] as? Int32,
+                  let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular,
+                  let id = info[kCGWindowNumber as String] as? UInt32,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+            let cocoa = Coord.cocoaRect(fromAX: rect, primaryMaxY: primaryMaxY())
+            let matches = (axByPID[pid] ?? []).filter {
+                WindowIdentityGeometry.matches(surface: cocoa, accessibility: $0.1)
+            }
+            let sameCG = cg.filter { other in
+                guard other[kCGWindowOwnerPID as String] as? Int32 == pid,
+                      let bounds = other[kCGWindowBounds as String] as? [String: Any],
+                      let otherRect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return false }
+                guard matches.count == 1 else { return false }
+                let otherCocoa = Coord.cocoaRect(fromAX: otherRect, primaryMaxY: primaryMaxY())
+                return WindowIdentityGeometry.matches(surface: otherCocoa, accessibility: matches[0].1)
+            }
+            let exact = matches.count == 1 && sameCG.count == 1 ? matches[0] : nil
+            return VisibleWindow(id: id, pid: pid, frame: exact?.1 ?? cocoa, window: exact?.0,
+                                 appName: app.localizedName ?? "Application", title: exact?.2 ?? "Window unavailable")
+        }
+    }
+
+    static func isOnScreen(_ window: AXUIElement, in visible: [VisibleWindow]) -> Bool {
+        visible.contains { $0.window.map { CFEqual($0, window) } == true }
+    }
+
+    enum Observation { case current, excluded, unresolved }
+
+    static func observe(_ entry: SnapRecords<AXUIElement>.Entry, in visible: [VisibleWindow]?) -> Observation {
+        if isGone(entry.window) { return .excluded }
+        guard let eligible = eligibility(entry.window) else { return .unresolved }
+        if !eligible { return .excluded }
+        guard let visible else { return .unresolved }
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(entry.window, &pid) == .success else { return .unresolved }
+        let onScreen = isOnScreen(entry.window, in: visible)
+        let ambiguous = visible.contains { $0.pid == pid && $0.window == nil }
+        if !onScreen && !ambiguous { return .excluded }
+        guard let frame = frame(of: entry.window) else { return .unresolved }
+        if !SnapRecords<AXUIElement>.matches(frame, entry.snappedTo, originTolerance: 1, sizeTolerance: 1) {
+            return .excluded
+        }
+        return onScreen ? .current : .unresolved
+    }
+
+    static func isEligible(_ window: AXUIElement) -> Bool { eligibility(window) == true }
+
+    private static func eligibility(_ window: AXUIElement) -> Bool? {
+        func attribute(_ key: String) -> CFTypeRef? {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(tame(window), key as CFString, &value) == .success else { return nil }
+            return value
+        }
+        guard let role = attribute(kAXRoleAttribute) as? String else { return nil }
+        if role != "AXWindow" { return false }
+        guard let subrole = attribute(kAXSubroleAttribute) as? String else { return nil }
+        if subrole != "AXStandardWindow" { return false }
+        for key in [kAXModalAttribute, kAXMinimizedAttribute, "AXFullScreen"] {
+            guard let value = attribute(key) as? Bool else { return nil }
+            if value { return false }
+        }
+        return true
+    }
+
+    static func canFitExactly(_ window: AXUIElement) -> Bool {
+        isEligible(window) && settable(window, kAXPositionAttribute) && settable(window, kAXSizeAttribute)
+    }
+
+    static func pids(of windows: [AXUIElement]) -> Set<pid_t> {
+        Set(windows.compactMap { window in
+            var pid: pid_t = 0
+            return AXUIElementGetPid(window, &pid) == .success ? pid : nil
+        })
+    }
+
+    @discardableResult
+    static func commit(_ effects: [FrameEffect<AXUIElement>], validate: () -> Bool,
+                       persist: () throws -> Void) -> ExactCommit.Outcome<AXUIElement> {
+        guard SnapMemory.shared.recovery.isEmpty, AXIsProcessTrusted() else { return .rejected }
+        let outcome = ExactCommit.apply(effects, validate: { AXIsProcessTrusted() && validate() },
+                                        read: frame, eligible: isEligible,
+                                        write: { setFrame($1, of: $0, fitting: .exact) != nil }, persist: persist)
+        switch outcome {
+        case .committed:
+            var records = SnapMemory.shared.records
+            for effect in effects {
+                records.recordSnap(effect.window, from: effect.before, to: effect.after, placement: effect.placement)
+            }
+            SnapMemory.shared.records = records
+        case .recovery(let receipt): SnapMemory.shared.recovery = receipt
+        case .rejected, .rolledBack: break
+        }
+        return outcome
+    }
+
+    @discardableResult
+    static func retryRestore() -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        SnapMemory.shared.recovery = ExactCommit.restore(SnapMemory.shared.recovery, read: frame,
+            write: { setFrame($1, of: $0, fitting: .exact) != nil }, isGone: isGone)
+        return SnapMemory.shared.recovery.isEmpty
+    }
+
+    static func isGone(_ window: AXUIElement) -> Bool {
+        var pid: pid_t = 0
+        if AXUIElementGetPid(window, &pid) == .success, pid > 0, kill(pid, 0) != 0, errno == ESRCH { return true }
+        var role: CFTypeRef?
+        return AXUIElementCopyAttributeValue(tame(window), kAXRoleAttribute as CFString, &role) == .invalidUIElement
     }
 
     // MARK: - AX element access
@@ -226,8 +358,8 @@ enum WindowMover {
             pixelsWide: info.pixelsWide) else { return false }
         let landed = setFrame(targetRect, of: window)
         guard let landed else { return false }
-        onPlacement(window, target, targetRect)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
+        onPlacement(window, target, targetRect)
         return true
     }
 
@@ -255,8 +387,8 @@ enum WindowMover {
         let target = steps[idx]
         let landed = setFrame(target, of: window)
         guard let landed else { return prev }
-        onPlacement(window, screen, target)
         SnapMemory.shared.recordSnap(of: window, from: currentCocoa, to: landed)
+        onPlacement(window, screen, target)
         return CycleState(action: actionId, stepIndex: idx, lastTime: now, screenKey: info.key, lastRect: target)
     }
 
@@ -320,8 +452,26 @@ enum WindowMover {
     /// being abandoned wherever the resize gave up. Returns the frame the window was
     /// ultimately steered to — the INTENT, which callers record; reading the result back
     /// instead would capture in-between junk from apps that resize asynchronously.
-    @discardableResult
-    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement) -> CGRect? {
+    enum Fitting { case bestEffort, exact }
+
+    private static func setFrame(_ cocoa: CGRect, of window: AXUIElement,
+                                 fitting: Fitting = .bestEffort) -> CGRect? {
+        if fitting == .exact {
+            guard cocoa.width > 0, cocoa.height > 0,
+                  [cocoa.minX, cocoa.minY, cocoa.width, cocoa.height].allSatisfy({ $0.isFinite }),
+                  settable(window, kAXPositionAttribute), settable(window, kAXSizeAttribute)
+            else { return nil }
+            let restoreEnhanced = suspendEnhancedUserInterface(of: window)
+            defer { if let app = restoreEnhanced { setBool(app, enhancedUserInterfaceAttribute, true) } }
+            let ax = Coord.axRect(fromCocoa: cocoa, primaryMaxY: primaryMaxY())
+            guard setSize(window, kAXSizeAttribute, ax.size),
+                  setPoint(window, kAXPositionAttribute, ax.origin),
+                  setSize(window, kAXSizeAttribute, ax.size),
+                  let actual = frame(of: window),
+                  SnapRecords<AXUIElement>.matches(actual, cocoa, originTolerance: 1, sizeTolerance: 1)
+            else { return nil }
+            return actual
+        }
         var movable = DarwinBoolean(false)
         if AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &movable) == .success,
            !movable.boolValue { return nil }
@@ -366,6 +516,11 @@ enum WindowMover {
         let ax = Coord.axRect(fromCocoa: target, primaryMaxY: primaryMaxY())
         guard setPoint(window, kAXPositionAttribute, ax.origin) || positionMatches(ax.origin, of: window) else { return nil }
         return target
+    }
+
+    private static func settable(_ window: AXUIElement, _ key: String) -> Bool {
+        var flag = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(tame(window), key as CFString, &flag) == .success && flag.boolValue
     }
 
     private static func positionMatches(_ target: CGPoint, of window: AXUIElement) -> Bool {

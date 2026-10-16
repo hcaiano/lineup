@@ -68,7 +68,9 @@ private struct ZonesSettingsPaneBody: View {
                         }
                     }
 
-                    SettingsSectionView("Snapping") {
+                    SettingsSectionView("Snapping", caption: model.dragSnapOn
+                        ? "Hold \(model.dragTriggerDisplay) and pause on the line between two zones, then drag the handle that appears. Drop a window on Share zone to fit two windows in one zone."
+                        : nil) {
                         SettingsRow(title: "Drag to snap",
                                     detail: model.dragSnapOn
                                         ? "Hold the key below while dragging a window over a zone."
@@ -107,9 +109,26 @@ private struct ZonesSettingsPaneBody: View {
                         }
                     }
 
+                    SettingsSectionView("Empty zones") {
+                        SettingsRow(title: "Suggest windows for empty zones",
+                                    detail: "After a drag, shows your other visible windows at an empty zone. Click one to move it there. Previews need Screen Recording.") {
+                            Toggle("", isOn: Binding(get: { model.fillAssistEnabled },
+                                                     set: { model.setFillAssistEnabled($0) }))
+                                .labelsHidden().toggleStyle(.switch)
+                                .disabled(!model.canWrite)
+                                .accessibilityLabel("Suggest windows for empty zones")
+                        }
+                        if model.fillAssistEnabled && !model.screenRecordingGranted {
+                            SettingsRow(title: "Screen Recording is off",
+                                        detail: "Lineup keeps this setting and suggests windows again once access is allowed.") {
+                                Button("Open System Settings…") { model.recoverScreenRecording() }
+                            }
+                        }
+                    }
+
                     SettingsSectionView(
                         "Window",
-                        caption: "Click a shortcut, then press a key combo.") {
+                        caption: "Click a shortcut, then press a key combo. Press Maximize or return again to put the window back.") {
                         ForEach(model.quickShortcutRows) { row in
                             shortcutRow(row)
                         }
@@ -289,6 +308,10 @@ final class ZonesSettingsModel: ObservableObject {
         var zoneShortcutGroups: () -> [ZoneShortcutGroup]
         /// Every combo any registered tool has bound, running or not (§5.6 cross-tool collisions).
         var boundCombos: () -> [ToolCombo]
+        var fillAssistEnabled: () -> Bool = { false }
+        var setFillAssistEnabled: (Bool) -> Void = { _ in }
+        var screenRecordingGranted: () -> Bool = { false }
+        var recoverScreenRecording: () -> Void = {}
     }
 
     struct ShortcutRow: Identifiable {
@@ -335,6 +358,8 @@ final class ZonesSettingsModel: ObservableObject {
         var rows: [ShortcutRow]
     }
 
+    @Published private(set) var fillAssistEnabled = false
+    @Published private(set) var screenRecordingGranted = false
     @Published private(set) var canWrite = true
     @Published private(set) var canReset = false
     @Published private(set) var blockedMessage: String?
@@ -390,7 +415,18 @@ final class ZonesSettingsModel: ObservableObject {
         dragTrigger = ctx.dragTrigger()
         isRunning = ctx.isRunning()
         zoneShortcutGroups = ctx.zoneShortcutGroups()
+        fillAssistEnabled = ctx.fillAssistEnabled()
+        screenRecordingGranted = ctx.screenRecordingGranted()
     }
+
+    func setFillAssistEnabled(_ value: Bool) {
+        guard canWrite, value != fillAssistEnabled else { return }
+        cancelRecording?()
+        ctx.setFillAssistEnabled(value)
+        refresh()
+    }
+
+    func recoverScreenRecording() { ctx.recoverScreenRecording() }
 
     /// Preserve the unreadable section and start again from defaults. Offered by the pane's
     /// blocked banner — the same recovery the menu bar's warning row offers.

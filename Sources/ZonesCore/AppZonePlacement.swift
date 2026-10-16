@@ -24,6 +24,34 @@ public struct AppZonePlacement: Codable, Equatable {
                           width: target.width / container.width, height: target.height / container.height)
     }
 
+    public init(screenKey: String, layout: Node, zoneIndex: Int?, unitRect: CGRect) {
+        self.screenKey = screenKey
+        self.layout = layout
+        self.zoneIndex = zoneIndex
+        self.unitRect = unitRect
+    }
+
+    public func rebased(to newLayout: Node) -> AppZonePlacement? {
+        guard layout.sameTopology(as: newLayout) else { return nil }
+        return AppZonePlacement(screenKey: screenKey, layout: newLayout, zoneIndex: zoneIndex, unitRect: unitRect)
+    }
+
+    public func rect(on display: Display) -> CGRect? {
+        guard display.key == screenKey, isValid else { return nil }
+        let container: CGRect
+        if let zoneIndex {
+            guard let zone = Layout.zoneRect(index: zoneIndex, root: layout, frame: display.frame,
+                                             visibleFrame: display.visibleFrame, pixelsWide: display.pixelsWide)
+            else { return nil }
+            container = zone
+        } else {
+            container = Layout.rootContainer(frame: display.frame, visibleFrame: display.visibleFrame)
+        }
+        return CGRect(x: container.minX + unitRect.minX * container.width,
+                      y: container.minY + unitRect.minY * container.height,
+                      width: unitRect.width * container.width, height: unitRect.height * container.height)
+    }
+
     public struct Display {
         public let key: String
         public let frame: CGRect
@@ -41,20 +69,7 @@ public struct AppZonePlacement: Codable, Equatable {
     public func rect(in config: LineupConfig, displays: [Display]) -> CGRect? {
         guard let display = displays.first(where: { $0.key == screenKey }),
               config.screens[screenKey]?.layout == layout, isValid else { return nil }
-        let frame = display.frame
-        let visibleFrame = display.visibleFrame
-        let pixelsWide = display.pixelsWide
-        let container: CGRect
-        if let zoneIndex {
-            guard let zone = Layout.zoneRect(index: zoneIndex, root: layout, frame: frame,
-                                             visibleFrame: visibleFrame, pixelsWide: pixelsWide) else { return nil }
-            container = zone
-        } else {
-            container = Layout.rootContainer(frame: frame, visibleFrame: visibleFrame)
-        }
-        return CGRect(x: container.minX + unitRect.minX * container.width,
-                      y: container.minY + unitRect.minY * container.height,
-                      width: unitRect.width * container.width, height: unitRect.height * container.height)
+        return rect(on: display)
     }
 
     public var isValid: Bool {

@@ -7,6 +7,18 @@ import AppKit
 /// Frame-based on purpose: the overlays that use it lay out with frames.
 @MainActor
 enum HUDGlass {
+    static func roundedMask(radius: CGFloat) -> NSImage {
+        let diameter = radius * 2 + 1
+        let image = NSImage(size: CGSize(width: diameter, height: diameter), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }
+
     /// A plain container with the glass behind its subviews. Add content to the returned view.
     static func container(frame: NSRect, cornerRadius: CGFloat, tint: CGFloat = 0.42) -> NSView {
         let container = NSView(frame: frame)

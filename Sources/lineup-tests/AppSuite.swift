@@ -1594,7 +1594,7 @@ private func runOnboardingTests() throws {
     check(OnboardingCopyMirror.inputMonitoringNote.contains("only when you turn Hyperkey on"),
           "the Input Monitoring note says it is only asked for on Hyperkey enable")
     check(source("Sources/lineup/App/OnboardingKit.swift")
-            .contains("\"Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only \"\n        + \"when you first capture text.\""),
+            .contains("\"Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only \"\n        + \"when you first capture text or turn on window suggestions.\""),
           "the mirrored Input Monitoring note is the one the app actually shows")
 
     // ---- Settings panes: the design-review polish ----
@@ -1620,7 +1620,7 @@ private func runOnboardingTests() throws {
     // The layout leads the pane; snapping follows. "Drag to snap" would repeat its own row.
     if let caption = zonesPane.range(of: "caption: \"Click a shortcut"),
        let layout = zonesPane.range(of: "SettingsSectionView(\"Layout\")"),
-       let snapping = zonesPane.range(of: "SettingsSectionView(\"Snapping\")") {
+       let snapping = zonesPane.range(of: "SettingsSectionView(\"Snapping\"") {
         check(layout.lowerBound < snapping.lowerBound && snapping.lowerBound < caption.lowerBound,
               "the layout section leads, then snapping, then the recorder caption with its recorders")
     } else {
@@ -2318,7 +2318,7 @@ private enum AboutFactsMirror {
 /// same way `ShortcutKitCaps` is, with the scan above pinning the real definition.
 private enum OnboardingCopyMirror {
     static let inputMonitoringNote = "Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only "
-        + "when you first capture text."
+        + "when you first capture text or turn on window suggestions."
 }
 
 /// `ShortcutKit` and `SettingsMetrics` live in the app target, which this runner does not link.

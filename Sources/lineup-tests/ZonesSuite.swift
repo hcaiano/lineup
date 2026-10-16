@@ -15,6 +15,11 @@ func isFresh(_ o: LoadOutcome) -> Bool { if case .fresh = o { return true }; ret
 
 func runZonesTests() throws {
     try runAppPlacementTests()
+    runSnapRecordsTests()
+    runZoneEffectsTests()
+    runZoneShareTests()
+    try runZoneAssistTests()
+    runDividerGripTests()
     // ---- Coordinate flip ----
     let primaryMaxY: CGFloat = 1440
 
