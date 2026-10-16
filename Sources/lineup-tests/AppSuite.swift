@@ -1620,7 +1620,7 @@ private func runOnboardingTests() throws {
     // The layout leads the pane; snapping follows. "Drag to snap" would repeat its own row.
     if let caption = zonesPane.range(of: "caption: \"Click a shortcut"),
        let layout = zonesPane.range(of: "SettingsSectionView(\"Layout\")"),
-       let snapping = zonesPane.range(of: "SettingsSectionView(\"Snapping\")") {
+       let snapping = zonesPane.range(of: "SettingsSectionView(\"Snapping\"") {
         check(layout.lowerBound < snapping.lowerBound && snapping.lowerBound < caption.lowerBound,
               "the layout section leads, then snapping, then the recorder caption with its recorders")
     } else {

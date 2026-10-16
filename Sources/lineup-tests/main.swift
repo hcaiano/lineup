@@ -15,6 +15,7 @@ func runSuite(_ name: String, _ body: () throws -> Void) {
 }
 
 runSuite("ZonesSuite", runZonesTests)
+runSuite("ZonesNativeReceiptTests", runZonesNativeReceiptTests)
 runSuite("CyclerSuite", runCyclerTests)
 runSuite("HyperkeySuite", runHyperkeyTests)
 runSuite("KeyboardRemapSuite", runKeyboardRemapTests)
@@ -32,6 +33,10 @@ if CommandLine.arguments.contains("--input-recovery") {
 }
 if CommandLine.arguments.contains("--app-reopen") {
     runSuite("AppReopenSuite", runAppReopenTests)
+}
+
+if CommandLine.arguments.contains("--zones-native") {
+    runSuite("ZonesNativeSuite", runZonesNativeTests)
 }
 
 // ---- Report ----

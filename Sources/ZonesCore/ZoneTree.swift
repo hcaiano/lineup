@@ -254,3 +254,15 @@ public enum Layout {
         return rects
     }
 }
+
+public extension Node {
+    func sameTopology(as other: Node) -> Bool {
+        switch (self, other) {
+        case (.leaf, .leaf): return true
+        case let (.split(a, _, kids), .split(b, _, others)):
+            return a == b && kids.count == others.count
+                && zip(kids, others).allSatisfy { $0.sameTopology(as: $1) }
+        default: return false
+        }
+    }
+}

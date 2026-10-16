@@ -258,7 +258,9 @@ Smoothing, button remapping and per-app rules are out of scope.
 
 Native, precise, calm. One fixed brand blue (#2F6BFF, `Brand.blue` in
 `Sources/lineup/App/Brand.swift`) carries selection and controls in Settings and the layout editor.
-The menu-bar popover and its controls inherit the system accent and appearance. Other styling
+The menu-bar popover and its controls inherit the system accent and appearance. Zones' on-screen
+handle, Share zone targets and window suggestions follow the system appearance with neutral system
+colors and the system accent; only snap previews keep the brand blue. Other styling
 defers to macOS conventions (system fonts, vibrancy, standard controls). Feature artwork uses one color per tool
 within the shared [enamel icon family](Design/FeatureIcons/README.md). The app should feel like
 Apple shipped it.
@@ -278,7 +280,7 @@ the persisted enabled flag; a tool awaiting permission retains its enabled appea
   placement. The editor overlay must read as one designed surface, not controls sprinkled on glass.
 - Electron-app density and web-style cards. No faux-material design on macOS.
 - Red as a custom app accent. Warnings are orange. Settings and editor controls use the brand
-  blue; native menu-bar controls follow the person's system accent.
+  blue; native menu-bar controls and Zones' on-screen controls follow the person's system accent.
 - "AI-made" tells in copy or UI: em dashes, generic icon-plus-label grids, hedging microcopy.
 
 ## Design Principles
@@ -290,8 +292,8 @@ the persisted enabled flag; a tool awaiting permission retains its enabled appea
 3. **Numbers users can act on.** Pixel readouts, placed where the eye already is; no unit soup.
 4. **Defer to the platform.** AppKit controls, system behaviors, native About/Settings idioms.
 5. **One blue for app styling.** Settings and editor controls use `Brand.blue`; native menu-bar
-   controls inherit the system accent. Feature artwork uses its assigned hue, with a shared
-   composition and material.
+   controls and Zones' on-screen controls inherit the system accent, and snap previews stay blue.
+   Feature artwork uses its assigned hue, with a shared composition and material.
 
 ## Accessibility & Inclusion
 
@@ -311,3 +313,93 @@ preference, off by default.
 Sessions last 15, 30, 60, or 120 minutes. Changing duration restarts the timer; changing the display
 option preserves its deadline. Explicit sleep ends the session. Sessions never resume at wake or
 app launch. The tool does not change permanent power settings, screen locking, or closed-lid behavior.
+
+## Zones window controls
+
+**Maximize or return** keeps the existing `full` shortcut. Press it again to return to the
+frame immediately before maximizing. Both directions move the window the same best-effort way as
+other shortcuts, so a window that cannot resize is centered and still returns. A return that does
+not land keeps the original return frame for another press, even when Lineup moved it partway. **Restore previous size** keeps the separate first-snap
+history. Moving the window yourself, another snap, or a display change ends the temporary return.
+Maximizing or returning never teaches a saved app launch position.
+
+Hold the configured drag bind and pause the pointer on the line between two zones. After about
+0.3 seconds, that line and a small handle appear. The line is a thin neutral rule and the handle a
+narrow knob on it, like an overlay scroll bar, in light, dark and mixed content. The handle sits a
+short distance from the pointer along the line, so a click or drag where the pointer already is
+still reaches the window.
+Crossing lines on the way somewhere else shows nothing, and how long the bind was held before does
+not count. A key release, modifier change, scroll or click during the pause cancels it. Pressing
+the bind while the pointer is already still shows nothing until the pointer moves. Ordinary
+modifier-drag snapping never waits for this pause.
+
+Move into the handle to use it. Entering widens the knob and brightens the line. The handle stays
+where it appeared while the pointer moves along the line near it. Moving off the line, or more than
+120 points along it, hides the handle; pausing again shows it at the new place. In a nested layout
+the line shown is the one the handle moves.
+Dragging shows the final frames of affected snapped windows that are visible on this desktop.
+Each preview is drawn slightly inside its final frame so the line stays visible; the windows still
+land exactly on those frames. When the line locks onto a guide, the knob fills in and a small label
+beside the handle names the fraction, such as ½. Release applies the frames and saves the layout
+once.
+Releasing the bind during the drag cancels it. Clicking the handle pins it. You can then release the
+bind, use the relevant arrow keys for one display pixel or Shift-arrow for ten, and press Return.
+Escape, a click elsewhere, or switching apps cancels a pinned handle. Return on an unchanged handle
+closes it without saving. Other nested lines stay anchored. The painted line and previews never
+intercept clicks. Windows on another desktop keep their Restore history but are not moved. If a relevant
+window cannot be identified or read, the divider change is refused without moving windows or
+saving the layout. Holding an arrow or Return activation key does not adjust or confirm a pin.
+Release that key before using it for a new manual adjustment or confirmation.
+
+Ordinary modifier-drag keeps whole-zone, edge-half, and corner-quarter targets. A whole zone with
+one eligible, explicitly snapped window also shows **Share zone** targets above its center.
+Their glyphs show the right or bottom half your window takes. The targets sit on a small surface
+that follows the system appearance. The active tile fills in and names **Side by side** or
+**Stacked**; the blue preview shows where your window goes while the other window has a quieter
+preview.
+Deliberately enter the side-by-side or stacked target to preview both windows. Sharing assigns
+complementary halves of the same zone, preserving its number and saved layout. Only those two
+windows move. Shared halves follow later divider edits. Closed, minimized and other-desktop
+records never count as occupants; two visible occupants or a partial one cannot share. Release
+checks the same rule again, and Escape during the drag cancels it.
+Share targets stay hidden while any remembered eligible window cannot be matched unambiguously
+on screen. Ordinary single-window snaps remain available.
+
+**Suggest windows for empty zones** is off by default. Enabling it explains and requests Screen
+Recording, then saves only with access available. After a successful modifier-drag, Lineup looks for
+a genuinely vacant zone on that display; untracked visible windows also block vacancy. When one
+exists and other visible windows can go there, a compact chooser appears at that zone, on the side
+nearest where you dropped the window. It never takes keyboard focus or activates Lineup, so typing
+keeps going to your app. Nothing appears while windows are being read, when there is no window to
+suggest or when reading fails. The chooser lists at most 32 concrete visible regular windows from the
+current desktop, including other connected displays, but never the window you just dropped. Each
+shows its app icon first and gets at most one preview, scaled down but never enlarged; a failed
+preview says **Preview unavailable**. The chooser is at most 532 by 440 points and sits inside the
+zone whenever the zone holds one card column; a narrow zone gets a narrower chooser with whole
+columns. A zone too small for one column keeps the chooser over it, moved off the window you dropped
+when there is room.
+One click on a window moves it into the zone. Selecting rechecks its identity and the destination
+first. Nothing else moves, and other empty zones are not filled. Pointer motion moves a quiet
+selection ring. Clicking inside the chooser gives it the keyboard: the arrow keys move the ring,
+drawn in the system accent while the chooser has focus, and Return acts on the focused control, so
+Return on Close closes. Hover preserves Close focus and never scrolls; arrows scroll the selected
+card into view without wrapping. Escape, Close, any click elsewhere or a new drag dismisses it,
+even while windows are still being read. It closes on its own eight seconds after it appears and
+checks again every eight seconds; it stays while previews load, while it has the keyboard, or while
+the pointer is on it and has moved or scrolled since the last key press. A pointer resting on it
+while you type elsewhere lets it close. Previews are taken only after a drop that has windows to
+suggest, and stay in memory only while the chooser is shown. No app-wide activation or desktop
+change occurs.
+Revoking Screen Recording retains the preference, suppresses suggestions, and exposes recovery in
+Settings. Startup, dragging, and capture failure never request this permission.
+
+Coordinated moves require exact frame readback. A refused move or failed divider save attempts to
+restore every touched window in reverse order and keeps the previous config and snap history.
+Accessibility cannot provide cross-app atomicity. When a window refuses its new frame, windows
+change while moving, or the layout cannot be saved, Lineup puts the windows back and shows a brief
+note near the pointer that names the app when it can. The note never takes focus. If a window
+cannot be put back, the note says so and **Retry Restore** stays in the Lineup menu and Zones
+settings, blocking further coordinated moves. Retry Restore forgets a window only after its app
+has quit or the window no longer exists; an unreadable or unresponsive window stays listed. Disabling Zones makes one bounded restoration attempt and
+releases its retained window references. Display or desktop changes, sleep, permission loss,
+shortcut recording, relevant settings edits, and opening the layout editor cancel temporary UI.

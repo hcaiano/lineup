@@ -36,7 +36,7 @@ enum ShortcutKit {
 
     /// Actions shown in the Shortcuts tab, in order, with display names.
     static let quickActions: [(id: String, label: String)] = [
-        ("full", "Full screen"),
+        ("full", "Maximize or return"),
         ("center", "Center"),
         ("left", "Left"),
         ("right", "Right"),

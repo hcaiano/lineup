@@ -26,7 +26,7 @@ final class TextCaptureTool: Tool, ObservableObject {
     private var services: ToolServices?
     private var session = CaptureSession()
     private var overlay: TextCaptureOverlay?
-    private var frameCapture: TextCaptureFrame?
+    private var frameCapture: SingleFrameCapture?
     private var request: VNRecognizeTextRequest?
     private var work: Task<Void, Never>?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -151,9 +151,11 @@ final class TextCaptureTool: Tool, ObservableObject {
                 }
                 self.overlay?.close()
                 self.overlay = nil
-                let capture = TextCaptureFrame()
+                let capture = SingleFrameCapture()
                 self.frameCapture = capture
-                let image = try await capture.capture(display: scDisplay, region: region, excluding: excluded)
+                let image = try await capture.capture(filter: SCContentFilter(display: scDisplay, excludingWindows: excluded),
+                                                      width: region.pixelWidth, height: region.pixelHeight,
+                                                      sourceRect: region.sourceRect)
                 try self.validate(token, topology: topology)
                 self.frameCapture = nil
                 let text = try await TextCaptureRecognition.recognize(image, request: request)
