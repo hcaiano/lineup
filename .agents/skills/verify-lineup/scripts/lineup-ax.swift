@@ -340,8 +340,6 @@ let insideVirtualMachine: Bool = {
 }()
 let hostStamp = ProcessInfo.processInfo.environment["LINEUP_AX_HOST_STAMP"]
 var lastOwnInput: Date?
-var heldModifiers: CGEventFlags = []
-var heldMouseAt: CGPoint?
 
 func secondsSinceLastHIDEvent() -> Double? {
     let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
@@ -352,24 +350,81 @@ func secondsSinceLastHIDEvent() -> Double? {
     return nanoseconds.doubleValue / 1_000_000_000
 }
 
-// Runs before every event and every Accessibility action on the host. Our own events reset the
-// idle time just before we stamp them, so an idle time shorter than the time since our stamp
-// means someone else touched the keyboard or mouse.
+// Synthetic events reset the idle time like real ones, so the idle time alone cannot tell them
+// apart. On the host every event we post carries this marker, and a listen-only tap latches any
+// other event while a command runs. The idle time covers the gaps between commands.
+let ownEventMarker: Int64 = 0x4C4E_5550
+let foreignInputLock = NSLock()
+var foreignInputSeen = false
+var hostTapCreated = false
+
+func watchHostInput() {
+    guard CGPreflightListenEventAccess() || AXIsProcessTrusted() else {
+        fail("cannot watch the host for human input; give this terminal Input Monitoring in System Settings", code: 6)
+    }
+    let ready = DispatchSemaphore(value: 0)
+    Thread {
+        let tap = CGEvent.tapCreate(tap: .cghidEventTap, place: .headInsertEventTap, options: .listenOnly,
+                                    eventsOfInterest: CGEventMask.max, callback: { _, type, event, _ in
+            // A disabled tap (timeout or secure input) no longer sees the human, so it counts as human
+            // input. Null events carry no input, and posting can emit some from our own process.
+            let ours = event.getIntegerValueField(.eventSourceUserData) == ownEventMarker
+                || event.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid())
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput || (type != .null && !ours) {
+                foreignInputLock.lock()
+                foreignInputSeen = true
+                foreignInputLock.unlock()
+            }
+            return Unmanaged.passUnretained(event)
+        }, userInfo: nil)
+        if let tap {
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
+            hostTapCreated = true
+        }
+        ready.signal()
+        if hostTapCreated { CFRunLoopRun() }
+    }.start()
+    ready.wait()
+    guard hostTapCreated else {
+        fail("cannot watch the host for human input; give this terminal Input Monitoring in System Settings", code: 6)
+    }
+}
+
+func stopForHumanInput() -> Never {
+    releaseHeldInput()
+    fail("human input detected since the last verification input; release the host desktop", code: 7)
+}
+
+// Runs before every event and every Accessibility action on the host.
 func checkInputOwnership() {
     if insideVirtualMachine { return }
+    guard let hostStamp else { fail("refusing to post input outside the verification VM without a host-desktop claim", code: 6) }
+    if !hostTapCreated { watchHostInput() }
     if lastOwnInput == nil {
-        guard let hostStamp,
-              let attributes = try? FileManager.default.attributesOfItem(atPath: hostStamp),
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: hostStamp),
               let stamp = attributes[.modificationDate] as? Date else {
             fail("refusing to post input outside the verification VM without a host-desktop claim", code: 6)
         }
         lastOwnInput = stamp
     }
+    foreignInputLock.lock()
+    let seen = foreignInputSeen
+    foreignInputLock.unlock()
     guard let idle = secondsSinceLastHIDEvent() else { fail("cannot read the input idle time", code: 6) }
-    if idle + 0.02 < Date().timeIntervalSince(lastOwnInput!) {
-        releaseHeldInput()
-        fail("human input detected since the last verification input; release the host desktop", code: 7)
-    }
+    // Our own events reset the idle time just before we stamp them, so an idle time shorter
+    // than the time since our stamp means someone else touched the keyboard, mouse or trackpad.
+    if seen || idle + 0.02 < Date().timeIntervalSince(lastOwnInput!) { stopForHumanInput() }
+}
+
+// Keep watching briefly after a host command, so its tap overlaps the next command's idle check.
+func finishHostInput() {
+    guard hostTapCreated else { return }
+    usleep(100_000)
+    foreignInputLock.lock()
+    let seen = foreignInputSeen
+    foreignInputLock.unlock()
+    if seen { stopForHumanInput() }
 }
 
 func markOwnInput() {
@@ -377,26 +432,59 @@ func markOwnInput() {
     if let hostStamp { try? FileManager.default.setAttributes([.modificationDate: lastOwnInput!], ofItemAtPath: hostStamp) }
 }
 
-// Lift a held mouse button and modifiers before stopping, so nothing stays pressed for the human.
+// Everything we pressed and have not released yet, so a stop never leaves a key or button down.
+var heldKeys: Set<CGKeyCode> = []
+var heldButtons: Set<UInt32> = []
+var heldModifiers: CGEventFlags = []
+
+func track(_ event: CGEvent) {
+    let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+    switch event.type {
+    case .keyDown: heldKeys.insert(code)
+    case .keyUp: heldKeys.remove(code)
+    case .flagsChanged: heldModifiers = event.flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl, .maskSecondaryFn])
+    case .leftMouseDown: heldButtons.insert(CGMouseButton.left.rawValue)
+    case .leftMouseUp: heldButtons.remove(CGMouseButton.left.rawValue)
+    case .rightMouseDown: heldButtons.insert(CGMouseButton.right.rawValue)
+    case .rightMouseUp: heldButtons.remove(CGMouseButton.right.rawValue)
+    default: break
+    }
+}
+
 func releaseHeldInput() {
-    if let point = heldMouseAt {
-        CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?
-            .post(tap: .cghidEventTap)
-        heldMouseAt = nil
+    func send(_ event: CGEvent?) {
+        event?.setIntegerValueField(.eventSourceUserData, value: ownEventMarker)
+        event?.post(tap: .cghidEventTap)
+    }
+    for code in heldKeys {
+        let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
+        up?.flags = heldModifiers
+        send(up)
+    }
+    let point = CGEvent(source: nil)?.location ?? .zero
+    if heldButtons.contains(CGMouseButton.left.rawValue) {
+        send(CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left))
+    }
+    if heldButtons.contains(CGMouseButton.right.rawValue) {
+        send(CGEvent(mouseEventSource: source, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right))
     }
     for key in modifierKeys.reversed() where heldModifiers.contains(key.flag) {
         heldModifiers.remove(key.flag)
         let event = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: false)
         event?.type = .flagsChanged
         event?.flags = heldModifiers
-        event?.post(tap: .cghidEventTap)
+        send(event)
     }
+    heldKeys = []
+    heldButtons = []
 }
 
 func post(_ event: CGEvent?) {
     checkInputOwnership()
     guard let event else { fail("could not create input event") }
+    if !insideVirtualMachine { event.setIntegerValueField(.eventSourceUserData, value: ownEventMarker) }
     event.post(tap: .cghidEventTap)
+    track(event)
     markOwnInput()
     usleep(12_000)
 }
@@ -447,7 +535,6 @@ func pressModifiers(_ flags: CGEventFlags, down: Bool) {
         event?.type = .flagsChanged
         event?.flags = current
         post(event)
-        heldModifiers = current
     }
 }
 
@@ -486,18 +573,15 @@ func drag(from: CGPoint, to: CGPoint, flags: CGEventFlags, steps: Int) {
     mouse(.mouseMoved, from, flags: flags)
     usleep(100_000)
     mouse(.leftMouseDown, from, flags: flags)
-    heldMouseAt = from
     usleep(150_000)
     for step in 1...steps {
         let t = Double(step) / Double(steps)
         let point = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
         mouse(.leftMouseDragged, point, flags: flags)
-        heldMouseAt = point
         usleep(16_000)
     }
     usleep(250_000)
     mouse(.leftMouseUp, to, flags: flags)
-    heldMouseAt = nil
 }
 
 // MARK: - Commands
@@ -581,3 +665,4 @@ case "move":
 default:
     fail("unknown command: \(options.command)\n\n\(usage)", code: 2)
 }
+finishHostInput()

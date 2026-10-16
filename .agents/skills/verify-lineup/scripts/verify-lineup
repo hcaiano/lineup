@@ -19,7 +19,7 @@ GUEST_USER="admin"
 GUEST_PASSWORD="admin"
 KEY="${STATE}/ssh/id_ed25519"
 HOST_LOCK="${STATE}/host.lock"
-HOST_CLAIMING="${STATE}/host.claiming"
+HOST_MUTEX="${STATE}/host.mutex"
 
 die() { echo "error: $*" >&2; exit 1; }
 say() { echo "==> $*" >&2; }
@@ -624,18 +624,27 @@ cmd_host_gate() {
   esac
 }
 
+# Serializes reading and replacing the host lock. flock(2) holds the lock on fd 9, which this
+# script keeps open, and the kernel drops it when the script exits, however it exits.
+host_mutex() {
+  mkdir -p "${STATE}"
+  exec 9>"${HOST_MUTEX}"
+  python3 -c '
+import fcntl, sys, time
+for _ in range(50):
+    try:
+        fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except BlockingIOError:
+        time.sleep(0.1)
+sys.exit(1)' || die "another run is changing the host claim; run \`host-gate\` again"
+}
+
 host_gate_claim() {
   local holder="$1"
   [ -n "${holder}" ] || die "host-gate claim needs a HOLDER (your thread or PR)"
   host_gate_check || die "the host desktop is not free; keep working in the VM and list the journey as pending"
-  mkdir -p "${STATE}"
-  # mkdir is atomic, so only one run at a time may read, replace and write the lock.
-  # A mutex left by a killed claim is older than a minute and gets removed.
-  if ! mkdir "${HOST_CLAIMING}" 2>/dev/null; then
-    { [ $(( $(date +%s) - $(stat -f %m "${HOST_CLAIMING}") )) -ge 60 ] && rmdir "${HOST_CLAIMING}" && mkdir "${HOST_CLAIMING}" 2>/dev/null; } \
-      || die "another run is claiming the host desktop; run \`host-gate\` again"
-  fi
-  trap 'rmdir "${HOST_CLAIMING}" 2>/dev/null || true' EXIT
+  host_mutex
   [ -z "$(host_holder 2>/dev/null)" ] || die "another run claimed the host desktop first: $(cat "${HOST_LOCK}")"
   echo "${holder} since $(date '+%Y-%m-%d %H:%M:%S')" > "${HOST_LOCK}.tmp"
   mv "${HOST_LOCK}.tmp" "${HOST_LOCK}"
@@ -646,6 +655,7 @@ host_gate_claim() {
 host_gate_release() {
   local holder="$1" current
   [ -n "${holder}" ] || die "host-gate release needs the HOLDER that claimed it"
+  host_mutex
   [ -f "${HOST_LOCK}" ] || { echo "host desktop already free"; return 0; }
   current="$(cat "${HOST_LOCK}")"
   [ "${current%% since *}" = "${holder}" ] || die "the host lock belongs to ${current}"

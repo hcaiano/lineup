@@ -155,11 +155,15 @@ Henrique whether the Mac is free. This rule replaces that question:
 2. When it is open, `$V host-gate claim HOLDER` takes the desktop, with
    HOLDER set to your PR or thread name. Drive only with
    `$V host-ax --holder HOLDER ARGS...`, which runs `lineup-ax` on the host.
-3. Before each event and Accessibility action, `host-ax` compares the host's
-   idle time with its own last input, and before each command it checks the
-   screen lock. At the first human input or a locked screen, it lifts any key
-   or button it holds, stops with exit 7 and releases the claim. Do not retry, refocus a window or poll to take the desktop back.
-   Checkpoint the case and continue in the VM.
+3. `host-ax` marks every event it posts and watches the host's input with a
+   listen-only event tap, so the terminal needs Input Monitoring. Before each
+   event and Accessibility action it checks for unmarked input, and it compares
+   the idle time with its last input to cover the gaps between commands. It
+   also stops on a locked screen. At the first foreign input, it lifts any key
+   or button it holds, stops with exit 7 and releases the claim. Input that
+   other software posts, Lineup's Hyperkey included, counts as foreign. Do
+   not retry, refocus a window or poll to take the desktop back. Checkpoint
+   the case and continue in the VM.
 4. When you finish, or after 30 minutes without input (the claim goes stale),
    run `$V host-gate release HOLDER`. Restore what you changed: quit a test
    build and reopen the installed `/Applications/Lineup.app`.
@@ -169,8 +173,9 @@ Henrique whether the Mac is free. This rule replaces that question:
 
 Host runs use Henrique's real config, grants and hotkeys. Change only what the
 journey needs, and never during a claim held by someone else. As of
-2026-10-16 the host path refuses input correctly but has not driven a journey
-yet. Treat its first real use as a proof step.
+2026-10-16 the host path refuses input without a claim, and its human-input
+stop was proved in the VM with VNC input standing in for the human. It has not
+driven a host journey yet. Treat its first real use as a proof step.
 
 ## Evidence
 
