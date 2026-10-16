@@ -124,11 +124,14 @@ func parseOptions() -> Options {
         case "--mods": options.mods = modifierFlags(value(arg).split(separator: "+").map(String.init))
         case "--steps": options.steps = max(1, Int(value(arg)) ?? options.steps)
         default:
-            if let range = arg.range(of: "~=") ?? arg.range(of: "~") ?? arg.range(of: "="),
-               ["role", "subrole", "title", "desc", "id", "value", "name"].contains(String(arg[..<range.lowerBound])) {
-                let key = String(arg[..<range.lowerBound])
-                let substring = arg[range].hasPrefix("~")
-                options.matchers.append(Matcher(key: key, expected: String(arg[range.upperBound...]), substring: substring))
+            // Split at the first `~` or `=`, so a value may contain either character.
+            if let split = arg.firstIndex(where: { $0 == "~" || $0 == "=" }),
+               ["role", "subrole", "title", "desc", "id", "value", "name"].contains(String(arg[..<split])) {
+                let key = String(arg[..<split])
+                let substring = arg[split] == "~"
+                var valueStart = arg.index(after: split)
+                if substring, valueStart < arg.endIndex, arg[valueStart] == "=" { valueStart = arg.index(after: valueStart) }
+                options.matchers.append(Matcher(key: key, expected: String(arg[valueStart...]), substring: substring))
             } else {
                 options.positional.append(arg)
             }
@@ -329,14 +332,16 @@ func modifierFlags(_ names: [String]) -> CGEventFlags {
 }
 
 // Input goes to a virtual machine's session. On the host it needs the claim stamp that
-// `verify-lineup host-ax` passes, and any human input since our last event ends the run.
+// `verify-lineup host-ax` passes, and any human input since our last action ends the run.
 let insideVirtualMachine: Bool = {
     var value: Int32 = 0
     var size = MemoryLayout<Int32>.size
     return sysctlbyname("kern.hv_vmm_present", &value, &size, nil, 0) == 0 && value == 1
 }()
 let hostStamp = ProcessInfo.processInfo.environment["LINEUP_AX_HOST_STAMP"]
-var inputOwnershipChecked = false
+var lastOwnInput: Date?
+var heldModifiers: CGEventFlags = []
+var heldMouseAt: CGPoint?
 
 func secondsSinceLastHIDEvent() -> Double? {
     let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
@@ -347,25 +352,52 @@ func secondsSinceLastHIDEvent() -> Double? {
     return nanoseconds.doubleValue / 1_000_000_000
 }
 
+// Runs before every event and every Accessibility action on the host. Our own events reset the
+// idle time just before we stamp them, so an idle time shorter than the time since our stamp
+// means someone else touched the keyboard or mouse.
 func checkInputOwnership() {
-    if insideVirtualMachine || inputOwnershipChecked { return }
-    guard let hostStamp,
-          let attributes = try? FileManager.default.attributesOfItem(atPath: hostStamp),
-          let lastOwnInput = attributes[.modificationDate] as? Date else {
-        fail("refusing to post input outside the verification VM without a host-desktop claim", code: 6)
+    if insideVirtualMachine { return }
+    if lastOwnInput == nil {
+        guard let hostStamp,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: hostStamp),
+              let stamp = attributes[.modificationDate] as? Date else {
+            fail("refusing to post input outside the verification VM without a host-desktop claim", code: 6)
+        }
+        lastOwnInput = stamp
     }
     guard let idle = secondsSinceLastHIDEvent() else { fail("cannot read the input idle time", code: 6) }
-    if idle + 0.5 < Date().timeIntervalSince(lastOwnInput) {
+    if idle + 0.02 < Date().timeIntervalSince(lastOwnInput!) {
+        releaseHeldInput()
         fail("human input detected since the last verification input; release the host desktop", code: 7)
     }
-    inputOwnershipChecked = true
+}
+
+func markOwnInput() {
+    lastOwnInput = Date()
+    if let hostStamp { try? FileManager.default.setAttributes([.modificationDate: lastOwnInput!], ofItemAtPath: hostStamp) }
+}
+
+// Lift a held mouse button and modifiers before stopping, so nothing stays pressed for the human.
+func releaseHeldInput() {
+    if let point = heldMouseAt {
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?
+            .post(tap: .cghidEventTap)
+        heldMouseAt = nil
+    }
+    for key in modifierKeys.reversed() where heldModifiers.contains(key.flag) {
+        heldModifiers.remove(key.flag)
+        let event = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: false)
+        event?.type = .flagsChanged
+        event?.flags = heldModifiers
+        event?.post(tap: .cghidEventTap)
+    }
 }
 
 func post(_ event: CGEvent?) {
     checkInputOwnership()
     guard let event else { fail("could not create input event") }
     event.post(tap: .cghidEventTap)
-    if let hostStamp { try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: hostStamp) }
+    markOwnInput()
     usleep(12_000)
 }
 
@@ -415,6 +447,7 @@ func pressModifiers(_ flags: CGEventFlags, down: Bool) {
         event?.type = .flagsChanged
         event?.flags = current
         post(event)
+        heldModifiers = current
     }
 }
 
@@ -453,15 +486,18 @@ func drag(from: CGPoint, to: CGPoint, flags: CGEventFlags, steps: Int) {
     mouse(.mouseMoved, from, flags: flags)
     usleep(100_000)
     mouse(.leftMouseDown, from, flags: flags)
+    heldMouseAt = from
     usleep(150_000)
     for step in 1...steps {
         let t = Double(step) / Double(steps)
         let point = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
         mouse(.leftMouseDragged, point, flags: flags)
+        heldMouseAt = point
         usleep(16_000)
     }
     usleep(250_000)
     mouse(.leftMouseUp, to, flags: flags)
+    heldMouseAt = nil
 }
 
 // MARK: - Commands
@@ -493,7 +529,9 @@ case "find":
 case "click":
     let node = single(options)
     if options.press {
+        checkInputOwnership()
         let result = AXUIElementPerformAction(node.element, kAXPressAction as CFString)
+        markOwnInput()
         guard result == .success else { fail("AXPress failed (\(result.rawValue)) on \(node.line)") }
     } else {
         guard let center = node.center else { fail("element has no frame: \(node.line)") }
@@ -520,8 +558,10 @@ case "raise":
     let node = single(options)
     let window = node.role == kAXWindowRole ? node.element : (attribute(node.element, kAXWindowAttribute) as! AXUIElement?)
     guard let window else { fail("no window for \(node.line)") }
+    checkInputOwnership()
     NSRunningApplication(processIdentifier: node.pid)?.activate()
     AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    markOwnInput()
     print("raised \(node.line)")
 case "read":
     let node = single(options)

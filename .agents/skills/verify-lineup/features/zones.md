@@ -37,9 +37,11 @@ Preconditions:
 - **Right half.** Run `$V ax key 'ctrl+opt+shift+cmd+]'`. The same window's
   frame becomes `960,30,960,1079`.
 - **Left half.** Run `$V ax key 'ctrl+opt+shift+cmd+['`. The frame starts at `0,30`.
-- **Shift-drag.** Drag the title bar into the left zone with Shift held. Run
-  `$V ax drag --from 1200,40 --to 400,600 --mods shift --steps 30`, using the
-  window's title-bar point from its frame. The frame becomes `0,30,960,1079`.
+- **Shift-drag.** Press the Right half shortcut first, so the window starts at
+  `960,30,960,1079`. Drag its title bar into the left zone with Shift held:
+  `$V ax drag --from 1440,44 --to 400,600 --mods shift --steps 30`, taking the
+  title-bar point from the frame you just read. The frame becomes `0,30,960,1079`.
+  It must change: a window already in the left zone proves nothing.
 - **Settings.** Run `$V ax click role=AXStaticText desc=Zones` in Settings. The
   pane shows `Enable Zones` as `1`, `Drag snap bind` as `Shift`, and each
   window shortcut as a button such as `desc="Right half shortcut" value="⌃⌥⇧⌘]"`.

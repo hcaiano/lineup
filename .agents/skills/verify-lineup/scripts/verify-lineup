@@ -19,6 +19,7 @@ GUEST_USER="admin"
 GUEST_PASSWORD="admin"
 KEY="${STATE}/ssh/id_ed25519"
 HOST_LOCK="${STATE}/host.lock"
+HOST_CLAIMING="${STATE}/host.claiming"
 
 die() { echo "error: $*" >&2; exit 1; }
 say() { echo "==> $*" >&2; }
@@ -40,7 +41,8 @@ usage: verify-lineup <command> [options]
   note TEXT                  append a line to the run journal
   keep FILE [--as NAME]      copy a file into the evidence directory
   vnc                        print the VNC URL to watch or drive the VM
-  cleanup [--run ID]         stop and delete the run's VM; evidence stays
+  cleanup [--run ID] [--discard-recording]
+                             stop and delete the run's VM; evidence stays
   runs                       list runs and their state
   host-gate [check]          read-only: may an agent use the host desktop now?
   host-gate claim HOLDER     take the host desktop when the gate is open
@@ -58,13 +60,13 @@ run_dir() { echo "${STATE}/runs/$1"; }
 
 newest_open_run() {
   local dir
-  for dir in $(ls -1dt "${STATE}"/runs/*/ 2>/dev/null); do
+  while IFS= read -r dir; do
     [ -f "${dir}/run.env" ] || continue
     if grep -q "^STATUS=open$" "${dir}/run.env" && grep -qx "CHECKOUT=${REPO_DIR}" "${dir}/run.env"; then
       basename "${dir}"
       return 0
     fi
-  done
+  done < <(ls -1dt "${STATE}"/runs/*/ 2>/dev/null)
   return 1
 }
 
@@ -207,6 +209,7 @@ disable_sip() {
   say "booting ${BASE_VM} into recoveryOS to disable SIP"
   nohup "${TART}" run --recovery --vnc-experimental --no-graphics --no-audio "${BASE_VM}" > "${log}" 2>&1 &
   pid=$!
+  BASE_PID="${pid}"
   url="$(vnc_url_from_log "${log}")"
   read -r -a args <<< "$(vnc_args "${url}")"
   sleep 75
@@ -284,6 +287,8 @@ cmd_setup() {
     rm -f "${BASE_READY}"
   fi
 
+  # A failed step must not leave the base VM running: it counts toward the two-VM limit.
+  trap '[ -n "${BASE_PID:-}" ] && kill -0 "${BASE_PID}" 2>/dev/null && stop_vm "${BASE_VM}" "${BASE_PID}" || true' EXIT
   boot_base
   if ! ssh_guest "${IP}" true 2>/dev/null; then
     local deadline=$((SECONDS + 240))
@@ -303,6 +308,7 @@ cmd_setup() {
   fi
   configure_base
   halt_base
+  trap - EXIT
   echo "revision=${BASE_REVISION} image=${IMAGE} sip=disabled date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${BASE_READY}"
   say "base VM ready"
 }
@@ -376,6 +382,8 @@ EOF
   set_run_value VNC_URL "$(vnc_url_from_log "${RUN}/vm.log")"
   wait_for_ssh "${IP}" 240 || die "no SSH to ${vm} at ${IP}"
   wait_for_desktop 180 || die "the VM desktop did not finish logging in"
+  GUEST_MACOS="$(ssh_guest "${IP}" 'sw_vers -productVersion; sw_vers -buildVersion' | paste -sd' ' -)"
+  set_run_value GUEST_MACOS "${GUEST_MACOS}"
 
   say "installing the build in the VM"
   scp -q -r "${SSH_OPTS[@]}" -i "${KEY}" "${app}" "${GUEST_USER}@${IP}:/tmp/Lineup.app"
@@ -399,7 +407,7 @@ EOF
   gui open -a /Applications/Lineup.app
   gui /usr/local/bin/lineup-ax wait role=AXMenuBarItem --scope menubar --timeout 60 >/dev/null \
     || die "Lineup's menu-bar item did not appear; run \`verify-lineup doctor\`"
-  journal "ready: ${vm} ${IP} Lineup ${APP_VERSION}"
+  journal "ready: ${vm} ${IP} macOS ${GUEST_MACOS} Lineup ${APP_VERSION}"
   echo "ready: RUN_ID=${RUN_ID} VM=${vm} IP=${IP}"
   echo "evidence: ${EVIDENCE}"
 }
@@ -453,6 +461,31 @@ cmd_shot() {
   echo "${dest}"
 }
 
+# Stops the loaded run's recording. Explicit returns, because callers run it inside `||`,
+# where `set -e` does not apply. RECORDING stays set until the .mov is saved.
+record_stop() {
+  ssh_guest "${IP}" "kill -INT \$(cat /tmp/verify-recording.pid) 2>/dev/null" || true
+  local deadline=$((SECONDS + 60))
+  while ssh_guest "${IP}" "kill -0 \$(cat /tmp/verify-recording.pid) 2>/dev/null"; do
+    [ "${SECONDS}" -lt "${deadline}" ] || { echo "error: screencapture did not finish the file" >&2; return 1; }
+    sleep 1
+  done
+  local mov mp4
+  mov="$(unique_path "${EVIDENCE}" "${RECORDING}.mov")"
+  scp -q "${SSH_OPTS[@]}" -i "${KEY}" "${GUEST_USER}@${IP}:/tmp/verify-recording.mov" "${mov}" \
+    || { echo "error: could not copy the recording from the VM" >&2; return 1; }
+  [ -s "${mov}" ] || { rm -f "${mov}"; echo "error: the recording is empty" >&2; return 1; }
+  set_run_value RECORDING ""
+  RECORDING=""
+  journal "recording $(basename "${mov}") kept"
+  echo "${mov}"
+  mp4="${mov%.mov}.mp4"
+  ffmpeg -loglevel error -y -i "${mov}" -vf "scale='min(1920,iw)':-2,fps=30" -c:v libx264 -crf 28 -preset slow -pix_fmt yuv420p -movflags +faststart -an "${mp4}" \
+    || { echo "error: ffmpeg could not convert ${mov}; the .mov is kept" >&2; return 1; }
+  journal "recording $(basename "${mp4}") kept"
+  echo "${mp4} ($(du -h "${mp4}" | cut -f1 | tr -d ' '))"
+}
+
 cmd_record() {
   local action="${1:-}"; shift || true
   load_run ""
@@ -474,21 +507,7 @@ cmd_record() {
       ;;
     stop)
       [ -n "${RECORDING:-}" ] || die "no recording in progress"
-      ssh_guest "${IP}" "kill -INT \$(cat /tmp/verify-recording.pid)"
-      local deadline=$((SECONDS + 60))
-      while ssh_guest "${IP}" "kill -0 \$(cat /tmp/verify-recording.pid) 2>/dev/null"; do
-        [ "${SECONDS}" -lt "${deadline}" ] || die "screencapture did not finish the file"
-        sleep 1
-      done
-      local mov mp4
-      mov="$(unique_path "${EVIDENCE}" "${RECORDING}.mov")"
-      scp -q "${SSH_OPTS[@]}" -i "${KEY}" "${GUEST_USER}@${IP}:/tmp/verify-recording.mov" "${mov}"
-      mp4="${mov%.mov}.mp4"
-      ffmpeg -loglevel error -y -i "${mov}" -vf "scale='min(1920,iw)':-2,fps=30" -c:v libx264 -crf 28 -preset slow -pix_fmt yuv420p -movflags +faststart -an "${mp4}"
-      set_run_value RECORDING ""
-      journal "recording $(basename "${mov}") and $(basename "${mp4}") kept"
-      echo "${mov}"
-      echo "${mp4} ($(du -h "${mp4}" | cut -f1 | tr -d ' '))"
+      record_stop || exit 1
       ;;
     *) die "usage: record start NAME | record stop" ;;
   esac
@@ -521,8 +540,14 @@ cmd_vnc() { load_run ""; echo "${VNC_URL}"; }
 # ---------- cleanup ----------
 
 cmd_cleanup() {
-  local requested="" runs=()
-  while [ $# -gt 0 ]; do case "$1" in --run) requested="$2"; shift 2 ;; *) die "unknown option: $1" ;; esac; done
+  local requested="" discard=0 failed=0 runs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --run) requested="$2"; shift 2 ;;
+      --discard-recording) discard=1; shift ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
   if [ -n "${requested}" ]; then
     runs=("${requested}")
   else
@@ -535,33 +560,45 @@ cmd_cleanup() {
   [ ${#runs[@]} -gt 0 ] || { echo "nothing to clean up"; return 0; }
   local id
   for id in "${runs[@]}"; do
+    RECORDING="" VM_PID=""
     load_run "${id}"
     if [ "${STATUS}" != open ]; then echo "${id}: already closed"; continue; fi
-    if [ -n "${RECORDING:-}" ] && [ -n "${IP:-}" ]; then
-      cmd_record stop >/dev/null 2>&1 || journal "recording ${RECORDING} lost during cleanup"
-      load_run "${id}"
+    if [ -n "${RECORDING:-}" ]; then
+      if [ "${discard}" = 1 ]; then
+        journal "recording ${RECORDING} discarded during cleanup"
+      elif ! record_stop >/dev/null; then
+        journal "cleanup kept ${VM}: recording ${RECORDING} could not be saved"
+        echo "${id}: kept open, because recording ${RECORDING} could not be saved. Check \`doctor\`, then rerun \`cleanup --run ${id}\`, or add --discard-recording to drop it" >&2
+        failed=1
+        continue
+      fi
     fi
     if "${TART}" get "${VM}" >/dev/null 2>&1; then
       stop_vm "${VM}" "${VM_PID:-}"
-      "${TART}" delete "${VM}"
+      if ! "${TART}" delete "${VM}"; then
+        echo "${id}: could not delete ${VM}; the run stays open" >&2
+        failed=1
+        continue
+      fi
     fi
     set_run_value STATUS closed
     journal "cleanup: ${VM} stopped and deleted"
     echo "${id}: closed; evidence kept in ${EVIDENCE}"
     ls -1 "${EVIDENCE}" | sed 's/^/  /'
   done
+  return "${failed}"
 }
 
 cmd_runs() {
   local dir
-  for dir in $(ls -1dt "${STATE}"/runs/*/ 2>/dev/null); do
+  while IFS= read -r dir; do
     [ -f "${dir}/run.env" ] || continue
     (
       # shellcheck disable=SC1090
       source "${dir}/run.env"
       echo "${RUN_ID}  ${STATUS}  ${VM}  ${CHECKOUT}"
     )
-  done
+  done < <(ls -1dt "${STATE}"/runs/*/ 2>/dev/null)
 }
 
 # ---------- host desktop ----------
@@ -592,9 +629,16 @@ host_gate_claim() {
   [ -n "${holder}" ] || die "host-gate claim needs a HOLDER (your thread or PR)"
   host_gate_check || die "the host desktop is not free; keep working in the VM and list the journey as pending"
   mkdir -p "${STATE}"
-  [ -z "$(host_holder 2>/dev/null)" ] && rm -f "${HOST_LOCK}"
-  ( set -o noclobber; echo "${holder} since $(date '+%Y-%m-%d %H:%M:%S')" > "${HOST_LOCK}" ) 2>/dev/null \
-    || die "another run claimed the host desktop first: $(cat "${HOST_LOCK}")"
+  # mkdir is atomic, so only one run at a time may read, replace and write the lock.
+  # A mutex left by a killed claim is older than a minute and gets removed.
+  if ! mkdir "${HOST_CLAIMING}" 2>/dev/null; then
+    { [ $(( $(date +%s) - $(stat -f %m "${HOST_CLAIMING}") )) -ge 60 ] && rmdir "${HOST_CLAIMING}" && mkdir "${HOST_CLAIMING}" 2>/dev/null; } \
+      || die "another run is claiming the host desktop; run \`host-gate\` again"
+  fi
+  trap 'rmdir "${HOST_CLAIMING}" 2>/dev/null || true' EXIT
+  [ -z "$(host_holder 2>/dev/null)" ] || die "another run claimed the host desktop first: $(cat "${HOST_LOCK}")"
+  echo "${holder} since $(date '+%Y-%m-%d %H:%M:%S')" > "${HOST_LOCK}.tmp"
+  mv "${HOST_LOCK}.tmp" "${HOST_LOCK}"
   touch "${HOST_STAMP}"
   echo "claimed by ${holder}; drive with \`verify-lineup host-ax --holder ${holder} ...\` and release when done"
 }
@@ -615,6 +659,11 @@ cmd_host_ax() {
   shift 2
   current="$(host_holder 2>/dev/null)"
   [ "${current%% since *}" = "${holder}" ] || die "claim the host desktop first: verify-lineup host-gate claim ${holder}"
+  if [ "$(host_screen_locked)" != no ]; then
+    ( host_gate_release "${holder}" ) >/dev/null 2>&1 || true
+    echo "the host screen is locked: input stopped and the host lock released" >&2
+    return 7
+  fi
   touch "${HOST_LOCK}"
   if [ ! -x "${binary}" ] || [ "${SKILL_DIR}/scripts/lineup-ax.swift" -nt "${binary}" ]; then
     mkdir -p "${STATE}/host"
@@ -623,16 +672,14 @@ cmd_host_ax() {
   local status=0
   LINEUP_AX_HOST_STAMP="${HOST_STAMP}" "${binary}" "$@" || status=$?
   if [ "${status}" = 7 ]; then
-    host_gate_release "${holder}" >/dev/null
+    ( host_gate_release "${holder}" ) >/dev/null 2>&1 || true
     echo "the human took the desktop: input stopped and the host lock released" >&2
   fi
   return "${status}"
 }
 
-host_gate_check() {
-  local idle locked holder="" verdict=open reasons=()
-  idle="$(ioreg -c IOHIDSystem | awk '/HIDIdleTime/ && !found {print int($NF/1000000000); found=1}')"
-  locked="$(python3 - <<'EOF'
+host_screen_locked() {
+  python3 - <<'EOF'
 import ctypes, ctypes.util
 cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreGraphics"))
 cf = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreFoundation"))
@@ -647,7 +694,12 @@ key = cf.CFStringCreateWithCString(None, b"CGSSessionScreenIsLocked", 0x08000100
 value = cf.CFDictionaryGetValue(session, key) if session else None
 print("yes" if value and cf.CFBooleanGetValue(value) else "no")
 EOF
-)"
+}
+
+host_gate_check() {
+  local idle locked holder="" verdict=open reasons=()
+  idle="$(ioreg -c IOHIDSystem | awk '/HIDIdleTime/ && !found {print int($NF/1000000000); found=1}')"
+  locked="$(host_screen_locked)"
   holder="$(host_holder)"
   echo "human idle: ${idle}s"
   echo "screen locked: ${locked}"

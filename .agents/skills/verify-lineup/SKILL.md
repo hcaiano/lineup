@@ -101,9 +101,9 @@ $V ax find --app system role=AXButton title=Allow               # any app, e.g. 
 Selectors are `role= subrole= title= desc= id= value= name=`. They all must
 match, and `~` makes one a case-insensitive substring, as in `desc~=Lisbon`.
 `name=` matches the title, description or identifier. `click`, `read` and
-`wait` poll for up to 10 seconds until exactly one element matches. They fail
-on zero matches or on several (exit 4); narrow with another selector or
-`--index N`. Options: `--app BUNDLE` (default `com.caiano.lineup`; `system` for
+`raise` poll for up to 10 seconds until exactly one element matches. They fail
+with exit 4 on no match and exit 1 on several; narrow with another selector or
+`--index N`. `wait` succeeds on one or more matches. Options: `--app BUNDLE` (default `com.caiano.lineup`; `system` for
 every app), `--scope menubar|windows|all`, `--right`, `--press` (AXPress
 without a mouse event), `--timeout S`, `--gone` and `--json`. `$V ax help`
 prints the full usage.
@@ -117,7 +117,7 @@ covers a window element, `click` refuses with exit 3 and names the app on
 top. Run `raise` on the target window first. Key combos press and release
 each modifier, as a keyboard does.
 
-Other helpers:
+## Helpers
 
 - `$V sh 'COMMAND'` runs a shell command in the VM as the logged-in user
   (`pmset -g assertions`, `open -a TextEdit`, `defaults read ...`). Quote it.
@@ -138,7 +138,8 @@ Other helpers:
 - When a step fails, run `$V doctor` before changing anything. Run
   `$V cleanup` after every failed attempt, so no VM is left running.
 - Drive only VMs this checkout launched. Never drive the host's Lineup with
-  `ax`. `lineup-ax` refuses to post input outside a VM (exit 6).
+  `ax`. Outside a VM, `lineup-ax` refuses every event and every Accessibility
+  action, `--press` and `raise` included, unless `host-ax` passes a claim (exit 6).
 
 ### Host desktop (the one standing rule)
 
@@ -154,9 +155,10 @@ Henrique whether the Mac is free. This rule replaces that question:
 2. When it is open, `$V host-gate claim HOLDER` takes the desktop, with
    HOLDER set to your PR or thread name. Drive only with
    `$V host-ax --holder HOLDER ARGS...`, which runs `lineup-ax` on the host.
-3. Before each command, `host-ax` compares the host's idle time with its own
-   last input. At the first human input it stops with exit 7 and releases the
-   claim. Do not retry, refocus a window or poll to take the desktop back.
+3. Before each event and Accessibility action, `host-ax` compares the host's
+   idle time with its own last input, and before each command it checks the
+   screen lock. At the first human input or a locked screen, it lifts any key
+   or button it holds, stops with exit 7 and releases the claim. Do not retry, refocus a window or poll to take the desktop back.
    Checkpoint the case and continue in the VM.
 4. When you finish, or after 30 minutes without input (the claim goes stale),
    run `$V host-gate release HOLDER`. Restore what you changed: quit a test
@@ -216,7 +218,9 @@ $V runs                 # list runs and their state
 ```
 
 Cleanup stops an unfinished recording and keeps it. It then stops and deletes
-the run's VM clone and marks the run closed. It never deletes the evidence
+the run's VM clone and marks the run closed. When the recording cannot be
+saved, cleanup leaves that run's VM running and exits 1: check `doctor`, rerun
+`cleanup --run ID`, or pass `--discard-recording` to drop it. It never deletes the evidence
 directory, the base VM or the image. Check the evidence afterwards with
 `ls ~/.local/state/verify-lineup/runs/<RUN_ID>/evidence/`. A closed run's VM is
 gone: launch a new run to continue.

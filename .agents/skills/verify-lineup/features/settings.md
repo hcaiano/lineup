@@ -27,7 +27,8 @@ Preconditions:
 - Baseline from [README.md](./README.md). The Welcome window is dismissed.
 
 - **Open from the panel.** Run `$V ax click role=AXMenuBarItem --scope menubar`
-  and `$V ax click role=AXButton desc~="settings" --scope menubar`.
+  and `$V ax click role=AXButton desc="Open Lineup settings" --scope menubar`
+  (the gear; an empty panel also has an `Open Settings` button).
   `$V ax wait role=AXWindow title="Lineup Settings"` succeeds.
 - **Open from the menu.** Close the window (`$V ax click role=AXButton subrole=AXCloseButton`),
   then run `$V ax click role=AXMenuBarItem --scope menubar --right` and
