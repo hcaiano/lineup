@@ -7,6 +7,8 @@ Read [PRODUCT.md](PRODUCT.md) before changing user-visible behavior or design,
 [BUILDING.md](BUILDING.md) for build, packaging and architecture, and
 [CONTRIBUTING.md](CONTRIBUTING.md) before preparing or reviewing a pull request.
 For feature or app icons, use [lineup-icons](.agents/skills/lineup-icons/SKILL.md).
+To launch, drive and record the real app, use
+[verify-lineup](.agents/skills/verify-lineup/SKILL.md).
 
 ## Protect user state and identity
 
@@ -25,9 +27,9 @@ For feature or app icons, use [lineup-icons](.agents/skills/lineup-icons/SKILL.m
 If a task conflicts with one of these contracts, explain the conflict and get
 maintainer approval before proceeding.
 
-Launch Lineup only when manual app verification is part of the task: a launch
-uses the developer's real config, Accessibility grant, hotkeys and input
-monitoring. `Scripts/setup-signing.sh` changes the login keychain and needs
+Launch Lineup on this Mac only when manual app verification is part of the
+task: a launch uses the developer's real config, Accessibility grant, hotkeys
+and input monitoring. `verify-lineup` runs it in a disposable VM instead. `Scripts/setup-signing.sh` changes the login keychain and needs
 explicit intent.
 
 ## Verify

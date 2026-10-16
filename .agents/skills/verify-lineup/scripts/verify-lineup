@@ -1,0 +1,758 @@
+#!/usr/bin/env bash
+# Launch, drive and record Lineup inside a disposable macOS VM, away from the host desktop.
+set -euo pipefail
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_DIR="$(cd "${SKILL_DIR}/../../.." && pwd)"
+STATE="${VERIFY_LINEUP_HOME:-${HOME}/.local/state/verify-lineup}"
+TOOLS="${HOME}/.local/share/verify-lineup"
+
+TART_VERSION="2.40.1"
+TART_SHA256="363e2701154a8155cbc1bb6d845430c9b42697d2a186bc49574471ca2877db46"
+TART="${TOOLS}/tart-${TART_VERSION}/tart.app/Contents/MacOS/tart"
+VNCDO=(env PYTHONWARNINGS=ignore uvx --quiet --from "vncdotool==1.4.2" vncdo)
+IMAGE="ghcr.io/cirruslabs/macos-golden-gate-vanilla@sha256:b78a521145ebef24e9916c0b3999e165bb12b587d11524c5fa3ba4fe7bf79bb9"  # 27.0 (26A428)
+BASE_VM="verify-lineup-base"
+BASE_READY="${STATE}/base.ready"
+BASE_REVISION=2
+GUEST_USER="admin"
+GUEST_PASSWORD="admin"
+KEY="${STATE}/ssh/id_ed25519"
+HOST_LOCK="${STATE}/host.lock"
+HOST_MUTEX="${STATE}/host.mutex"
+
+die() { echo "error: $*" >&2; exit 1; }
+say() { echo "==> $*" >&2; }
+
+usage() {
+  cat <<'EOF'
+usage: verify-lineup <command> [options]
+
+  setup                      one-time: install Tart, pull macOS 27, build the base VM
+  launch [--app PATH] [--config FILE]
+                             build this checkout, boot a fresh VM clone, start Lineup
+  doctor [--run ID]          read-only health check of the run
+  ax ARGS...                 run lineup-ax in the VM (see `ax help`)
+  sh COMMAND                 run a shell command in the VM as the logged-in user
+  shot NAME                  save a VM screenshot to the evidence directory
+  record start NAME          start recording the VM screen
+  record stop                stop recording and keep NAME.mov and NAME.mp4
+  config [--run ID]          print the VM's ~/.config/lineup/config.json
+  note TEXT                  append a line to the run journal
+  keep FILE [--as NAME]      copy a file into the evidence directory
+  vnc                        print the VNC URL to watch or drive the VM
+  cleanup [--run ID] [--discard-recording]
+                             stop and delete the run's VM; evidence stays
+  runs                       list runs and their state
+  host-gate [check]          read-only: may an agent use the host desktop now?
+  host-gate claim HOLDER     take the host desktop when the gate is open
+  host-gate release HOLDER   give the host desktop back
+  host-ax --holder HOLDER ARGS...
+                             run lineup-ax on the host under a claim
+
+Without --run, commands use the newest open run of this checkout.
+EOF
+}
+
+# ---------- state ----------
+
+run_dir() { echo "${STATE}/runs/$1"; }
+
+newest_open_run() {
+  local dir
+  while IFS= read -r dir; do
+    [ -f "${dir}/run.env" ] || continue
+    if grep -q "^STATUS=open$" "${dir}/run.env" && grep -qx "CHECKOUT=${REPO_DIR}" "${dir}/run.env"; then
+      basename "${dir}"
+      return 0
+    fi
+  done < <(ls -1dt "${STATE}"/runs/*/ 2>/dev/null)
+  return 1
+}
+
+RUN_ID=""
+load_run() {
+  local requested="${1:-}"
+  RUN_ID="${requested:-$(newest_open_run || true)}"
+  [ -n "${RUN_ID}" ] || die "no open run for this checkout; run \`verify-lineup launch\` first"
+  [ -f "$(run_dir "${RUN_ID}")/run.env" ] || die "unknown run: ${RUN_ID}"
+  # shellcheck disable=SC1090
+  source "$(run_dir "${RUN_ID}")/run.env"
+  RUN="$(run_dir "${RUN_ID}")"
+  EVIDENCE="${RUN}/evidence"
+}
+
+set_run_value() {
+  local key="$1" value="$2" file="${RUN}/run.env"
+  { grep -v "^${key}=" "${file}" || true; printf '%s=%q\n' "${key}" "${value}"; } > "${file}.tmp"
+  mv "${file}.tmp" "${file}"
+}
+
+journal() { echo "- $(date '+%Y-%m-%d %H:%M:%S') $*" >> "${EVIDENCE}/journal.md"; }
+
+unique_path() {
+  local dir="$1" name="$2" stem ext candidate n=2
+  candidate="${dir}/${name}"
+  if [ ! -e "${candidate}" ]; then echo "${candidate}"; return; fi
+  stem="${name%.*}"; ext="${name##*.}"
+  [ "${stem}" = "${name}" ] && ext="" || ext=".${ext}"
+  while [ -e "${dir}/${stem}-${n}${ext}" ]; do n=$((n + 1)); done
+  echo "${dir}/${stem}-${n}${ext}"
+}
+
+# ---------- guest access ----------
+
+SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o BatchMode=yes)
+
+guest_ip() { "${TART}" ip "$1" --wait "${2:-5}" 2>/dev/null; }
+
+ssh_guest() {
+  local ip="$1"; shift
+  ssh "${SSH_OPTS[@]}" -i "${KEY}" "${GUEST_USER}@${ip}" "$@"
+}
+
+ssh_guest_password() {
+  local ip="$1"; shift
+  local askpass="${STATE}/ssh/askpass"
+  printf '#!/bin/sh\necho %s\n' "${GUEST_PASSWORD}" > "${askpass}"
+  chmod 700 "${askpass}"
+  SSH_ASKPASS="${askpass}" SSH_ASKPASS_REQUIRE=force DISPLAY=none \
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+        -o ConnectTimeout=5 -o PubkeyAuthentication=no "${GUEST_USER}@${ip}" "$@" < /dev/null
+}
+
+# Runs a command inside the logged-in Aqua session, where WindowServer, LaunchServices and
+# the Accessibility client live. Arguments are quoted for the remote shell.
+gui() {
+  local quoted
+  quoted="$(printf '%q ' "$@")"
+  ssh_guest "${IP}" "sudo launchctl asuser \$(id -u ${GUEST_USER}) sudo -u ${GUEST_USER} -H ${quoted}"
+}
+
+wait_for_ssh() {
+  local ip="$1" deadline=$((SECONDS + ${2:-240}))
+  until ssh_guest "${ip}" true 2>/dev/null; do
+    [ "${SECONDS}" -lt "${deadline}" ] || return 1
+    sleep 3
+  done
+}
+
+wait_for_desktop() {
+  local deadline=$((SECONDS + ${1:-180}))
+  until ssh_guest "${IP}" "pgrep -u ${GUEST_USER} -x Dock >/dev/null && pgrep -u ${GUEST_USER} -x Finder >/dev/null" 2>/dev/null; do
+    [ "${SECONDS}" -lt "${deadline}" ] || return 1
+    sleep 3
+  done
+  sleep 5
+}
+
+# Grants a TCC service to a client in the guest's system database. SIP is off in the base VM,
+# so this replaces the consent dialog a human would answer.
+tcc_grant() {
+  local ip="$1" service="$2" client="$3" client_type="$4" path="$5"
+  ssh_guest "${ip}" bash -s -- "${service}" "${client}" "${client_type}" "${path}" <<'EOF'
+set -euo pipefail
+service="$1"; client="$2"; client_type="$3"; path="$4"
+requirement="$(codesign -d -r- "${path}" 2>&1 | sed -n 's/^designated => //p')"
+[ -n "${requirement}" ] || { echo "no designated requirement for ${path}" >&2; exit 1; }
+blob="$(mktemp)"
+echo "${requirement}" | csreq -r- -b "${blob}"
+hex="$(xxd -p "${blob}" | tr -d '\n')"
+rm -f "${blob}"
+sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+  "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags) VALUES ('${service}', '${client}', ${client_type}, 2, 4, 1, X'${hex}', 0);"
+EOF
+}
+
+# ---------- setup ----------
+
+install_tart() {
+  [ -x "${TART}" ] && return 0
+  say "installing Tart ${TART_VERSION}"
+  local dir="${TOOLS}/tart-${TART_VERSION}"
+  mkdir -p "${dir}"
+  curl -fsSL -o "${dir}/tart.tar.gz" "https://github.com/cirruslabs/tart/releases/download/${TART_VERSION}/tart.tar.gz"
+  echo "${TART_SHA256}  ${dir}/tart.tar.gz" | shasum -a 256 -c - >/dev/null || die "Tart checksum mismatch"
+  tar -xzf "${dir}/tart.tar.gz" -C "${dir}"
+  codesign --verify --deep --strict "${dir}/tart.app" || die "Tart signature invalid"
+}
+
+vnc_url_from_log() {
+  local log="$1" deadline=$((SECONDS + 60)) url=""
+  while [ -z "${url}" ]; do
+    url="$(sed -n 's/.*VNC server is running at \(vnc:[^ ]*\).*/\1/p' "${log}" | tail -1)"
+    [ -n "${url}" ] && break
+    [ "${SECONDS}" -lt "${deadline}" ] || die "no VNC URL in ${log}"
+    sleep 1
+  done
+  echo "${url}"
+}
+
+vnc_args() {
+  local url="$1" password hostport
+  password="$(echo "${url}" | sed -n 's|vnc://:\([^@]*\)@.*|\1|p')"
+  hostport="$(echo "${url}" | sed -n 's|vnc://:[^@]*@\([^:]*\):\([0-9]*\).*|\1::\2|p')"
+  echo "-s ${hostport} -p ${password}"
+}
+
+stop_vm() {
+  local name="$1" pid="${2:-}"
+  "${TART}" stop "${name}" --timeout 60 >/dev/null 2>&1 || true
+  if [ -n "${pid}" ]; then
+    local deadline=$((SECONDS + 60))
+    while kill -0 "${pid}" 2>/dev/null && [ "${SECONDS}" -lt "${deadline}" ]; do sleep 1; done
+  fi
+}
+
+disable_sip() {
+  local log="${STATE}/setup-recovery.log" pid url args
+  say "booting ${BASE_VM} into recoveryOS to disable SIP"
+  nohup "${TART}" run --recovery --vnc-experimental --no-graphics --no-audio "${BASE_VM}" > "${log}" 2>&1 &
+  pid=$!
+  BASE_PID="${pid}"
+  url="$(vnc_url_from_log "${log}")"
+  read -r -a args <<< "$(vnc_args "${url}")"
+  sleep 75
+  "${VNCDO[@]}" "${args[@]}" capture "${STATE}/setup-recovery-1.png"
+  # Same sequence as cirruslabs' disable-sip-with-username template: Options, Terminal,
+  # csrutil, confirm, user name, password, halt.
+  "${VNCDO[@]}" "${args[@]}" --delay 300 key right key right key enter pause 15 \
+    key alt-shift-t pause 10 capture "${STATE}/setup-recovery-2.png" \
+    type "csrutil disable" key enter pause 10 type y key enter pause 8 \
+    type "${GUEST_USER}" key enter pause 8 type "${GUEST_PASSWORD}" key enter pause 15 \
+    capture "${STATE}/setup-recovery-3.png" type halt key enter
+  local deadline=$((SECONDS + 120))
+  while kill -0 "${pid}" 2>/dev/null && [ "${SECONDS}" -lt "${deadline}" ]; do sleep 2; done
+  kill -0 "${pid}" 2>/dev/null && stop_vm "${BASE_VM}" "${pid}"
+  return 0
+}
+
+boot_base() {
+  BASE_LOG="${STATE}/setup-boot.log"
+  nohup "${TART}" run --no-graphics --no-audio --no-clipboard "${BASE_VM}" > "${BASE_LOG}" 2>&1 &
+  BASE_PID=$!
+  IP="$(guest_ip "${BASE_VM}" 180)" || die "base VM got no IP; see ${BASE_LOG}"
+}
+
+halt_base() {
+  ssh_guest "${IP}" "sudo shutdown -h now" >/dev/null 2>&1 || true
+  stop_vm "${BASE_VM}" "${BASE_PID}"
+}
+
+build_ax() {
+  DEVELOPER_DIR="$(developer_dir)" xcrun swiftc -O -target arm64-apple-macos13 \
+    -o "$1" "${SKILL_DIR}/scripts/lineup-ax.swift" > "$1.log" 2>&1 \
+    || die "lineup-ax failed to compile; see $1.log"
+}
+
+install_ax() {
+  scp -q "${SSH_OPTS[@]}" -i "${KEY}" "$1" "${GUEST_USER}@${IP}:/tmp/lineup-ax"
+  ssh_guest "${IP}" "sudo mkdir -p /usr/local/bin && sudo install -m 755 /tmp/lineup-ax /usr/local/bin/lineup-ax"
+}
+
+# Steps that every clone inherits. Bump BASE_REVISION when they change, and `setup` reapplies them.
+configure_base() {
+  say "granting the SSH session Accessibility, input posting and screen capture"
+  local service
+  for service in kTCCServiceAccessibility kTCCServicePostEvent kTCCServiceScreenCapture kTCCServiceListenEvent; do
+    tcc_grant "${IP}" "${service}" /usr/libexec/sshd-keygen-wrapper 1 /usr/libexec/sshd-keygen-wrapper
+  done
+  build_ax "${STATE}/lineup-ax"
+  install_ax "${STATE}/lineup-ax"
+  wait_for_desktop 180 || die "the base VM desktop did not log in"
+  say "pre-approving screen capture so its monthly reminder never covers a recording"
+  gui screencapture -x /tmp/setup-shot.png
+  if gui /usr/local/bin/lineup-ax wait --app system role=AXButton id=action-button-1 --timeout 15 >/dev/null 2>&1; then
+    gui /usr/local/bin/lineup-ax click --app system role=AXButton id=action-button-1 >/dev/null
+  fi
+  ssh_guest "${IP}" "plutil -replace '/usr/libexec/sshd-keygen-wrapper.kScreenCapturePrivacyHintDate' -date 2099-01-01T00:00:00Z ~/Library/Group\ Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist"
+  ssh_guest "${IP}" "defaults write com.apple.screensaver idleTime 0"
+}
+
+cmd_setup() {
+  mkdir -p "${STATE}/runs" "${STATE}/ssh"
+  install_tart
+  [ -f "${KEY}" ] || ssh-keygen -q -t ed25519 -N "" -C verify-lineup -f "${KEY}"
+  if grep -q "^revision=${BASE_REVISION} " "${BASE_READY}" 2>/dev/null && "${TART}" get "${BASE_VM}" >/dev/null 2>&1; then
+    say "base VM ready: $(cat "${BASE_READY}")"
+    return 0
+  fi
+  if [ "$(running_macos_vms)" -ge 2 ]; then
+    die "two macOS VMs already run (the Virtualization limit); clean one up before setup"
+  fi
+  if ! "${TART}" get "${BASE_VM}" >/dev/null 2>&1; then
+    say "cloning ${IMAGE} (pulls about 31 GB the first time)"
+    "${TART}" clone "${IMAGE}" "${BASE_VM}"
+    "${TART}" set "${BASE_VM}" --cpu 4 --memory 8192 --display 1920x1200
+    rm -f "${BASE_READY}"
+  fi
+
+  # A failed step must not leave the base VM running: it counts toward the two-VM limit.
+  trap '[ -n "${BASE_PID:-}" ] && kill -0 "${BASE_PID}" 2>/dev/null && stop_vm "${BASE_VM}" "${BASE_PID}" || true' EXIT
+  boot_base
+  if ! ssh_guest "${IP}" true 2>/dev/null; then
+    local deadline=$((SECONDS + 240))
+    until ssh_guest_password "${IP}" true 2>/dev/null; do
+      [ "${SECONDS}" -lt "${deadline}" ] || die "no SSH to the base VM at ${IP}"
+      sleep 3
+    done
+    ssh_guest_password "${IP}" "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$(cat "${KEY}.pub")' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+  fi
+  wait_for_ssh "${IP}" 60 || die "key login to the base VM failed"
+  if ! ssh_guest "${IP}" csrutil status | grep -q disabled; then
+    halt_base
+    disable_sip
+    boot_base
+    wait_for_ssh "${IP}" 240 || die "no SSH after recovery"
+    ssh_guest "${IP}" csrutil status | grep -q disabled || die "SIP is still enabled; see ${STATE}/setup-recovery-*.png"
+  fi
+  configure_base
+  halt_base
+  trap - EXIT
+  echo "revision=${BASE_REVISION} image=${IMAGE} sip=disabled date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${BASE_READY}"
+  say "base VM ready"
+}
+
+# ---------- launch ----------
+
+developer_dir() {
+  if xcode-select -p 2>/dev/null | grep -q CommandLineTools && [ -d /Applications/Xcode.app ]; then
+    echo /Applications/Xcode.app/Contents/Developer
+  else
+    xcode-select -p
+  fi
+}
+
+running_macos_vms() {
+  "${TART}" list --format json 2>/dev/null | python3 -c 'import json,sys; print(sum(1 for v in json.load(sys.stdin) if v.get("Running") or v.get("State")=="running"))'
+}
+
+cmd_launch() {
+  local app="" config=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --app) app="$2"; shift 2 ;;
+      --config) config="$2"; shift 2 ;;
+      *) die "unknown launch option: $1" ;;
+    esac
+  done
+  grep -q "^revision=${BASE_REVISION} " "${BASE_READY}" 2>/dev/null \
+    || die "the base VM is missing or older than revision ${BASE_REVISION}; run \`verify-lineup setup\`"
+  [ -z "${config}" ] || [ -f "${config}" ] || die "no config file at ${config}"
+  if [ "$(running_macos_vms)" -ge 2 ]; then
+    die "two macOS VMs already run (the Virtualization limit); reuse an open run or clean one up"
+  fi
+
+  RUN_ID="$(date +%Y%m%d-%H%M%S)-$(openssl rand -hex 2)"
+  RUN="$(run_dir "${RUN_ID}")"
+  EVIDENCE="${RUN}/evidence"
+  mkdir -p "${EVIDENCE}"
+  local vm="verify-lineup-${RUN_ID}"
+  cat > "${RUN}/run.env" <<EOF
+RUN_ID=${RUN_ID}
+CHECKOUT=${REPO_DIR}
+VM=${vm}
+STATUS=open
+HEAD=$(git -C "${REPO_DIR}" rev-parse HEAD)
+DIRTY=$([ -n "$(git -C "${REPO_DIR}" status --porcelain)" ] && echo yes || echo no)
+EOF
+  journal "launch ${RUN_ID} from $(git -C "${REPO_DIR}" rev-parse --short HEAD) (dirty: $(grep ^DIRTY= "${RUN}/run.env" | cut -d= -f2))"
+
+  if [ -z "${app}" ]; then
+    say "building Lineup.app from ${REPO_DIR} (log: ${RUN}/build.log)"
+    DEVELOPER_DIR="$(developer_dir)" UNIVERSAL=0 "${REPO_DIR}/Scripts/build-app.sh" "${RUN}/app" > "${RUN}/build.log" 2>&1 \
+      || die "build failed; see ${RUN}/build.log"
+    app="${RUN}/app/Lineup.app"
+  fi
+  [ -d "${app}" ] || die "no app at ${app}"
+  set_run_value APP_SHA "$(shasum -a 256 "${app}/Contents/MacOS/lineup" | cut -d' ' -f1)"
+  set_run_value APP_VERSION "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${app}/Contents/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${app}/Contents/Info.plist"))"
+
+  say "compiling lineup-ax"
+  build_ax "${RUN}/lineup-ax"
+
+  say "cloning ${BASE_VM} into ${vm}"
+  "${TART}" clone "${BASE_VM}" "${vm}"
+  nohup "${TART}" run --no-graphics --no-audio --no-clipboard --vnc-experimental "${vm}" > "${RUN}/vm.log" 2>&1 &
+  set_run_value VM_PID "$!"
+  # shellcheck disable=SC1090
+  source "${RUN}/run.env"
+  IP="$(guest_ip "${vm}" 180)" || die "VM got no IP; see ${RUN}/vm.log"
+  set_run_value IP "${IP}"
+  set_run_value VNC_URL "$(vnc_url_from_log "${RUN}/vm.log")"
+  wait_for_ssh "${IP}" 240 || die "no SSH to ${vm} at ${IP}"
+  wait_for_desktop 180 || die "the VM desktop did not finish logging in"
+  GUEST_MACOS="$(ssh_guest "${IP}" 'sw_vers -productVersion; sw_vers -buildVersion' | paste -sd' ' -)"
+  set_run_value GUEST_MACOS "${GUEST_MACOS}"
+
+  say "installing the build in the VM"
+  scp -q -r "${SSH_OPTS[@]}" -i "${KEY}" "${app}" "${GUEST_USER}@${IP}:/tmp/Lineup.app"
+  ssh_guest "${IP}" "sudo ditto /tmp/Lineup.app /Applications/Lineup.app"
+  install_ax "${RUN}/lineup-ax"
+  local service
+  for service in kTCCServiceAccessibility kTCCServiceListenEvent kTCCServicePostEvent kTCCServiceScreenCapture; do
+    tcc_grant "${IP}" "${service}" com.caiano.lineup 0 /Applications/Lineup.app
+  done
+  ssh_guest "${IP}" "defaults write com.caiano.lineup SUEnableAutomaticChecks -bool false; defaults write com.caiano.lineup SUHasLaunchedBefore -bool true"
+  if [ -n "${config}" ]; then
+    ssh_guest "${IP}" "mkdir -p ~/.config/lineup"
+    scp -q "${SSH_OPTS[@]}" -i "${KEY}" "${config}" "${GUEST_USER}@${IP}:.config/lineup/config.json"
+    cp "${config}" "${EVIDENCE}/seed-config.json"
+    journal "seeded config from ${config}"
+  else
+    journal "fresh config (no ~/.config/lineup in the VM)"
+  fi
+
+  say "starting Lineup"
+  gui open -a /Applications/Lineup.app
+  gui /usr/local/bin/lineup-ax wait role=AXMenuBarItem --scope menubar --timeout 60 >/dev/null \
+    || die "Lineup's menu-bar item did not appear; run \`verify-lineup doctor\`"
+  journal "ready: ${vm} ${IP} macOS ${GUEST_MACOS} Lineup ${APP_VERSION}"
+  echo "ready: RUN_ID=${RUN_ID} VM=${vm} IP=${IP}"
+  echo "evidence: ${EVIDENCE}"
+}
+
+# ---------- doctor ----------
+
+cmd_doctor() {
+  local run="" healthy=1 line
+  while [ $# -gt 0 ]; do case "$1" in --run) run="$2"; shift 2 ;; *) die "unknown option: $1" ;; esac; done
+  load_run "${run}"
+  check() { if [ "$1" = ok ]; then echo "ok    $2"; else echo "FAIL  $2"; healthy=0; fi; }
+  [ "${STATUS}" = open ] && check ok "run ${RUN_ID} is open" || check fail "run ${RUN_ID} is ${STATUS}"
+  if kill -0 "${VM_PID:-0}" 2>/dev/null; then check ok "tart pid ${VM_PID} runs ${VM}"; else check fail "tart pid ${VM_PID:-?} for ${VM} is gone"; echo "doctor: unknown"; exit 2; fi
+  IP="${IP:-}"
+  if ! ssh_guest "${IP}" true 2>/dev/null; then check fail "SSH to ${IP}"; echo "doctor: unknown"; exit 2; fi
+  check ok "SSH to ${IP} ($(ssh_guest "${IP}" 'sw_vers -productVersion; sw_vers -buildVersion' | paste -sd' ' -))"
+  line="$(ssh_guest "${IP}" csrutil status)"
+  echo "${line}" | grep -q disabled && check ok "guest SIP disabled (TCC grants are scripted)" || check fail "guest SIP: ${line}"
+  local guest_sha
+  guest_sha="$(ssh_guest "${IP}" "shasum -a 256 /Applications/Lineup.app/Contents/MacOS/lineup 2>/dev/null | cut -d' ' -f1")"
+  [ "${guest_sha}" = "${APP_SHA:-}" ] && check ok "guest Lineup matches the launched build ${APP_VERSION:-}" || check fail "guest Lineup sha ${guest_sha:-missing} differs from ${APP_SHA:-?}"
+  line="$(ssh_guest "${IP}" "pgrep -u ${GUEST_USER} -x lineup" | paste -sd' ' -)"
+  [ -n "${line}" ] && check ok "Lineup runs in the VM (pid ${line})" || check fail "Lineup is not running in the VM"
+  line="$(gui /usr/local/bin/lineup-ax trusted 2>&1 || true)"
+  [ "${line}" = trusted ] && check ok "lineup-ax is trusted for Accessibility" || check fail "lineup-ax: ${line}"
+  if [ -n "$(ssh_guest "${IP}" "pgrep -u ${GUEST_USER} -x lineup")" ]; then
+    gui /usr/local/bin/lineup-ax find role=AXMenuBarItem --scope menubar >/dev/null 2>&1 \
+      && check ok "Lineup menu-bar item is present" || check fail "Lineup menu-bar item is missing"
+  fi
+  line="$(ssh_guest "${IP}" "if [ ! -f ~/.config/lineup/config.json ]; then echo 'no config.json yet'; elif plutil -convert xml1 -o /dev/null ~/.config/lineup/config.json 2>&1; then echo 'config.json parses'; fi")"
+  echo "${line}" | grep -q -E '^(no config.json yet|config.json parses)$' && check ok "${line}" || check fail "config.json: ${line}"
+  if [ "$(git -C "${REPO_DIR}" rev-parse HEAD)" != "${HEAD}" ]; then
+    echo "note  HEAD moved since launch; relaunch to test the new commit"
+  fi
+  [ "${healthy}" = 1 ] && { echo "doctor: healthy"; exit 0; } || { echo "doctor: unhealthy"; exit 1; }
+}
+
+# ---------- drive and evidence ----------
+
+cmd_ax() { load_run ""; gui /usr/local/bin/lineup-ax "$@"; }
+cmd_sh() { load_run ""; ssh_guest "${IP}" "$@"; }
+
+cmd_shot() {
+  [ $# -ge 1 ] || die "shot needs a NAME"
+  load_run ""
+  local name="${1%.png}.png" dest
+  dest="$(unique_path "${EVIDENCE}" "${name}")"
+  gui screencapture -x -C /tmp/verify-shot.png
+  scp -q "${SSH_OPTS[@]}" -i "${KEY}" "${GUEST_USER}@${IP}:/tmp/verify-shot.png" "${dest}"
+  journal "screenshot $(basename "${dest}")"
+  echo "${dest}"
+}
+
+# Stops the loaded run's recording. Explicit returns, because callers run it inside `||`,
+# where `set -e` does not apply. RECORDING stays set until the .mov is saved.
+record_stop() {
+  ssh_guest "${IP}" "kill -INT \$(cat /tmp/verify-recording.pid) 2>/dev/null" || true
+  local deadline=$((SECONDS + 60))
+  while ssh_guest "${IP}" "kill -0 \$(cat /tmp/verify-recording.pid) 2>/dev/null"; do
+    [ "${SECONDS}" -lt "${deadline}" ] || { echo "error: screencapture did not finish the file" >&2; return 1; }
+    sleep 1
+  done
+  local mov mp4
+  mov="$(unique_path "${EVIDENCE}" "${RECORDING}.mov")"
+  scp -q "${SSH_OPTS[@]}" -i "${KEY}" "${GUEST_USER}@${IP}:/tmp/verify-recording.mov" "${mov}" \
+    || { echo "error: could not copy the recording from the VM" >&2; return 1; }
+  [ -s "${mov}" ] || { rm -f "${mov}"; echo "error: the recording is empty" >&2; return 1; }
+  set_run_value RECORDING ""
+  RECORDING=""
+  journal "recording $(basename "${mov}") kept"
+  echo "${mov}"
+  mp4="${mov%.mov}.mp4"
+  ffmpeg -loglevel error -y -i "${mov}" -vf "scale='min(1920,iw)':-2,fps=30" -c:v libx264 -crf 28 -preset slow -pix_fmt yuv420p -movflags +faststart -an "${mp4}" \
+    || { echo "error: ffmpeg could not convert ${mov}; the .mov is kept" >&2; return 1; }
+  journal "recording $(basename "${mp4}") kept"
+  echo "${mp4} ($(du -h "${mp4}" | cut -f1 | tr -d ' '))"
+}
+
+cmd_record() {
+  local action="${1:-}"; shift || true
+  load_run ""
+  case "${action}" in
+    start)
+      [ $# -ge 1 ] || die "record start needs a NAME"
+      [ -z "${RECORDING:-}" ] || die "already recording ${RECORDING}; run \`record stop\` first"
+      ssh_guest "${IP}" "rm -f /tmp/verify-recording.mov /tmp/verify-recording.pid"
+      ssh_guest "${IP}" "sudo launchctl asuser \$(id -u ${GUEST_USER}) sudo -u ${GUEST_USER} -H /bin/sh -c 'echo \$\$ > /tmp/verify-recording.pid; exec screencapture -v -C -k -x /tmp/verify-recording.mov' > /tmp/verify-recording.log 2>&1 &"
+      local deadline=$((SECONDS + 15))
+      until ssh_guest "${IP}" "test -s /tmp/verify-recording.pid && kill -0 \$(cat /tmp/verify-recording.pid)" 2>/dev/null; do
+        [ "${SECONDS}" -lt "${deadline}" ] || die "screen recording did not start: $(ssh_guest "${IP}" cat /tmp/verify-recording.log)"
+        sleep 1
+      done
+      sleep 2
+      set_run_value RECORDING "${1%.*}"
+      journal "recording ${1%.*} started"
+      echo "recording ${1%.*}"
+      ;;
+    stop)
+      [ -n "${RECORDING:-}" ] || die "no recording in progress"
+      record_stop || exit 1
+      ;;
+    *) die "usage: record start NAME | record stop" ;;
+  esac
+}
+
+cmd_config() {
+  local run=""
+  while [ $# -gt 0 ]; do case "$1" in --run) run="$2"; shift 2 ;; *) die "unknown option: $1" ;; esac; done
+  load_run "${run}"
+  ssh_guest "${IP}" "cat ~/.config/lineup/config.json"
+}
+
+cmd_note() { load_run ""; journal "$*"; echo "noted"; }
+
+cmd_keep() {
+  local file="${1:-}" name=""
+  [ -f "${file}" ] || die "keep needs an existing FILE"
+  shift
+  [ "${1:-}" = "--as" ] && name="$2"
+  load_run ""
+  local dest
+  dest="$(unique_path "${EVIDENCE}" "${name:-$(basename "${file}")}")"
+  cp "${file}" "${dest}"
+  journal "kept $(basename "${dest}")"
+  echo "${dest}"
+}
+
+cmd_vnc() { load_run ""; echo "${VNC_URL}"; }
+
+# ---------- cleanup ----------
+
+cmd_cleanup() {
+  local requested="" discard=0 failed=0 runs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --run) requested="$2"; shift 2 ;;
+      --discard-recording) discard=1; shift ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  if [ -n "${requested}" ]; then
+    runs=("${requested}")
+  else
+    local dir
+    for dir in "${STATE}"/runs/*/; do
+      [ -f "${dir}/run.env" ] || continue
+      grep -q '^STATUS=open$' "${dir}/run.env" && grep -qx "CHECKOUT=${REPO_DIR}" "${dir}/run.env" && runs+=("$(basename "${dir}")")
+    done
+  fi
+  [ ${#runs[@]} -gt 0 ] || { echo "nothing to clean up"; return 0; }
+  local id
+  for id in "${runs[@]}"; do
+    RECORDING="" VM_PID=""
+    load_run "${id}"
+    if [ "${STATUS}" != open ]; then echo "${id}: already closed"; continue; fi
+    if [ -n "${RECORDING:-}" ]; then
+      if [ "${discard}" = 1 ]; then
+        journal "recording ${RECORDING} discarded during cleanup"
+      elif ! record_stop >/dev/null; then
+        journal "cleanup kept ${VM}: recording ${RECORDING} could not be saved"
+        echo "${id}: kept open, because recording ${RECORDING} could not be saved. Check \`doctor\`, then rerun \`cleanup --run ${id}\`, or add --discard-recording to drop it" >&2
+        failed=1
+        continue
+      fi
+    fi
+    if "${TART}" get "${VM}" >/dev/null 2>&1; then
+      stop_vm "${VM}" "${VM_PID:-}"
+      if ! "${TART}" delete "${VM}"; then
+        echo "${id}: could not delete ${VM}; the run stays open" >&2
+        failed=1
+        continue
+      fi
+    fi
+    set_run_value STATUS closed
+    journal "cleanup: ${VM} stopped and deleted"
+    echo "${id}: closed; evidence kept in ${EVIDENCE}"
+    ls -1 "${EVIDENCE}" | sed 's/^/  /'
+  done
+  return "${failed}"
+}
+
+cmd_runs() {
+  local dir
+  while IFS= read -r dir; do
+    [ -f "${dir}/run.env" ] || continue
+    (
+      # shellcheck disable=SC1090
+      source "${dir}/run.env"
+      echo "${RUN_ID}  ${STATUS}  ${VM}  ${CHECKOUT}"
+    )
+  done < <(ls -1dt "${STATE}"/runs/*/ 2>/dev/null)
+}
+
+# ---------- host desktop ----------
+
+HOST_STAMP="${STATE}/host.last-input"
+HOST_LOCK_STALE=1800
+
+host_holder() {
+  [ -f "${HOST_LOCK}" ] || return 0
+  if [ $(( $(date +%s) - $(stat -f %m "${HOST_LOCK}") )) -ge "${HOST_LOCK_STALE}" ]; then
+    echo "note  ignoring a stale host lock: $(cat "${HOST_LOCK}")" >&2
+    return 0
+  fi
+  cat "${HOST_LOCK}"
+}
+
+cmd_host_gate() {
+  case "${1:-check}" in
+    check) host_gate_check ;;
+    claim) host_gate_claim "${2:-}" ;;
+    release) host_gate_release "${2:-}" ;;
+    *) die "usage: host-gate [check] | claim HOLDER | release HOLDER" ;;
+  esac
+}
+
+# Serializes reading and replacing the host lock. flock(2) holds the lock on fd 9, which this
+# script keeps open, and the kernel drops it when the script exits, however it exits.
+host_mutex() {
+  mkdir -p "${STATE}"
+  exec 9>"${HOST_MUTEX}"
+  python3 -c '
+import fcntl, sys, time
+for _ in range(50):
+    try:
+        fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except BlockingIOError:
+        time.sleep(0.1)
+sys.exit(1)' || die "another run is changing the host claim; run \`host-gate\` again"
+}
+
+host_gate_claim() {
+  local holder="$1"
+  [ -n "${holder}" ] || die "host-gate claim needs a HOLDER (your thread or PR)"
+  host_mutex
+  host_gate_check || die "the host desktop is not free; keep working in the VM and list the journey as pending"
+  # Date the stamp at the human's last input, not now, so input during the claim is never
+  # hidden: the next command sees an idle time shorter than the time since this stamp.
+  python3 - "${HOST_STAMP}" <<'EOF' || die "the human used the Mac during the claim; keep working in the VM"
+import os, re, subprocess, sys, time
+out = subprocess.run(["ioreg", "-c", "IOHIDSystem"], capture_output=True, text=True).stdout
+idle = int(re.search(r'"HIDIdleTime" = (\d+)', out).group(1)) / 1e9
+if idle < 600:
+    sys.exit(1)
+last_human_input = time.time() - idle
+open(sys.argv[1], "a").close()
+os.utime(sys.argv[1], (last_human_input, last_human_input))
+EOF
+  echo "${holder} since $(date '+%Y-%m-%d %H:%M:%S')" > "${HOST_LOCK}.tmp"
+  mv "${HOST_LOCK}.tmp" "${HOST_LOCK}"
+  echo "claimed by ${holder}; drive with \`verify-lineup host-ax --holder ${holder} ...\` and release when done"
+}
+
+host_gate_release() {
+  local holder="$1" current
+  [ -n "${holder}" ] || die "host-gate release needs the HOLDER that claimed it"
+  host_mutex
+  [ -f "${HOST_LOCK}" ] || { echo "host desktop already free"; return 0; }
+  current="$(cat "${HOST_LOCK}")"
+  [ "${current%% since *}" = "${holder}" ] || die "the host lock belongs to ${current}"
+  rm -f "${HOST_LOCK}" "${HOST_STAMP}"
+  echo "released"
+}
+
+cmd_host_ax() {
+  [ "${1:-}" = "--holder" ] && [ -n "${2:-}" ] || die "usage: host-ax --holder HOLDER ARGS..."
+  local holder="$2" current binary="${STATE}/host/lineup-ax"
+  shift 2
+  current="$(host_holder 2>/dev/null)"
+  [ "${current%% since *}" = "${holder}" ] || die "claim the host desktop first: verify-lineup host-gate claim ${holder}"
+  if [ "$(host_screen_locked)" != no ]; then
+    ( host_gate_release "${holder}" ) >/dev/null 2>&1 || true
+    echo "the host screen is locked: input stopped and the host lock released" >&2
+    return 7
+  fi
+  touch "${HOST_LOCK}"
+  if [ ! -x "${binary}" ] || [ "${SKILL_DIR}/scripts/lineup-ax.swift" -nt "${binary}" ]; then
+    mkdir -p "${STATE}/host"
+    build_ax "${binary}"
+  fi
+  local status=0
+  LINEUP_AX_HOST_STAMP="${HOST_STAMP}" "${binary}" "$@" || status=$?
+  if [ "${status}" = 7 ]; then
+    ( host_gate_release "${holder}" ) >/dev/null 2>&1 || true
+    echo "the human took the desktop: input stopped and the host lock released" >&2
+  fi
+  return "${status}"
+}
+
+host_screen_locked() {
+  python3 - <<'EOF'
+import ctypes, ctypes.util
+cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreGraphics"))
+cf = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreFoundation"))
+cg.CGSessionCopyCurrentDictionary.restype = ctypes.c_void_p
+cf.CFDictionaryGetValue.restype = ctypes.c_void_p
+cf.CFDictionaryGetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+cf.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
+session = cg.CGSessionCopyCurrentDictionary()
+key = cf.CFStringCreateWithCString(None, b"CGSSessionScreenIsLocked", 0x08000100)
+value = cf.CFDictionaryGetValue(session, key) if session else None
+print("yes" if value and cf.CFBooleanGetValue(value) else "no")
+EOF
+}
+
+host_gate_check() {
+  local idle locked holder="" verdict=open reasons=()
+  idle="$(ioreg -c IOHIDSystem | awk '/HIDIdleTime/ && !found {print int($NF/1000000000); found=1}')"
+  locked="$(host_screen_locked)"
+  holder="$(host_holder)"
+  echo "human idle: ${idle}s"
+  echo "screen locked: ${locked}"
+  echo "host lock: ${holder:-free}"
+  [ "${idle}" -ge 600 ] || reasons+=("the human used the Mac ${idle}s ago (needs 600s)")
+  [ "${locked}" = no ] || reasons+=("the screen is locked")
+  [ -z "${holder}" ] || reasons+=("another run holds the host lock")
+  if [ ${#reasons[@]} -gt 0 ]; then
+    verdict=closed
+    printf 'reason: %s\n' "${reasons[@]}"
+  fi
+  echo "host-gate: ${verdict}"
+  [ "${verdict}" = open ]
+}
+
+command="${1:-help}"
+shift || true
+case "${command}" in
+  setup) cmd_setup "$@" ;;
+  launch) cmd_launch "$@" ;;
+  doctor) cmd_doctor "$@" ;;
+  ax) cmd_ax "$@" ;;
+  sh) cmd_sh "$@" ;;
+  shot) cmd_shot "$@" ;;
+  record) cmd_record "$@" ;;
+  config) cmd_config "$@" ;;
+  note) cmd_note "$@" ;;
+  keep) cmd_keep "$@" ;;
+  vnc) cmd_vnc ;;
+  cleanup) cmd_cleanup "$@" ;;
+  runs) cmd_runs ;;
+  host-gate) cmd_host_gate "$@" ;;
+  host-ax) cmd_host_ax "$@" ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac
