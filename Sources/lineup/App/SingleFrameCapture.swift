@@ -10,6 +10,8 @@ enum SingleFrameCaptureError: Error {
 
 @MainActor
 final class SingleFrameCapture: NSObject, SCStreamOutput, SCStreamDelegate {
+    private static let imageContext = CIContext()
+
     struct Operations {
         var start: (SCStream) async throws -> Void
         var stop: (SCStream) async throws -> Void
@@ -133,7 +135,7 @@ final class SingleFrameCapture: NSObject, SCStreamOutput, SCStreamDelegate {
                   status == SCFrameStatus.complete.rawValue,
                   let buffer = sampleBuffer.imageBuffer else { return }
             let image = CIImage(cvPixelBuffer: buffer)
-            guard let cgImage = CIContext().createCGImage(image, from: image.extent) else {
+            guard let cgImage = Self.imageContext.createCGImage(image, from: image.extent) else {
                 finish(.failure(SingleFrameCaptureError.failed))
                 return
             }

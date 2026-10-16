@@ -1594,7 +1594,7 @@ private func runOnboardingTests() throws {
     check(OnboardingCopyMirror.inputMonitoringNote.contains("only when you turn Hyperkey on"),
           "the Input Monitoring note says it is only asked for on Hyperkey enable")
     check(source("Sources/lineup/App/OnboardingKit.swift")
-            .contains("\"Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only \"\n        + \"when you first capture text.\""),
+            .contains("\"Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only \"\n        + \"when you first capture text or turn on window suggestions.\""),
           "the mirrored Input Monitoring note is the one the app actually shows")
 
     // ---- Settings panes: the design-review polish ----
@@ -2318,7 +2318,7 @@ private enum AboutFactsMirror {
 /// same way `ShortcutKitCaps` is, with the scan above pinning the real definition.
 private enum OnboardingCopyMirror {
     static let inputMonitoringNote = "Input Monitoring is asked for only when you turn Hyperkey on, and Screen Recording only "
-        + "when you first capture text."
+        + "when you first capture text or turn on window suggestions."
 }
 
 /// `ShortcutKit` and `SettingsMetrics` live in the app target, which this runner does not link.
