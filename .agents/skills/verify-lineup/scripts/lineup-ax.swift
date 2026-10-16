@@ -37,6 +37,9 @@ struct Failure: Error { let message: String }
 
 func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write((message + "\n").data(using: .utf8)!)
+    // Any failure on the host still reports human input seen during the command, so
+    // `host-ax` releases the claim.
+    if code != 7 { finishHostInput() }
     exit(code)
 }
 

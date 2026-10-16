@@ -643,12 +643,22 @@ sys.exit(1)' || die "another run is changing the host claim; run \`host-gate\` a
 host_gate_claim() {
   local holder="$1"
   [ -n "${holder}" ] || die "host-gate claim needs a HOLDER (your thread or PR)"
-  host_gate_check || die "the host desktop is not free; keep working in the VM and list the journey as pending"
   host_mutex
-  [ -z "$(host_holder 2>/dev/null)" ] || die "another run claimed the host desktop first: $(cat "${HOST_LOCK}")"
+  host_gate_check || die "the host desktop is not free; keep working in the VM and list the journey as pending"
+  # Date the stamp at the human's last input, not now, so input during the claim is never
+  # hidden: the next command sees an idle time shorter than the time since this stamp.
+  python3 - "${HOST_STAMP}" <<'EOF' || die "the human used the Mac during the claim; keep working in the VM"
+import os, re, subprocess, sys, time
+out = subprocess.run(["ioreg", "-c", "IOHIDSystem"], capture_output=True, text=True).stdout
+idle = int(re.search(r'"HIDIdleTime" = (\d+)', out).group(1)) / 1e9
+if idle < 600:
+    sys.exit(1)
+last_human_input = time.time() - idle
+open(sys.argv[1], "a").close()
+os.utime(sys.argv[1], (last_human_input, last_human_input))
+EOF
   echo "${holder} since $(date '+%Y-%m-%d %H:%M:%S')" > "${HOST_LOCK}.tmp"
   mv "${HOST_LOCK}.tmp" "${HOST_LOCK}"
-  touch "${HOST_STAMP}"
   echo "claimed by ${holder}; drive with \`verify-lineup host-ax --holder ${holder} ...\` and release when done"
 }
 
