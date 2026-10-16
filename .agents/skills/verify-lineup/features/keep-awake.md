@@ -43,10 +43,9 @@ Preconditions:
 - **Assertion.** Run `$V sh 'pmset -g assertions | grep -i "lineup"'`. It shows
   `PreventUserIdleSystemSleep named: "Lineup Keep Awake"` with a timeout of
   about 900 seconds.
-- **Display option.** Run `$V ax click role=AXCheckBox subrole=AXSwitch --scope menubar`
-  (the switch next to `Keep display on`). It reads `1`. `pmset -g assertions` adds
-  `PreventUserIdleDisplaySleep named: "Lineup Keep Awake"`, and `Awake until`
-  keeps the same time.
+- **Display option.** Run `$V ax click role=AXCheckBox desc="Keep display on" --scope menubar`.
+  It reads `1`. `pmset -g assertions` adds
+  `PreventUserIdleDisplaySleep named: "Lineup Keep Awake"`, and `Awake until` keeps the same time.
 - **Stop.** Run `$V ax click role=AXButton desc=Stop --scope menubar`. The button
   reads `Start`, and `pmset -g assertions | grep -c "Lineup Keep Awake"` prints `0`.
 - **Settings entry.** Run `$V ax click role=AXStaticText desc="Keep Awake"` and
@@ -59,9 +58,8 @@ Preconditions:
 
 ## Gotchas
 
-- The panel's `Keep display on` switch has no accessible name (found on
-  2026-10-16). Select it by `subrole=AXSwitch`, and treat a fix that names it
-  as a change to this recipe. The Settings toggle is `desc="Keep display on"`.
+- `Keep display on` names both the panel switch and the Settings toggle. Pass
+  `--scope menubar` or `--scope windows`.
 - PRODUCT.md still names the right-click menu as a Keep Awake entry point, but
   that menu has no session controls. Do not report it as verified.
 - `grep -c` exits 1 when it counts 0, so `$V sh '... | grep -c ...'` fails
