@@ -33,6 +33,7 @@ struct AwakeQuickPanel: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .disabled(!tool.canEdit)
+            .accessibilityLabel("Keep display on")
             if let message = tool.configError ?? tool.message {
                 PanelWarning(text: message)
             }
