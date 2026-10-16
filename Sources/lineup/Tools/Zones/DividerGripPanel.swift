@@ -1,8 +1,6 @@
 import AppKit
 import ZonesCore
 
-/// The handle on the line between two zones, a painted copy of that line and, while the divider
-/// locks onto a guide, a badge naming it. All three share the phase's alpha.
 @MainActor
 final class DividerGripPanel: NSPanel {
     override var canBecomeKey: Bool { phase == .pinned }
@@ -41,7 +39,6 @@ final class DividerGripPanel: NSPanel {
         return window
     }
 
-    /// `segment` is the painted line in screen coordinates; it moves with the handle.
     func place(_ rect: CGRect, axis: Axis, line segment: CGRect) {
         grip.axis = axis
         showGuide(nil)
@@ -78,8 +75,6 @@ final class DividerGripPanel: NSPanel {
         prepare(phase)
         orderFront(nil)
         line.order(.below, relativeTo: windowNumber)
-        // Divider previews are ordered below the line after this, so a visible badge must be
-        // raised again or they would cover it.
         if grip.guide != nil { badge.order(.above, relativeTo: windowNumber) }
     }
 
@@ -176,7 +171,6 @@ private final class GripView: NSView {
         return axis == .vertical ? .resizeLeftRight : .resizeUpDown
     }
 
-    /// Stays inside the 28 by 48 point hit rect.
     private var knob: CGRect {
         let long: CGFloat = phase == .revealed ? 36 : 40, short: CGFloat = phase == .revealed ? 6 : 9
         return axis == .vertical

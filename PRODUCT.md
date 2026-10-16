@@ -319,7 +319,8 @@ app launch. The tool does not change permanent power settings, screen locking, o
 **Maximize or return** keeps the existing `full` shortcut. Press it again to return to the
 frame immediately before maximizing. Both directions move the window the same best-effort way as
 other shortcuts, so a window that cannot resize is centered and still returns. A return that does
-not land keeps the original return frame for another press, even when Lineup moved it partway. **Restore previous size** keeps the separate first-snap
+not land keeps the original return frame for another press, including when the app raises its
+minimum size while maximized and Lineup moves it partway. **Restore previous size** keeps the separate first-snap
 history. Moving the window yourself, another snap, or a display change ends the temporary return.
 Maximizing or returning never teaches a saved app launch position.
 

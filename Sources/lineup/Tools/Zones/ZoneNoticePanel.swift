@@ -1,8 +1,6 @@
 import AppKit
 import ZonesCore
 
-/// A brief, click-through note near a coordinated move that did not apply. It never takes focus,
-/// so VoiceOver hears it as an announcement. Same tokens as `HyperKeyBlockedPill`.
 @MainActor
 final class ZoneNoticePanel: NSPanel {
     override var canBecomeKey: Bool { false }

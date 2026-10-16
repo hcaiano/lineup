@@ -918,9 +918,10 @@ its own scope, hardware checks and recovery design.
 `SnapMemory` owns one bounded `SnapRecords<AXUIElement>` ledger. Its first-snap Restore frame,
 last applied frame, optional leaf-relative `AppZonePlacement`, and temporary maximize receipt
 have separate meanings. Root-relative destinations and best-effort centered windows do not
-become coordinated occupants. Maximize and return use the best-effort single-window mover and
-never call launch-placement learning. A return consumes its receipt only when the landed frame
-matches the destination. A known partial return updates only the receipt applied frame and
+become coordinated occupants. Maximize and return use the best-effort single-window mover,
+record a fresh native frame observation instead of placement intent, and never call launch-placement
+learning. Unreadable observations leave the return receipt intact. A return consumes its receipt
+only when the landed frame matches the destination. A known partial return updates only the receipt applied frame and
 ledger match frame, preserving the return destination and first-snap Restore history.
 
 `ZoneScene` builds pure divider and share frame effects. Divider changes reuse `LayoutEdit` and
@@ -934,8 +935,11 @@ unresolved. Release rechecks only the selected leaf's occupants.
 
 `WindowMover` is the only AX boundary. Ordinary snaps retain best-effort placement. Its exact
 commit validates every participant, checks setters and frame readback within one point, and
-moves the incoming window last. `ExactCommit` compensates all attempted writes in reverse order
-and reports why: a refusing window, a change while moving, or a failed save. Incomplete
+moves the incoming window last. `ExactCommit` compensates all attempted writes in reverse order,
+including attempts whose initial read still shows the original frame. Restoration requires an
+acknowledged opposing write and matching readback, since a failed forward write can have delayed
+effects.
+It reports the cause as a refusing window, a change while moving, or a failed save. Incomplete
 compensation becomes a `SnapMemory` receipt for Retry Restore, which drops an effect only when
 `WindowMover.isGone` proves its process exited or its element is invalid. History publishes only
 after success. `ZonesTool` prepares and validates one divider candidate, saves once after
@@ -996,9 +1000,11 @@ the concrete ID, AX element, current visibility, and vacancy again. `ZoneFillLay
 chooser geometry.
 
 Window suggestions start only from a committed modifier-drag or share release, with the option on
-and Screen Recording already granted. `offerFill` reuses the one fill session (`FillOffer`,
-generation, task, capture, candidates, timer and monitors). It reads the census, requires a vacant
-zone and another visible window, installs the session's outside-click monitors (left, right and
+and Screen Recording already granted. `offerFill` creates one private `FillSession` containing the
+immutable `FillOffer` and generation, panel, task, capture, candidates, timer and outside monitors.
+Cancellation detaches it before releasing its resources. `DragSnapController` remains the lifecycle
+and gesture owner. It reads the census, requires a vacant zone and another visible window,
+installs the session's outside-click monitors (left, right and
 other presses in other apps or in another Lineup window), then awaits `SCShareableContent` and
 matches as above. A press during the read therefore cancels the session before anything appears.
 Zero admitted windows or a failed read ends the session without showing anything. `presentFill` calls
@@ -1021,12 +1027,14 @@ panel resolves that frame before choosing its hairline scale from the screen und
 Text Capture. Each instance captures once. Its callers supply the filter, dimensions, and optional
 source rectangle. On completion, cancellation, failure, or timeout it waits for any in-flight
 start and requests stop. One deadline covers start, frame and stop. Success requires both API
-acknowledgments. Stop errors preserve the capture error and cannot produce image success or
+acknowledgments. A failed stop retries once within the same helper and caller deadline.
+Stop errors preserve the capture error and cannot produce image success or
 `stopped`. A deadline reports pending cleanup and can release the caller; the same helper retains
 the stream and stops it after a late start settles. Late callbacks cannot complete the caller
 again. A late stop error remains available on the helper. Text Capture retains
 its region, exclusion, OCR, permission, token, topology, and clipboard policies. Zones checks
-generation, display geometry, permission, and vacancy after capture awaits. Pixels and titles
+generation, display geometry, permission, vacancy and exact candidate identity and frame immediately
+before constructing each capture filter and after capture awaits. Pixels and titles
 have no disk cache.
 
 Run `swift run lineup-tests` and `swift build` for core behavior and compilation. For maintained
@@ -1063,7 +1071,8 @@ grip panel through `NSWindow.sendEvent`. Nothing is posted to the system and the
 moves. The run covers share admission with a hidden stale record, Escape during a share, a changed
 incumbent, divider drag, bind release, pin, nudge, Return, Escape, focus loss, outside press, a
 minimum-size refusal with its notice, arrow/Return/K activation strokes and release ordering,
-maximize and partial return of a non-resizable window, and definitive window death for Retry Restore.
+maximize and partial return of a non-resizable window, a resizable window whose minimum grows
+while maximized and later permits a retry, and definitive window death for Retry Restore.
 Unknown-census and ambiguous-identity cases exercise the immediate refusal policy independently
 of ordinary setup readiness. Setup waits for observed fixture CG/AX correspondence within a deadline,
 without a fixed settling delay. Fixture windows retain their default shadows and disable animations
@@ -1087,9 +1096,12 @@ presentation without key focus or a frontmost change, the eight-second close wit
 elsewhere, persistence under a resting pointer until a key press elsewhere, persistence when the
 pointer moves onto the chooser after a key press, source exclusion, stale selection, newly occupied
 vacancy and a one-click fill. Only those fixture IDs can
-become capture candidates. Capture checks independently record native start/stop API acknowledgments.
+become capture candidates. A two-candidate case holds the first helper's injected start operation,
+minimizes the second candidate, then requires cancellation without starting its stream.
+Capture checks independently record native start/stop API acknowledgments.
 Controlled start/stop operations inside the same helper cover a missing frame, stalled start,
-stalled stop, throwing stop, late cleanup and cancellation. These cases need a valid fixture
+stalled stop, a transient stop failure with an acknowledged retry, permanent stop failures,
+late cleanup and cancellation. These cases need a valid fixture
 SCK filter, so the permission-free run reports that gate. They do not prove real framework failures.
 
 Every invocation must exit successfully and emit a terminal completed or gated receipt carrying

@@ -15,7 +15,6 @@ final class ShareRailPanel: NSPanel {
         hidesOnDeactivate = false
         level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         collectionBehavior = [.stationary]
-        // Concentric with the tiles, which sit 6 points inside and round at 8.
         let surface = ZonesSurface.container(size: .zero, cornerRadius: 14, scale: NSScreen.main?.backingScaleFactor ?? 2)
         caption.font = .systemFont(ofSize: 11, weight: .semibold)
         caption.alignment = .center

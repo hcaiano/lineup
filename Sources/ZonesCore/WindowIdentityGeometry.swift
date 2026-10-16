@@ -1,8 +1,6 @@
 import CoreGraphics
 
 public enum WindowIdentityGeometry {
-    /// AppKit's composed surface can inset the Accessibility frame by a few points.
-    /// Identity still requires a unique match in both directions within one process.
     public static func matches(surface: CGRect, accessibility: CGRect) -> Bool {
         let differences = [surface.minX - accessibility.minX, surface.minY - accessibility.minY,
                            accessibility.maxX - surface.maxX, accessibility.maxY - surface.maxY]

@@ -90,7 +90,8 @@ enum WindowMover {
         case .maximize(let rect), .returnTo(let rect): destination = rect
         }
         guard !SnapMemory.shared.recovery.contains(where: { CFEqual($0.window, window) }),
-              let landed = setFrame(destination, of: window) else { return false }
+              setFrame(destination, of: window) != nil,
+              let landed = frame(of: window) else { return false }
         SnapMemory.shared.records.recordMaximize(window, action: action, from: current,
                                                   landed: landed, screenKey: screenKey)
         if case .returnTo = action,
@@ -230,7 +231,6 @@ enum WindowMover {
         return outcome
     }
 
-    /// Without Accessibility nothing can be known, so the receipt stays as it is.
     @discardableResult
     static func retryRestore() -> Bool {
         guard AXIsProcessTrusted() else { return false }
@@ -239,8 +239,6 @@ enum WindowMover {
         return SnapMemory.shared.recovery.isEmpty
     }
 
-    /// True only on definitive evidence: the owning process has exited, or AX reports the
-    /// element invalid. A timeout, an unreadable attribute or missing permission is not proof.
     static func isGone(_ window: AXUIElement) -> Bool {
         var pid: pid_t = 0
         if AXUIElementGetPid(window, &pid) == .success, pid > 0, kill(pid, 0) != 0, errno == ESRCH { return true }

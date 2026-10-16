@@ -9,11 +9,9 @@ struct DragSnapInput {
     var modifiers: () -> NSEvent.ModifierFlags
     var isKeyDown: (CGKeyCode) -> Bool
     var isTrusted: () -> Bool
-    /// Monotonic seconds, the clock that `secondsSince` ages are measured against.
     var now: () -> TimeInterval
     var secondsSince: (CGEventType) -> TimeInterval
     var pressedButtons: () -> Int
-    /// Runs `action` once on the main run loop after `delay`; the returned closure cancels it.
     var schedule: (TimeInterval, @escaping () -> Void) -> () -> Void
 
     static let system = DragSnapInput(
@@ -70,15 +68,32 @@ final class DragSnapController {
         let source: AXUIElement
         let filled: CGRect
     }
-    private var fillPanel: ZoneFillPanel?
-    private var fillOffer: FillOffer?
-    private var fillCandidates: [WindowMover.VisibleWindow] = []
-    private var fillTask: Task<Void, Never>?
-    private var fillCapture: SingleFrameCapture?
-    private var fillGeneration = UUID()
-    private var offerTimeout: Timer?
-    private var outsideMonitor: Any?
-    private var localOutsideMonitor: Any?
+    @MainActor
+    private final class FillSession {
+        let offer: FillOffer
+        let generation = UUID()
+        var panel: ZoneFillPanel?
+        var candidates: [WindowMover.VisibleWindow] = []
+        var task: Task<Void, Never>?
+        var capture: SingleFrameCapture?
+        var timeout: Timer?
+        var outsideMonitor: Any?
+        var localOutsideMonitor: Any?
+
+        init(offer: FillOffer) { self.offer = offer }
+
+        func cancel(removeMonitor: (Any) -> Void) {
+            task?.cancel(); task = nil
+            capture?.cancel(); capture = nil
+            timeout?.invalidate(); timeout = nil
+            if let outsideMonitor { removeMonitor(outsideMonitor); self.outsideMonitor = nil }
+            if let localOutsideMonitor { NSEvent.removeMonitor(localOutsideMonitor); self.localOutsideMonitor = nil }
+            panel?.orderOut(nil); panel = nil
+            candidates.removeAll()
+        }
+    }
+    private var fillSession: FillSession?
+    private let captureOperations: SingleFrameCapture.Operations
     private var grip: DividerGripPanel?
     private var gripPhase: DividerGrip.Phase?
     private var gripScreen: NSScreen?
@@ -134,11 +149,6 @@ final class DragSnapController {
     private var teachHint = false   // first modifier-drag ever: surface the edge hint right away
     private static let seenEdgeHintKey = "lineup.seenEdgeHint"
 
-    // Unsnap restore: dragging a snapped window away brings its pre-snap size back under
-    // the cursor. Two phases — match the window early in the drag (while it's still
-    // near its snapped frame), restore only after real movement WITH an unchanged size
-    // (a changing size means the user is resizing, never an unsnap). Matching and restore
-    // run at most once per drag, with bounded frame sampling only while snaps exist.
     private var dragStart: CGPoint?
     private var restoreChecked = false
     private var restoreCandidate: (window: AXUIElement, preFrame: CGRect, frameAtMatch: CGRect)?
@@ -154,7 +164,8 @@ final class DragSnapController {
          assistAllowed: @escaping () -> Bool = { false },
          refreshStatus: @escaping () -> Void = {},
          input: DragSnapInput = .system,
-         visibleWindows: @escaping @MainActor (Set<pid_t>?) -> [WindowMover.VisibleWindow]? = { WindowMover.visibleWindows(pids: $0) }) {
+         visibleWindows: @escaping @MainActor (Set<pid_t>?) -> [WindowMover.VisibleWindow]? = { WindowMover.visibleWindows(pids: $0) },
+         captureOperations: SingleFrameCapture.Operations = .system) {
         self.configProvider = configProvider
         self.triggerProvider = triggerProvider
         self.onPlacement = onPlacement
@@ -165,6 +176,7 @@ final class DragSnapController {
         self.refreshStatus = refreshStatus
         self.input = input
         self.visibleWindows = visibleWindows
+        self.captureOperations = captureOperations
     }
 
     var isEnabled: Bool { monitor != nil }
@@ -189,8 +201,6 @@ final class DragSnapController {
         }
     }
 
-    /// Escape arrives through the Accessibility-authorized key monitor, with key-state polling as a
-    /// fallback; neither suppresses any application's input.
     private func watchInput() {
         guard inputWatch == nil else { return }
         escapeMonitor = input.addGlobalMonitor(.keyDown) { [weak self] event in
@@ -205,7 +215,7 @@ final class DragSnapController {
 
     private func checkInput() {
         grip?.checkActivationKey()
-        if fillOffer != nil && !fillIsCurrent(fillGeneration) { cancelFill(); refreshStatus() }
+        if let session = fillSession, !fillIsCurrent(session.generation) { cancelFill(); refreshStatus() }
         if !canInteract() || !input.isTrusted() || input.isKeyDown(53) {
             cancelSessions()
         } else if !triggerMatches(input.modifiers()) {
@@ -215,7 +225,7 @@ final class DragSnapController {
     }
 
     private func stopInputWatchIfIdle() {
-        guard gripPhase == nil, !armed, fillOffer == nil else { return }
+        guard gripPhase == nil, !armed, fillSession == nil else { return }
         inputWatch?.invalidate(); inputWatch = nil
         if let escapeMonitor { input.removeMonitor(escapeMonitor); self.escapeMonitor = nil }
     }
@@ -366,9 +376,6 @@ final class DragSnapController {
         }
     }
 
-    /// The grip appears only after the pointer pauses on one line (`DividerDwell`), so crossing
-    /// lines on the way to a click or a window shows nothing. A shown grip stays where it appeared;
-    /// leaving its keep region hides it, and a new pause elsewhere shows it there.
     private func discoverDivider(at point: CGPoint) {
         guard canEditLayout(), triggerMatches(input.modifiers()), SnapMemory.shared.recovery.isEmpty,
               let screen = screenContaining(point) else { cancelDivider(); return }
@@ -410,8 +417,6 @@ final class DragSnapController {
         dwell = nil
     }
 
-    /// Everything that admitted the pause is read again here, because nothing reported the time
-    /// in between: keys, scrolls and modifier changes are judged by their age, not by a monitor.
     private func dwellElapsed(_ pending: DividerDwell) {
         guard dwell == pending else { return }
         cancelDwell = nil
@@ -585,14 +590,9 @@ final class DragSnapController {
 
 
     private func cancelFill() {
-        fillGeneration = UUID()
-        fillTask?.cancel(); fillTask = nil
-        fillCapture?.cancel(); fillCapture = nil
-        offerTimeout?.invalidate(); offerTimeout = nil
-        if let outsideMonitor { input.removeMonitor(outsideMonitor); self.outsideMonitor = nil }
-        if let localOutsideMonitor { NSEvent.removeMonitor(localOutsideMonitor); self.localOutsideMonitor = nil }
-        fillPanel?.orderOut(nil); fillPanel = nil
-        fillCandidates.removeAll(); fillOffer = nil
+        let session = fillSession
+        fillSession = nil
+        session?.cancel(removeMonitor: input.removeMonitor)
         stopInputWatchIfIdle()
     }
 
@@ -607,14 +607,15 @@ final class DragSnapController {
               visible.contains(where: { $0.window.map { !CFEqual($0, source) } == true })
         else { return }
         let offer = FillOffer(screen: screen, display: display, root: root, destination: free, source: source, filled: target)
-        fillOffer = offer
+        let session = FillSession(offer: offer)
+        fillSession = session
         watchInput()
-        watchOutsideClicks()
-        let generation = fillGeneration
-        fillTask = Task { [weak self] in
-            guard let self else { return }
+        watchOutsideClicks(session)
+        let generation = session.generation
+        session.task = Task { [weak self, weak session] in
+            guard let self, let session else { return }
             let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-            guard self.fillGeneration == generation else { return }
+            guard self.fillSession === session else { return }
             guard let content, self.fillIsCurrent(generation), !Task.isCancelled,
                   let current = self.visibleWindows(nil),
                   ZoneVacancy.isFree(offer.destination, visibleFrames: current.map(\.frame)) else { self.cancelFill(); return }
@@ -629,29 +630,34 @@ final class DragSnapController {
             var ids: Set<CGWindowID> = []
             let candidates = Array(matched.filter { ids.insert($0.0.id).inserted }.prefix(32))
             guard !candidates.isEmpty else { self.cancelFill(); return }
-            self.presentFill(candidates.map { $0.0 }, for: offer)
+            self.presentFill(candidates.map { $0.0 }, in: session)
             for (index, candidate) in candidates.enumerated() {
-                guard self.fillIsCurrent(generation), !Task.isCancelled else { return }
-                let capture = SingleFrameCapture()
-                self.fillCapture = capture
+                guard self.fillIsCurrent(generation), !Task.isCancelled,
+                      let before = self.visibleWindows(nil),
+                      ZoneVacancy.isFree(offer.destination, visibleFrames: before.map(\.frame)),
+                      self.isUnchanged(candidate.0, in: before)
+                else { self.cancelFill(); return }
+                let capture = SingleFrameCapture(operations: self.captureOperations)
+                session.capture = capture
                 let size = ThumbnailSize.fit(candidate.1.frame.size, maximum: CGSize(width: 312, height: 192))
                 let image = try? await capture.capture(filter: SCContentFilter(desktopIndependentWindow: candidate.1),
                                                       width: Int(size.width), height: Int(size.height))
-                guard self.fillGeneration == generation else { return }
+                guard self.fillSession === session else { return }
                 guard self.fillIsCurrent(generation), !Task.isCancelled,
                       let after = self.visibleWindows(nil),
                       ZoneVacancy.isFree(offer.destination, visibleFrames: after.map(\.frame)),
                       self.isUnchanged(candidate.0, in: after)
                 else { self.cancelFill(); return }
-                self.fillCapture = nil
-                self.fillPanel?.setThumbnail(image, at: index)
+                session.capture = nil
+                session.panel?.setThumbnail(image, at: index)
             }
-            self.fillTask = nil
+            session.task = nil
         }
     }
 
-    private func presentFill(_ candidates: [WindowMover.VisibleWindow], for offer: FillOffer) {
-        fillCandidates = candidates
+    private func presentFill(_ candidates: [WindowMover.VisibleWindow], in session: FillSession) {
+        let offer = session.offer
+        session.candidates = candidates
         let panel = ZoneFillPanel(select: { [weak self] index in self?.selectFill(index) },
                                   cancel: { [weak self] in self?.cancelFill() })
         panel.show(candidates.map { candidate in
@@ -662,30 +668,30 @@ final class DragSnapController {
                 display: other ? screen?.localizedName : nil,
                 icon: NSRunningApplication(processIdentifier: candidate.pid)?.icon)
         }, free: offer.destination, filled: offer.filled, visible: offer.screen.visibleFrame)
-        fillPanel = panel
-        scheduleFillTimeout()
+        session.panel = panel
+        scheduleFillTimeout(session)
     }
 
-    private func watchOutsideClicks() {
+    private func watchOutsideClicks(_ session: FillSession) {
         let presses: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        localOutsideMonitor = NSEvent.addLocalMonitorForEvents(matching: presses) { [weak self] event in
+        session.localOutsideMonitor = NSEvent.addLocalMonitorForEvents(matching: presses) { [weak self] event in
             MainActor.assumeIsolated {
-                if event.window !== self?.fillPanel { self?.cancelFill() }
+                if event.window !== self?.fillSession?.panel { self?.cancelFill() }
             }
             return event
         }
-        outsideMonitor = input.addGlobalMonitor(presses) { [weak self] _ in
+        session.outsideMonitor = input.addGlobalMonitor(presses) { [weak self] _ in
             MainActor.assumeIsolated { self?.cancelFill() }
         }
     }
 
-    private func scheduleFillTimeout() {
-        offerTimeout = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in
+    private func scheduleFillTimeout(_ session: FillSession) {
+        session.timeout = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self, weak session] _ in
             MainActor.assumeIsolated {
-                guard let self, let panel = self.fillPanel else { return }
-                self.offerTimeout = nil
-                if Self.fillInUse(loading: self.fillTask != nil, focused: panel.isKeyWindow, frame: panel.frame, input: self.input) {
-                    self.scheduleFillTimeout()
+                guard let self, let session, self.fillSession === session, let panel = session.panel else { return }
+                session.timeout = nil
+                if Self.fillInUse(loading: session.task != nil, focused: panel.isKeyWindow, frame: panel.frame, input: self.input) {
+                    self.scheduleFillTimeout(session)
                 } else {
                     self.cancelFill()
                 }
@@ -693,9 +699,6 @@ final class DragSnapController {
         }
     }
 
-    /// Typing never reaches the unfocused chooser, so global input ages tell whether the pointer came
-    /// back to choose: it moved or scrolled no earlier than the last key press. A pointer resting on
-    /// the chooser while someone types elsewhere does not hold it, and an unreadable age never does.
     static func fillInUse(loading: Bool, focused: Bool, frame: CGRect, input: DragSnapInput) -> Bool {
         if loading || focused { return true }
         guard frame.contains(input.pointer()) else { return false }
@@ -704,9 +707,10 @@ final class DragSnapController {
     }
 
     private func fillIsCurrent(_ generation: UUID) -> Bool {
-        guard fillGeneration == generation, canInteract(), assistAllowed(), SnapMemory.shared.recovery.isEmpty,
-              let offer = fillOffer, configProvider().layout(forKey: offer.display.key) == offer.root else { return false }
-        return isCurrent(offer.display)
+        guard let session = fillSession, session.generation == generation, canInteract(), input.isTrusted(),
+              assistAllowed(), SnapMemory.shared.recovery.isEmpty,
+              configProvider().layout(forKey: session.offer.display.key) == session.offer.root else { return false }
+        return isCurrent(session.offer.display)
     }
 
     private func isUnchanged(_ candidate: WindowMover.VisibleWindow, in current: [WindowMover.VisibleWindow]) -> Bool {
@@ -717,10 +721,12 @@ final class DragSnapController {
     }
 
     private func selectFill(_ index: Int) {
-        let generation = fillGeneration
-        guard fillIsCurrent(generation), let offer = fillOffer, fillCandidates.indices.contains(index),
-              let window = fillCandidates[index].window, !CFEqual(window, offer.source),
-              let current = visibleWindows(nil), isUnchanged(fillCandidates[index], in: current),
+        guard let session = fillSession else { return }
+        let generation = session.generation
+        let offer = session.offer
+        guard fillIsCurrent(generation), session.candidates.indices.contains(index),
+              let window = session.candidates[index].window, !CFEqual(window, offer.source),
+              let current = visibleWindows(nil), isUnchanged(session.candidates[index], in: current),
               ZoneVacancy.isFree(offer.destination, visibleFrames: current.map(\.frame)),
               let before = WindowMover.frame(of: window) else { cancelFill(); return }
         let placement = AppZonePlacement(screenKey: offer.display.key, layout: offer.root, target: offer.destination,
@@ -798,11 +804,6 @@ final class DragSnapController {
             return
         }
 
-        // Phase 2, real movement. The WINDOW must be moving too, with its size unchanged:
-        // a drag inside the window (selecting text, dragging a file) moves only the
-        // cursor, and an edge-resize changes the size — neither is an unsnap. A busy app
-        // can report a stale frame across several events. Allow a short grace period
-        // independent of event rate, with spaced AX reads to bound work on content drags.
         guard hypot(p.x - start.x, p.y - start.y) > 10 else { return }
         let now = input.now()
         if let sampling = restoreSampling {
@@ -969,8 +970,6 @@ final class DragSnapController {
 /// an optional one-line hint teaches the half-snap when the user lingers.
 @MainActor
 final class HighlightWindow: NSWindow {
-    /// `divider` draws the neighbor tone 3 points inside its exact frame, so the moving line
-    /// between two previews stays visible. The window frame itself is never inset.
     enum Style { case target, neighbor, divider }
     static let halfHint = "Edges fill half, corners a quarter"
 

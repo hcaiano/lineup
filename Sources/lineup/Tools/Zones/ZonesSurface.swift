@@ -1,7 +1,5 @@
 import AppKit
 
-/// Unlike `HUDGlass`, this surface follows the system appearance, so content on it uses semantic
-/// label colors.
 @MainActor
 enum ZonesSurface {
     /// Make `root` the window's content view and add controls to `content`. `NSGlassEffectView`

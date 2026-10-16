@@ -38,7 +38,6 @@ final class ZoneFillPanel: NSPanel {
     }
 
     func prepare(_ candidates: [Candidate], free: CGRect, filled: CGRect, visible: CGRect) {
-        // Resolve columns for the actual bounded panel before choosing its row count.
         columns = ZoneFillLayout.columns(panelWidth: ZoneFillLayout.chooserFrame(
             free: free, filled: filled, visible: visible, rows: 1).width)
         let target = ZoneFillLayout.chooserFrame(free: free, filled: filled, visible: visible,

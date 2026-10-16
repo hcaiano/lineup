@@ -156,7 +156,6 @@ public struct DividerDwell: Equatable {
         guard let handle, rests(on: handle, screenKey: screenKey, pointer: pointer), elapsed >= 0,
               !interruptionAges.isEmpty,
               interruptionAges.allSatisfy({ $0.isFinite && $0 >= 0 && $0 > elapsed }) else { return .drop }
-        // A millisecond of slack absorbs clock rounding; timers never fire meaningfully early.
         return elapsed < Self.delay - 0.001 ? .wait(Self.delay - elapsed) : .reveal
     }
 

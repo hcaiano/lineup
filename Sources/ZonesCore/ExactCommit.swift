@@ -73,10 +73,7 @@ public enum ExactCommit {
                                         isGone: (Window) -> Bool) -> [FrameEffect<Window>] {
         var remaining: [FrameEffect<Window>] = []
         for effect in receipt.reversed() {
-            if let current = read(effect.window),
-               SnapRecords<Window>.matches(current, effect.before, originTolerance: 1, sizeTolerance: 1) {
-                continue
-            }
+            // A failed forward write may still be queued behind a stale read of `before`.
             let written = write(effect.window, effect.before)
             if written, let actual = read(effect.window),
                SnapRecords<Window>.matches(actual, effect.before, originTolerance: 1, sizeTolerance: 1) {

@@ -36,6 +36,33 @@ func runZoneEffectsTests() {
             check(saves == (failure == 4 ? 1 : 0), "write failure never persists")
         }
     }
+    for restoration in ["acknowledged", "refused", "unknown"] {
+        var observed: CGRect? = before
+        var queued: [CGRect] = []
+        var commands: [CGRect] = []
+        var saves = 0
+        let deferred = ExactCommit.apply([effects[0]], validate: { true }, read: { _ in observed },
+            eligible: { _ in true }, write: { _, target in
+                commands.append(target)
+                queued.append(target)
+                if target == after { return false }
+                if restoration == "refused" { return false }
+                for frame in queued { observed = frame }
+                queued.removeAll()
+                if restoration == "unknown" { observed = nil }
+                return true
+            }, persist: { saves += 1 })
+        check(commands == [after, before] && saves == 0,
+              "deferred forward write with stale before read still receives opposing restoration: \(restoration)")
+        if restoration == "acknowledged" {
+            for frame in queued { observed = frame }
+            if case .rolledBack(.refused(1)) = deferred {
+                check(observed == before, "acknowledged compensation drains deferred forward effects before reporting rolled back")
+            } else { check(false, "acknowledged opposing write confirms deferred rollback") }
+        } else if case .recovery(let receipt) = deferred {
+            check(receipt.map(\.window) == [1], "unacknowledged or unreadable deferred restoration retains recovery: \(restoration)")
+        } else { check(false, "stale before read cannot prove deferred restoration: \(restoration)") }
+    }
     var frames = [1: before, 2: before, 3: before]
     var rollbackBlocked = true
     let failed = ExactCommit.apply(effects, validate: { true }, read: { frames[$0] }, eligible: { _ in true },

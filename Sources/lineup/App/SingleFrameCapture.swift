@@ -8,10 +8,6 @@ enum SingleFrameCaptureError: Error {
     case cleanupFailed(capture: Error?, stop: Error)
 }
 
-/// One complete frame on macOS 13, where SCScreenshotManager is unavailable. Each instance
-/// captures once without audio. Success requires start and stop API acknowledgments.
-/// The deadline covers start, frame and stop. A deadline error can leave cleanup pending;
-/// this same helper retains the stream and stops it after an in-flight start settles.
 @MainActor
 final class SingleFrameCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     struct Operations {
@@ -25,6 +21,7 @@ final class SingleFrameCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var cleanupError: Error?
     private let operations: Operations
     private let deadlineNanoseconds: UInt64
+    private var deadline: TimeInterval = 0
     private var stream: SCStream?
     private var start: Task<Void, Never>?
     private var cleanup: Task<Void, Never>?
@@ -57,6 +54,7 @@ final class SingleFrameCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 pending = continuation
+                deadline = ProcessInfo.processInfo.systemUptime + Double(deadlineNanoseconds) / 1_000_000_000
                 timeout = Task { [weak self] in
                     guard let duration = self?.deadlineNanoseconds else { return }
                     do { try await Task.sleep(nanoseconds: duration) } catch { return }
@@ -103,18 +101,22 @@ final class SingleFrameCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         state = .stopping
         let start = start
         cleanup = Task {
-            // ScreenCaptureKit's asynchronous start must settle before requesting stop.
             await start?.value
             self.start = nil
-            do {
-                try await self.operations.stop(stream)
-                self.stream = nil
-                self.state = .stopped
-                self.complete(self.result ?? .failure(SingleFrameCaptureError.failed))
-            } catch {
-                self.cleanupError = error
-                self.state = .cleanupFailed
-                self.complete(.failure(SingleFrameCaptureError.cleanupFailed(capture: self.captureError, stop: error)))
+            for attempt in 0...1 {
+                do {
+                    try await self.operations.stop(stream)
+                    self.stream = nil
+                    self.state = .stopped
+                    self.complete(self.result ?? .failure(SingleFrameCaptureError.failed))
+                    break
+                } catch {
+                    if attempt == 0, ProcessInfo.processInfo.systemUptime < self.deadline { continue }
+                    self.cleanupError = error
+                    self.state = .cleanupFailed
+                    self.complete(.failure(SingleFrameCaptureError.cleanupFailed(capture: self.captureError, stop: error)))
+                    break
+                }
             }
             self.cleanup = nil
         }

@@ -5,9 +5,6 @@ import ZonesCore
 import AppCore
 @testable import lineup
 
-/// Fixture input for a real `DragSnapController`. By default its clock and scheduler are
-/// injected: `elapse` advances time and runs exactly the callbacks that fell due, so dwell cases
-/// need no fixed sleeps. `realTime` hands scheduling to the production main-run-loop timer.
 @MainActor
 final class ProbeInput {
     var pointer = CGPoint.zero
@@ -16,7 +13,6 @@ final class ProbeInput {
     var buttons = 0
     var trusted: Bool?
     var realTime = false
-    /// Input types whose age `CGEventSource` would fail to report.
     var unreadable: Set<CGEventType> = []
     private var clock: TimeInterval = 1_000
     private var lastEvent: [UInt32: TimeInterval] = [:]
@@ -52,7 +48,6 @@ final class ProbeInput {
 
     var monitorCount: Int { monitors.count }
 
-    /// Records that an input of `type` happened now, as `CGEventSource` would report it.
     func happen(_ type: CGEventType) { lastEvent[type.rawValue] = now }
 
     func elapse(_ seconds: TimeInterval) {
@@ -185,7 +180,16 @@ struct ZonesNativeProbe {
                         .split(separator: " ").map(String.init)
                     let index = words.count > 1 ? Int(words[1]) ?? 0 : 0
                     switch words.first {
-                    case "minimum": windows[index].minSize = windows[index].frame.size
+                    case "minimum":
+                        if words.count == 4, let width = Double(words[2]), let height = Double(words[3]) {
+                            windows[index].minSize = CGSize(width: width, height: height)
+                        } else { windows[index].minSize = windows[index].frame.size }
+                    case "minimize":
+                        windows[index].styleMask.insert(.miniaturizable)
+                        windows[index].miniaturize(nil)
+                    case "unminimize":
+                        windows[index].deminiaturize(nil)
+                        windows[index].styleMask.remove(.miniaturizable)
                     case "hide": windows[index].orderOut(nil)
                     case "show": windows[index].orderFrontRegardless()
                     case "move":
@@ -221,8 +225,6 @@ struct ZonesNativeProbe {
         var passes = 0
         var completed: [String] = []
         var gates: [String: String] = [:]
-        // Passive runs only the cases that never take keyboard focus, for a desktop someone is using.
-        // It completes `passiveViews`, never `views`, so it cannot stand in for the full run.
         let passive = CommandLine.arguments.contains("--passive")
         var keyWindows: [String] = []
         gates["firstMouseDelivery"] = "a first click reaching a card in the inactive, non-key chooser needs a physical pointer; "
@@ -265,8 +267,6 @@ struct ZonesNativeProbe {
             view.cacheDisplay(in: view.bounds, to: bitmap)
             return bitmap.representation(using: .png, properties: [:])
         }
-        /// Offscreen review image from the production views' own drawing over a probe backdrop, at each
-        /// window's alpha. No compositor is involved, so no material, shadow or focus ring appears.
         func composeOffscreen(_ windows: [NSWindow], around focus: CGRect, name: String) {
             guard let output else { return }
             let crop = focus.insetBy(dx: -48, dy: -72)
@@ -383,8 +383,6 @@ struct ZonesNativeProbe {
                     func linear(_ value: CGFloat) -> CGFloat { value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
                     return 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent) + 0.0722 * linear(color.blueComponent)
                 }
-                // The rail follows the system appearance, so its caption may be lighter or darker
-                // than the material behind it.
                 if let background = pixel(CGPoint(x: overlay.frame.minX + 10, y: overlay.frame.minY + 14)) {
                     var brightest = luminance(background), darkest = brightest
                     for x in 16..<Int(overlay.frame.width - 16) {
@@ -406,7 +404,6 @@ struct ZonesNativeProbe {
                 if let a, let b {
                     corner = [abs(a.redComponent - b.redComponent), abs(a.greenComponent - b.greenComponent), abs(a.blueComponent - b.blueComponent)]
                 }
-                // Compare with this capture's flat fixture backdrop, allowing the compositor's soft shadow.
                 expect(corner.count == 3 && corner.allSatisfy { $0 < 0.12 },
                        "composite \(name) leaves its rounded top-left corner on the actual fixture backdrop", "channel differences \(corner)")
             }
@@ -485,9 +482,6 @@ struct ZonesNativeProbe {
                                    pressure: type == .leftMouseUp ? 0 : 1)
             }
             guard let down = event(.leftMouseDown), let up = event(.leftMouseUp) else { return }
-            // A cell-tracking button dequeues this release before sendEvent returns. A drawn control
-            // with an NSControlGestureRecognizer returns at once and recognizes the click only when
-            // its window receives the release, so a release still queued goes through the window.
             app.postEvent(up, atStart: false)
             panel.sendEvent(down)
             if let release = app.nextEvent(matching: .leftMouseUp, until: .distantPast, inMode: .default, dequeue: true) {
@@ -602,8 +596,6 @@ struct ZonesNativeProbe {
                 grip.apply(.dragging)
                 if let previewFrame { dividerPreview.show(at: previewFrame, hint: nil, below: grip.lineWindow) }
                 grip.showGuide(guide)
-                // A newly ordered window joins the on-screen list only after a later run-loop turn,
-                // so the order is read from the first sample that lists all four.
                 var order = frontToBack([badge, grip, grip.lineWindow, dividerPreview])
                 let published = await observeUntil {
                     order = frontToBack([badge, grip, grip.lineWindow, dividerPreview])
@@ -886,8 +878,6 @@ struct ZonesNativeProbe {
             chooser.orderOut(nil)
         }
 
-        // The real controller's rest-to-reveal discovery. Trust, clock, input ages, buttons and timers
-        // are injected; none of these paths reads Accessibility, captures or moves a window.
         let dwellInput = ProbeInput()
         dwellInput.trusted = true
         var dwellLayout = Node.halves
@@ -1159,15 +1149,16 @@ struct ZonesNativeProbe {
             expect(stoppedLate && (stopping.cleanupError as? OperationError) == .stop,
                    "a late throwing stop retains its cleanup error after the caller deadline and never claims stopped")
 
+            var failedStops = 0
             let throwing = SingleFrameCapture(operations: .init(start: { _ in throw OperationError.start },
-                                                                stop: { _ in throw OperationError.stop }))
+                stop: { _ in failedStops += 1; throw OperationError.stop }))
             var bothErrors = false
             do { _ = try await throwing.capture(filter: filter, width: 10, height: 10) }
             catch SingleFrameCaptureError.cleanupFailed(let cause, let stop) {
                 bothErrors = (cause as? OperationError) == .start && (stop as? OperationError) == .stop
             } catch { }
-            expect(bothErrors && throwing.state == .cleanupFailed && (throwing.cleanupError as? OperationError) == .stop,
-                   "a throwing stop preserves both errors and cannot become image success or stopped")
+            expect(bothErrors && failedStops == 2 && throwing.state == .cleanupFailed && (throwing.cleanupError as? OperationError) == .stop,
+                   "two failed stop attempts preserve both errors and cannot become image success or stopped")
             completed.append("controlledCapture")
 
         }
@@ -1335,6 +1326,10 @@ struct ZonesNativeProbe {
         let input = ProbeInput()
         var assistEnabled = false
         var censusMode = "current"
+        var sequentialCapture = false
+        var sequentialStarts = 0, sequentialStops = 0
+        let firstCandidateCapture = ProbeOperation()
+        enum SuggestionCaptureError: Error { case noFrame }
         let controller = DragSnapController(
             configProvider: { LineupConfig(defaultLayout: layout) },
             triggerProvider: { .default },
@@ -1367,8 +1362,18 @@ struct ZonesNativeProbe {
                             window: nil, appName: row.appName, title: row.title)
                     }
                 }
-                return rows
-            })
+                return sequentialCapture ? rows?.sorted { $0.id < $1.id } : rows
+            }, captureOperations: .init(start: { stream in
+                if sequentialCapture {
+                    sequentialStarts += 1
+                    if sequentialStarts == 1 { await firstCandidateCapture.hold() }
+                    throw SuggestionCaptureError.noFrame
+                }
+                try await stream.startCapture()
+            }, stop: { stream in
+                if sequentialCapture { sequentialStops += 1; return }
+                try await stream.stopCapture()
+            }))
         controller.start()
         defer { controller.stop() }
         func window<T: NSWindow>(_ type: T.Type) -> [T] { app.windows.compactMap { $0 as? T }.filter(\.isVisible) }
@@ -2087,6 +2092,32 @@ struct ZonesNativeProbe {
         expect(SnapMemory.shared.records.maximizeAction(b, current: frame(b), full: full, screenKey: info.key) == .maximize(full),
                "genuine external movement still invalidates the partial-return receipt")
 
+        expect(command("resizable 1") && command("minimum 1 0 0"),
+               "restore native resize support before the changing-minimum regression")
+        let small = CGRect(x: visible.minX + 60, y: visible.minY + 80, width: 400, height: 350)
+        expect(command("frame 1 \(small.minX) \(small.minY) 400 350"), "give the resizable fixture its original return frame")
+        let smallReady = await observeUntil { near(frame(b), small) }
+        let restoreHistory = small.offsetBy(dx: 17, dy: 19)
+        SnapMemory.shared.records.recordSnap(b, from: restoreHistory, to: small)
+        let grew = WindowMover.maximizeOrReturn(b, current: frame(b), target: full, screenKey: info.key)
+        let fullReady = await observeUntil { near(frame(b), full) }
+        expect(smallReady && grew && fullReady && command("minimum 1 600 200"),
+               "a still-resizable maximized fixture raises its minimum width from below 400 to 600")
+        let clampedReturn = WindowMover.maximizeOrReturn(b, current: frame(b), target: full, screenKey: info.key)
+        let clampedReady = await observeUntil { abs(frame(b).width - 600) <= 1 }
+        let clamped = frame(b)
+        expect(clampedReady && !clampedReturn && !near(clamped, small) && !near(clamped, full)
+                && SnapMemory.shared.records.entry(b)?.maximize?.before == small
+                && SnapMemory.shared.records.entry(b)?.maximize?.applied == clamped
+                && SnapMemory.shared.preFrame(of: b, currentFrame: clamped) == restoreHistory,
+               "observed resizable partial return keeps the original destination and first-snap history")
+        expect(command("minimum 1 0 0"), "release the fixture minimum for a retry of the original return")
+        let retriedSmall = WindowMover.maximizeOrReturn(b, current: frame(b), target: full, screenKey: info.key)
+        let smallReturned = await observeUntil { near(frame(b), small) }
+        expect(retriedSmall && smallReturned && SnapMemory.shared.records.entry(b)?.maximize == nil
+                && SnapMemory.shared.preFrame(of: b, currentFrame: frame(b)) == restoreHistory,
+               "a resizable changing-minimum return remains retryable and consumes its receipt only at the original destination")
+
         let second = temporary.appendingPathComponent("second", isDirectory: true)
         guard case let (process, secondPID, _)? = try launchFixture(second, windows: 1),
               let dying = WindowMover.visibleWindows(pids: [secondPID])?.first?.window else {
@@ -2142,10 +2173,10 @@ struct ZonesNativeProbe {
             expect(false, "resolve the current AX identity of the revealed fixture source"); return nil
         }
         let fillSource = frame(fillWindow)
-        func dropForFill() async -> (ZoneFillPanel, TimeInterval)? {
+        func dropForFill(candidateCount: Int = 1, waitForPreviews: Bool = true) async -> (ZoneFillPanel, TimeInterval)? {
             let visibleReady = await observeUntil {
                 guard let rows = fixtureWindows(nil) else { return false }
-                return rows.count == 2 && rows.allSatisfy { $0.window != nil }
+                return rows.count == candidateCount + 1 && rows.allSatisfy { $0.window != nil }
             }
             let titlebar = CGPoint(x: frame(fillWindow).midX, y: frame(fillWindow).maxY - 14)
             var externalObstruction = false
@@ -2178,10 +2209,11 @@ struct ZonesNativeProbe {
             expect(!chooser.isKeyWindow && chooser.firstResponder === chooser && NSWorkspace.shared.frontmostApplication == front,
                    "the actual drop presents suggestions without key focus, a first responder or a frontmost change",
                    "key \(chooser.isKeyWindow), front \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil")")
+            if !waitForPreviews { return (chooser, shownAt) }
             let loaded = await observeUntil({
                 let cards = views(chooser.contentView).compactMap { $0 as? NSButton }
                     .filter { $0.accessibilityLabel()?.contains("Zones document-free fixture") == true }
-                return cards.count == 1 && cards.allSatisfy { $0.accessibilityValue() as? String != "Loading preview" }
+                return cards.count == candidateCount && cards.allSatisfy { $0.accessibilityValue() as? String != "Loading preview" }
             }, deadline: 10)
             return loaded ? (chooser, shownAt) : nil
         }
@@ -2251,8 +2283,39 @@ struct ZonesNativeProbe {
                 && NSWorkspace.shared.frontmostApplication == front,
                "one constructed click through NSWindow.sendEvent fills exactly the vacant zone, leaves its source untouched and keeps the frontmost app")
         try observeShadowBounds("fill", windows: [(ids[2], fillWindow), (ids[1], b)])
-        assistEnabled = false
         controller.cancelSessions()
+        let candidateLeaf = zone(0)
+        expect(command("frame 0 \(candidateLeaf.minX + 20) \(candidateLeaf.minY + 30) \(candidateLeaf.width - 40) \(candidateLeaf.height - 60)")
+                && command("frame 1 \(candidateLeaf.minX + 40) \(candidateLeaf.minY + 80) 480 360") && command("show 0") && command("front"),
+               "prepare two distinct candidate fixtures inside the filled leaf")
+        sequentialCapture = true
+        defer { firstCandidateCapture.release() }
+        guard let (sequentialChooser, _) = await dropForFill(candidateCount: 2, waitForPreviews: false) else {
+            expect(false, "a real drop admits two sequential thumbnail candidates"); return nil
+        }
+        let firstStarted = await observeUntil { sequentialStarts == 1 }
+        let sequentialLabels = views(sequentialChooser.contentView).compactMap { ($0 as? NSButton)?.accessibilityLabel() }
+            .filter { $0.contains("Zones document-free fixture") }
+        expect(firstStarted && sequentialLabels.count == 2 && sequentialLabels[0].contains("fixture 0")
+                && sequentialLabels[1].contains("fixture 1"),
+               "the actual first candidate stream awaits with a second concrete candidate admitted")
+        expect(command("minimize 1"), "candidate B minimizes while candidate A's actual capture operation awaits")
+        let secondExcluded = await observeUntil { fixtureWindows(nil)?.contains { $0.id == ids[1] } == false }
+        firstCandidateCapture.release()
+        let sequentialCancelled = await observeUntil { !sequentialChooser.isVisible && sequentialStops >= 1 }
+        let sequentialCards = views(sequentialChooser.contentView).compactMap { $0 as? NSButton }
+            .filter { $0.accessibilityLabel()?.contains("Zones document-free fixture") == true }
+        let firstPublished = sequentialCards.first?.accessibilityValue() as? String == "Preview unavailable"
+        let secondPending = sequentialCards.last?.accessibilityValue() as? String == "Loading preview"
+        expect(secondExcluded && sequentialCancelled && firstPublished && secondPending
+                && sequentialStarts == 1 && sequentialStops == 1,
+               "the real controller revalidates B before its stream starts and cancels the stale two-candidate offer")
+        controller.cancelSessions()
+        sequentialCapture = false
+        expect(command("unminimize 1") && command("hide 0"), "restore only the sequential-capture fixtures")
+        let candidateRestored = await observeUntil { fixtureWindows(nil)?.contains { $0.id == ids[1] && $0.window != nil } == true }
+        expect(candidateRestored, "the restored fixture is visible before native helper capture cases")
+        assistEnabled = false
 
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let sc = content.windows.first(where: { $0.windowID == owned[1].id && $0.owningApplication?.processID == pid }) else {
@@ -2274,11 +2337,39 @@ struct ZonesNativeProbe {
                 .write(to: output.appendingPathComponent("fixture-thumbnail.png"))
         }
         enum NativeOperationError: Error { case stop }
+        var transientStartAck = false, transientStopAck = false, transientReturned = false, transientCompleted = false
+        var transientStops = 0
+        let retryStop = ProbeOperation()
+        let transient = SingleFrameCapture(operations: .init(start: { stream in
+            try await stream.startCapture(); transientStartAck = true
+        }, stop: { stream in
+            transientStops += 1
+            if transientStops == 1 { throw NativeOperationError.stop }
+            await retryStop.hold()
+            try await stream.stopCapture(); transientStopAck = true
+        }))
+        let transientTask = Task {
+            defer { transientCompleted = true }
+            let image = try await transient.capture(filter: SCContentFilter(desktopIndependentWindow: sc), width: 10, height: 10)
+            transientReturned = true
+            return image
+        }
+        let reachedRetry = await observeUntil({ transientStops == 2 || transientCompleted }, deadline: 10)
+        expect(reachedRetry && transientStartAck && transientStops == 2 && !transientReturned && transient.state == .stopping,
+               "a transient stop failure retries in the same helper and withholds the complete image until stop acknowledgment")
+        retryStop.release()
+        let transientImage = try await transientTask.value
+        expect(transientImage.width == 10 && transientReturned && transientStopAck && transient.state == .stopped
+                && transient.cleanupError == nil && transientStops == 2,
+               "the second acknowledged stop completes the same native one-frame capture exactly once")
+
         var throwingStartAck = false, throwingStopAck = false
+        var permanentStops = 0
         let stopFailure = SingleFrameCapture(operations: .init(start: { stream in
             try await stream.startCapture(); throwingStartAck = true
         }, stop: { stream in
-            try await stream.stopCapture(); throwingStopAck = true
+            permanentStops += 1
+            if !throwingStopAck { try await stream.stopCapture(); throwingStopAck = true }
             throw NativeOperationError.stop
         }))
         var refusedImage = false
@@ -2286,7 +2377,7 @@ struct ZonesNativeProbe {
         catch SingleFrameCaptureError.cleanupFailed(let cause, let error) {
             refusedImage = cause == nil && (error as? NativeOperationError) == .stop
         } catch { }
-        expect(refusedImage && throwingStartAck && throwingStopAck && stopFailure.state == .cleanupFailed,
+        expect(refusedImage && throwingStartAck && throwingStopAck && permanentStops == 2 && stopFailure.state == .cleanupFailed,
                "a complete native frame cannot become success when its stop operation throws")
 
         let acknowledgedStart = ProbeOperation()
@@ -2349,8 +2440,6 @@ extension ZonesNativeProbe {
             @unknown default: "raw \(app.activationPolicy().rawValue)"
             }
         }
-        // An unbundled process already starts `.prohibited`, and the setter returns false when the
-        // policy does not change, so the policy is read before and after the request.
         let policyBefore = policyName()
         let policyAccepted = app.setActivationPolicy(.prohibited)
         let policy = policyName()
@@ -2488,14 +2577,11 @@ extension ZonesNativeProbe {
             Look(name: "dark", appearance: NSAppearance(named: .darkAqua)!, content: dark, contrast: false),
             Look(name: "mixed-dark", appearance: NSAppearance(named: .darkAqua)!, content: (.white, dark.0), contrast: false),
             Look(name: "mixed-light", appearance: NSAppearance(named: .aqua)!, content: (dark.0, .white), contrast: false),
-            // These looks drive the handle's own Increase Contrast input; the receipt gates the system setting.
             Look(name: "contrast-light", appearance: NSAppearance(named: .aqua)!, content: light, contrast: true),
             Look(name: "contrast-dark", appearance: NSAppearance(named: .darkAqua)!, content: dark, contrast: true),
         ]
         let backdropNote = "probe-drawn document-free backdrop: two window content colors meeting at the line, each with a hairline edge"
 
-        /// Probe backdrop, then each production window's own content view at its frame and alpha, back
-        /// to front in the order given, then `overlay` in scene coordinates.
         func compose(_ scene: CGRect, look: Look, vertical: Bool = true, split: CGFloat? = nil,
                      standIn: [(CGRect, CGFloat)] = [], windows: [NSWindow], overlay: () -> Void = {}) -> Data? {
             let layers = windows.compactMap { window in raster(window.contentView!).map { ($0, window.frame, window.alphaValue) } }
